@@ -1,0 +1,81 @@
+# Builds the signed release APK when a v* tag is pushed and attaches it to that tag's GitHub
+# release, creating the release if it doesn't exist yet. The in-app updater installs this APK, and
+# only if it is signed with the same key as the running app, so the key comes from the repository's
+# secrets and nowhere else.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signing key
+        env:
+          BURBLE_KEYSTORE_BASE64: ${{ secrets.BURBLE_KEYSTORE }}
+        run: |
+          # A release signed with any other key couldn't update installed copies: stop here.
+          if [ -z "$BURBLE_KEYSTORE_BASE64" ]; then echo "::error::The BURBLE_KEYSTORE secret is missing"; exit 1; fi
+          echo "$BURBLE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/burble.jks"
+          echo "BURBLE_KEYSTORE=$RUNNER_TEMP/burble.jks" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          BURBLE_KEYSTORE_PASSWORD: ${{ secrets.BURBLE_KEYSTORE_PASSWORD }}
+          BURBLE_KEY_ALIAS: ${{ secrets.BURBLE_KEY_ALIAS }}
+          BURBLE_KEY_PASSWORD: ${{ secrets.BURBLE_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon -PversionName="${TAG#v}" assembleRelease
+
+      - name: Name and fingerprint
+        run: |
+          version="${TAG#v}"
+          apk="burble-$version.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          "$apksigner" verify --print-certs "$apk" | tee certs.txt
+          # "Signer #1 certificate SHA-256 digest: …" or, from build-tools 37, "V2 Signer: certificate …".
+          cert="$(sed -nE 's/^.*[Ss]igner.*certificate SHA-256 digest: //p' certs.txt | head -1)"
+          [ -n "$cert" ] || { echo "::error::No signing certificate in $apk"; exit 1; }
+          {
+            echo
+            echo "---"
+            echo "**$apk**"
+            echo
+            echo "- SHA-256 of the APK: \`$(sha256sum "$apk" | cut -d' ' -f1)\`"
+            echo "- Signing certificate SHA-256: \`$cert\`"
+            echo
+            echo "Check with \`apksigner verify --print-certs $apk\`, or in AppVerifier."
+          } > fingerprint.md
+          echo "APK=$apk" >> "$GITHUB_ENV"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A release written by hand before the tag keeps its notes; the fingerprint goes under them.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release view "$TAG" --json body --jq .body > notes.md
+            cat fingerprint.md >> notes.md
+            gh release upload "$TAG" "$APK" --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" "$APK" --title "Burble ${TAG#v}" --generate-notes --notes-file fingerprint.md
+          fi
