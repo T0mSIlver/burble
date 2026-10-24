@@ -16,6 +16,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
@@ -27,7 +29,7 @@ class BubbleService : Service() {
 
     private var windowManager: WindowManager? = null
     private var bubble: View? = null
-    private var session: DictationSession? = null
+    private val scope = kotlinx.coroutines.MainScope()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -35,6 +37,7 @@ class BubbleService : Service() {
         super.onCreate()
         startForeground(NOTIF_ID, notification())
         addBubble()
+        observe()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -109,49 +112,33 @@ class BubbleService : Service() {
         bubble = view
     }
 
-    private fun toggle() {
-        val s = session
-        if (s != null && s.isActive) {
-            s.stop()
-            setState(State.STOPPING)
-            return
-        }
-        if (checkCallingOrSelfPermission(android.Manifest.permission.RECORD_AUDIO)
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            setState(State.ERROR)
-            toast(getString(R.string.no_mic))
-            return
-        }
-        setState(State.LISTENING)
-        val newSession = DictationSession(
-            onPartial = { text ->
-                bubble?.post { bubble?.contentDescription = text }
-            },
-            onResult = { r ->
-                bubble?.post {
-                    r.onSuccess { text ->
-                        if (text.isNotBlank()) {
-                            InsertionService.deliver(this@BubbleService, text)
-                            setState(State.DONE)
-                        } else {
-                            setState(State.IDLE)
-                            toast(getString(R.string.empty_result))
-                        }
-                    }.onFailure { e ->
-                        setState(State.ERROR)
-                        val msg = when (e) {
-                            is QuotaException -> getString(R.string.quota)
-                            else -> e.message?.take(80) ?: e.javaClass.simpleName
-                        }
-                        toast(getString(R.string.failed, msg))
-                        android.util.Log.e(TAG, "dictation failed", e)
+    private fun toggle() = Dictation.toggle(this)
+
+    /** Mirrors [Dictation.state] in the bubble's colour; errors and empty results toast. */
+    private fun observe() {
+        scope.launch {
+            Dictation.state.collect { st ->
+                when (st) {
+                    Dictation.State.Idle -> setState(State.IDLE)
+                    Dictation.State.Listening -> setState(State.LISTENING)
+                    Dictation.State.Finishing -> setState(State.STOPPING)
+                    is Dictation.State.Done -> {
+                        setState(State.DONE)
+                        bubble?.postDelayed({ Dictation.acknowledge() }, 1500)
                     }
-                    bubble?.postDelayed({ setState(State.IDLE) }, 1500)
+                    is Dictation.State.Error -> {
+                        setState(State.ERROR)
+                        toast(when (st.kind) {
+                            Dictation.ErrorKind.NO_MIC -> getString(R.string.no_mic)
+                            Dictation.ErrorKind.NOTHING_HEARD -> getString(R.string.empty_result)
+                            Dictation.ErrorKind.QUOTA -> getString(R.string.quota)
+                            else -> getString(R.string.failed, st.detail ?: st.kind.name)
+                        })
+                        bubble?.postDelayed({ Dictation.acknowledge() }, 1500)
+                    }
                 }
-            },
-        )
-        session = newSession
-        newSession.start()
+            }
+        }
     }
 
     private fun setState(state: State) {
@@ -167,8 +154,8 @@ class BubbleService : Service() {
     }
 
     private fun teardown() {
-        session?.cancel()
-        session = null
+        Dictation.cancel()
+        scope.coroutineContext[kotlinx.coroutines.Job]?.cancelChildren()
         bubble?.let { runCatching { windowManager?.removeView(it) } }
         bubble = null
     }

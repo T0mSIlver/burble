@@ -20,6 +20,8 @@ import java.util.concurrent.TimeUnit
 class S3Stream(
     private val onPartial: (String) -> Unit,
     private val onDone: (Result<String>) -> Unit,
+    /** BCP-47 tag of the spoken language. */
+    private val language: String = "en-US",
     client: OkHttpClient = S3.client(),
 ) {
     private val http = client
@@ -48,7 +50,7 @@ class S3Stream(
 
     private fun headerMessage(): ByteArray {
         val aasw = Pb.int(3, 10) + Pb.f32(2, 16000.0f) + Pb.int(4, 1)
-        val aatf = Pb.msg(2, Pb.str(1, "en-US")) + Pb.bool(20, true)
+        val aatf = Pb.msg(2, Pb.str(1, language)) + Pb.bool(20, true)
         val aasz = Pb.bool(1, false)
         val aatb = Pb.str(8, "Android") + Pb.str(9, android.os.Build.DISPLAY) +
             Pb.str(11, android.os.Build.MODEL) + Pb.msg(22, aasz) +
