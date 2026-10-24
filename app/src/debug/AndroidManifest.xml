@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application>
+    <!-- Cleartext to localhost only, for a fake update release served over adb reverse. -->
+    <application android:networkSecurityConfig="@xml/debug_network">
         <!-- Only holders of DUMP (adb shell) may send to it; release builds lack it. -->
         <receiver
             android:name=".DebugReceiver"
