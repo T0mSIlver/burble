@@ -85,7 +85,7 @@
     <!-- Onboarding, optional steps -->
     <string name="onb_battery_title">Unrestricted battery</string>
     <string name="onb_battery_why">Some phones stop accessibility services to save battery, and the bubble goes with them.</string>
-    <string name="onb_battery_not">Burble only uses the battery while you dictate.</string>
+    <string name="onb_battery_not">Burble uses almost no battery until you dictate.</string>
     <string name="onb_tile_title">Quick Settings tile</string>
     <string name="onb_tile_why">Turns the bubble on and off from Quick Settings.</string>
     <string name="onb_tile_how">Swipe down twice, tap the pencil, then drag Burble into your tiles.</string>
