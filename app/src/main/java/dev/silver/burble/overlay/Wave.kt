@@ -22,14 +22,13 @@ import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.PI
 import kotlin.math.exp
-import kotlin.math.pow
 import kotlin.math.sin
 
 /**
- * The listening wave, after Gboard's voice bar: a soft glow under a crest, overlaid with a dense
- * lattice of diamonds that are largest and strongest at the bottom and fade towards the crest.
- * The crest breathes slowly in silence and rises with the voice. One hue, [color], at varying
- * alpha.
+ * The listening wave, after Gboard's voice bar: a soft glow rising from the bottom in drifting
+ * humps, a pale haze above it, and a fine tilted lattice of diamonds lighter than the glow,
+ * cut out of it where it is strong. In silence only a thin glow line stays along the bottom.
+ * One hue, [color] (the theme's tertiary, like Gboard), at varying alpha; the diamonds are white.
  *
  * [level] and [time] are read at draw time only, so a new frame redraws without recomposing.
  */
@@ -41,11 +40,11 @@ fun Wave(
     modifier: Modifier = Modifier,
     shader: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
 ) {
-    val spacing = with(LocalDensity.current) { SPACING_DP.dp.toPx() }
+    val pitch = with(LocalDensity.current) { PITCH_DP.dp.toPx() }
     if (shader && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ShaderWave(level, time, color, spacing, modifier)
+        ShaderWave(level, time, color, pitch, modifier)
     } else {
-        CanvasWave(level, time, color, spacing, modifier)
+        CanvasWave(level, time, color, pitch, modifier)
     }
 }
 
@@ -62,82 +61,89 @@ fun LiveWave(level: StateFlow<Float>, color: Color, modifier: Modifier = Modifie
             val dt = (now - last) / 1e9f
             last = now
             time.floatValue = (now - t0) / 1e9f
-            // Levels come ten times a second: rise quickly with the voice, settle slowly.
+            // As in Gboard: the humps rise within about 100 ms of the voice and sink over most of
+            // a second.
             val target = level.value
-            val rate = if (target > smooth.floatValue) 18f else 4f
+            val rate = if (target > smooth.floatValue) ATTACK else RELEASE
             smooth.floatValue += (target - smooth.floatValue) * (1f - exp(-rate * dt))
         }
     }
     Wave({ smooth.floatValue }, { time.floatValue }, color, modifier)
 }
 
-/** Crest height at [x] (0..1 across), as a fraction of the band's height from the bottom. */
-internal fun crest(x: Float, t: Float, level: Float): Float {
-    val tau = 2f * PI.toFloat()
-    val envelope = 0.35f + 0.65f * sin(PI.toFloat() * x).pow(0.8f)
-    // Silence still breathes: a slow swell and a drifting ripple.
-    val idle = 0.32f + 0.1f * (0.5f + 0.5f * sin(tau * 0.3f * t)) + 0.05f * sin(tau * (1.3f * x - 0.4f * t))
-    val swell = 0.6f + 0.25f * sin(tau * (1.1f * x - 0.45f * t)) + 0.15f * sin(tau * (2.3f * x + 0.6f * t) + 1.7f)
-    return idle + level * 0.9f * envelope * swell
+private const val ATTACK = 30f
+private const val RELEASE = 3f
+
+/**
+ * Glow height at [x] (0..1 across) as a fraction of the height, from the bottom: a thin line in
+ * silence, three drifting humps that grow with [level].
+ */
+internal fun humps(x: Float, t: Float, level: Float): Float {
+    fun hump(centre: Float, amp: Float): Float {
+        val d = (x - centre) / 0.24f
+        return amp * exp(-d * d)
+    }
+    val sum = hump(0.3f + 0.22f * sin(0.35f * t), 0.75f + 0.25f * sin(1.3f * t)) +
+        hump(0.72f + 0.2f * sin(0.5f * t + 2f), 0.75f + 0.25f * sin(1.1f * t + 1f)) +
+        hump(0.5f + 0.32f * sin(0.27f * t + 4f), 0.6f + 0.3f * sin(0.9f * t + 2f))
+    return 0.07f + level * 0.95f * sum.coerceAtMost(1.2f)
 }
 
-/** How far below the crest [c] a point at height [y] sits, 0 at the crest to 1 well under it. */
-internal fun depth(y: Float, c: Float): Float {
-    val v = ((c - y) / 0.25f).coerceIn(0f, 1f)
-    return v * v * (3f - 2f * v)
+private fun smoothstep(a: Float, b: Float, v: Float): Float {
+    val k = ((v - a) / (b - a)).coerceIn(0f, 1f)
+    return k * k * (3f - 2f * k)
 }
 
-/** Diamond half-diagonal as a fraction of the lattice pitch: bigger at the bottom. */
-internal fun dotSize(y: Float, c: Float) = depth(y, c) * (1f - 0.45f * y) * 0.4f
+/** The glow's opacity at height [y] under a hump of height [h]: strong low, soft at the top. */
+internal fun glow(y: Float, h: Float) = 0.9f * (1f - smoothstep(0.2f, 1.3f, y / h))
 
-/** Diamond opacity by height. */
-internal fun dotAlpha(y: Float) = 0.3f + 0.5f * (1f - y)
+/** The pale haze above the glow. */
+internal fun haze(y: Float, h: Float) = 0.3f * (1f - smoothstep(0.8f, 3f, y / h))
 
-private const val SPACING_DP = 5f
-private const val HAZE = 0.32f
+/** Diamond size, 0..1 of its largest, where the glow is strong and the hump has risen. */
+internal fun diamond(y: Float, h: Float) = smoothstep(0.35f, 0.8f, glow(y, h)) * smoothstep(0.16f, 0.4f, h)
 
-// The lattice: rows every half pitch, alternate rows shifted by half a pitch, so neighbouring
-// diamonds sit on the diagonals and the biggest ones nearly tile.
+/** Diamond pitch: very fine, as in Gboard. */
+private const val PITCH_DP = 3.5f
+private const val DIAMOND = 0.44f
+private const val DIAMOND_ALPHA = 0.85f
+
+// Canvas version for Android 12: the glow as stacked translucent layers under the hump curve,
+// with a vertical fade; the diamonds row by row. Close to the shader at a glance.
 @Composable
-private fun CanvasWave(level: () -> Float, time: () -> Float, color: Color, spacing: Float, modifier: Modifier) {
+private fun CanvasWave(level: () -> Float, time: () -> Float, color: Color, pitch: Float, modifier: Modifier) {
     val dots = remember { Path() }
-    val glow = remember { Path() }
+    val area = remember { Path() }
     Spacer(modifier.drawWithCache {
-        // Under the crest the glow fades upwards as (1 - y)^1.5, as in the shader.
-        val haze = Brush.verticalGradient(
-            0f to color.copy(alpha = 0f),
-            0.25f to color.copy(alpha = HAZE * 0.125f),
-            0.5f to color.copy(alpha = HAZE * 0.35f),
-            0.75f to color.copy(alpha = HAZE * 0.65f),
-            1f to color.copy(alpha = HAZE),
+        val fade = Brush.verticalGradient(
+            0f to color.copy(alpha = 0f), 0.5f to color.copy(alpha = 0.35f), 1f to color.copy(alpha = 0.9f),
         )
-        val rows = (size.height / (spacing / 2f)).toInt()
-        val cols = (size.width / spacing).toInt() + 2
+        val rows = (size.height / (pitch / 2f)).toInt() + 1
+        val cols = (size.width / pitch).toInt() + 2
         onDrawBehind {
             val l = level()
             val t = time()
             val w = size.width
             val h = size.height
-            // Stacked layers under 100 %, 80 % and 60 % of the crest feather its edge.
-            for (k in GLOW_LAYERS) {
-                glow.rewind()
-                glow.moveTo(0f, h)
+            for (k in LAYERS) {
+                area.rewind()
+                area.moveTo(0f, h)
                 for (i in 0..SAMPLES) {
                     val x = i / SAMPLES.toFloat()
-                    glow.lineTo(x * w, h - (crest(x, t, l) * k).coerceAtMost(1f) * h)
+                    area.lineTo(x * w, h - (humps(x, t, l) * k).coerceAtMost(1.5f) * h)
                 }
-                glow.lineTo(w, h)
-                glow.close()
-                drawPath(glow, haze, alpha = 1f / GLOW_LAYERS.size)
+                area.lineTo(w, h)
+                area.close()
+                drawPath(area, fade, alpha = 1f / LAYERS.size)
             }
             for (row in 0 until rows) {
-                val cy = h - row * spacing / 2f
-                val y = row * spacing / 2f / h
-                val shift = if (row % 2 == 1) spacing / 2f else 0f
+                val cy = h - row * pitch / 2f
+                val y = row * pitch / 2f / h
+                val shift = if (row % 2 == 1) pitch / 2f else 0f
                 dots.rewind()
                 for (col in 0 until cols) {
-                    val cx = col * spacing + shift - spacing / 2f
-                    val r = dotSize(y, crest((cx / w).coerceIn(0f, 1f), t, l)) * spacing
+                    val cx = col * pitch + shift - pitch / 2f
+                    val r = diamond(y, humps((cx / w).coerceIn(0f, 1f), t, l)) * DIAMOND * pitch
                     if (r < 0.3f) continue
                     dots.moveTo(cx, cy - r)
                     dots.lineTo(cx + r, cy)
@@ -145,74 +151,73 @@ private fun CanvasWave(level: () -> Float, time: () -> Float, color: Color, spac
                     dots.lineTo(cx - r, cy)
                     dots.close()
                 }
-                drawPath(dots, color, alpha = dotAlpha(y))
+                drawPath(dots, Color.White, alpha = DIAMOND_ALPHA)
             }
         }
     })
 }
 
-private const val SAMPLES = 48
-private val GLOW_LAYERS = floatArrayOf(1f, 0.8f, 0.6f)
+private const val SAMPLES = 32
+private val LAYERS = floatArrayOf(2.6f, 1.3f, 1f, 0.7f, 0.45f)
 
-// The same glow and lattice as CanvasWave, per pixel. In lattice coordinates m = (X + Y) / s,
-// n = (X - Y) / s the diamonds are squares, so each pixel only tests its nearest lattice point.
+// The same humps, glow, haze and diamonds as the Kotlin functions above, per pixel. In lattice
+// coordinates m = (X + Y) / s, n = (X - Y) / s the diamonds are squares, so each pixel only
+// tests its nearest lattice point.
 private const val AGSL = """
 uniform float2 size;
-uniform float spacing;
+uniform float pitch;
 uniform float time;
 uniform float level;
 layout(color) uniform half4 color;
 
-const float PI = 3.14159265;
-
-float crest(float x) {
-    float tau = 2.0 * PI;
-    float envelope = 0.35 + 0.65 * pow(sin(PI * x), 0.8);
-    float idle = 0.32 + 0.1 * (0.5 + 0.5 * sin(tau * 0.3 * time)) + 0.05 * sin(tau * (1.3 * x - 0.4 * time));
-    float swell = 0.6 + 0.25 * sin(tau * (1.1 * x - 0.45 * time)) + 0.15 * sin(tau * (2.3 * x + 0.6 * time) + 1.7);
-    return idle + level * 0.9 * envelope * swell;
+float hump(float x, float centre, float amp) {
+    float d = (x - centre) / 0.24;
+    return amp * exp(-d * d);
 }
 
-float depth(float y, float c) {
-    float v = clamp((c - y) / 0.25, 0.0, 1.0);
-    return v * v * (3.0 - 2.0 * v);
+float humps(float x) {
+    float t = time;
+    float sum = hump(x, 0.3 + 0.22 * sin(0.35 * t), 0.75 + 0.25 * sin(1.3 * t)) +
+        hump(x, 0.72 + 0.2 * sin(0.5 * t + 2.0), 0.75 + 0.25 * sin(1.1 * t + 1.0)) +
+        hump(x, 0.5 + 0.32 * sin(0.27 * t + 4.0), 0.6 + 0.3 * sin(0.9 * t + 2.0));
+    return 0.07 + level * 0.95 * min(sum, 1.2);
 }
+
+float glow(float y, float h) { return 0.9 * (1.0 - smoothstep(0.2, 1.3, y / h)); }
+float haze(float y, float h) { return 0.3 * (1.0 - smoothstep(0.8, 3.0, y / h)); }
+float diamond(float y, float h) { return smoothstep(0.35, 0.8, glow(y, h)) * smoothstep(0.16, 0.4, h); }
 
 half4 main(float2 p) {
-    float X = p.x + spacing / 2.0;
     float Y = size.y - p.y;
     float y = Y / size.y;
-    float c = crest(clamp(p.x / size.x, 0.0, 1.0));
-    float layers = step(Y, min(c, 1.0) * size.y) + step(Y, min(c * 0.8, 1.0) * size.y) +
-        step(Y, min(c * 0.6, 1.0) * size.y);
-    float haze = 0.32 * pow(1.0 - y, 1.5) * layers / 3.0;
+    float h = humps(clamp(p.x / size.x, 0.0, 1.0));
+    float a = max(glow(y, h), haze(y, h));
 
-    float m = floor((X + Y) / spacing + 0.5);
-    float n = floor((X - Y) / spacing + 0.5);
-    float cx = (m + n) * spacing / 2.0 - spacing / 2.0;
-    float cY = (m - n) * spacing / 2.0;
-    float dot = 0.0;
+    float X = p.x + pitch / 2.0;
+    float m = floor((X + Y) / pitch + 0.5);
+    float n = floor((X - Y) / pitch + 0.5);
+    float cx = (m + n) * pitch / 2.0 - pitch / 2.0;
+    float cY = (m - n) * pitch / 2.0;
+    float d = 0.0;
     if (cY >= 0.0) {
-        float cyN = cY / size.y;
-        float r = depth(cyN, crest(clamp(cx / size.x, 0.0, 1.0))) * (1.0 - 0.45 * cyN) * 0.4 * spacing;
-        if (r >= 0.3) {
-            float d = abs(p.x - cx) + abs(Y - cY);
-            dot = clamp(r - d + 0.5, 0.0, 1.0) * (0.3 + 0.5 * (1.0 - cyN));
-        }
+        float cy = cY / size.y;
+        float r = diamond(cy, humps(clamp(cx / size.x, 0.0, 1.0))) * 0.44 * pitch;
+        if (r >= 0.3) d = clamp(r - (abs(p.x - cx) + abs(Y - cY)) + 0.5, 0.0, 1.0) * 0.85;
     }
-    float a = dot + haze * (1.0 - dot);
-    return color * half(a);
+    // White diamonds over the tinted glow, premultiplied.
+    half3 rgb = color.rgb * half(a * (1.0 - d)) + half3(d);
+    return half4(rgb, half(a * (1.0 - d) + d));
 }
 """
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
-private fun ShaderWave(level: () -> Float, time: () -> Float, color: Color, spacing: Float, modifier: Modifier) {
+private fun ShaderWave(level: () -> Float, time: () -> Float, color: Color, pitch: Float, modifier: Modifier) {
     val shader = remember { RuntimeShader(AGSL) }
     val brush = remember(shader) { ShaderBrush(shader) }
     Spacer(modifier.drawWithCache {
         shader.setFloatUniform("size", size.width, size.height)
-        shader.setFloatUniform("spacing", spacing)
+        shader.setFloatUniform("pitch", pitch)
         shader.setColorUniform("color", color.toArgb())
         onDrawBehind {
             shader.setFloatUniform("time", time())

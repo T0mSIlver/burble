@@ -51,6 +51,14 @@ class S3Stream(
     @Volatile private var finished = false
     private var finalText: String? = null
 
+    /** The server's reading of the final result: [UserIntent.DICTATION] unless it heard a command. */
+    @Volatile var intent: Int = UserIntent.DICTATION
+        private set
+
+    /** What the user said, word for word, when [intent] is a command; null for dictation. */
+    @Volatile var transcript: String? = null
+        private set
+
     override fun feed(chunk: ByteArray) {
         if (chunk.isNotEmpty()) queue.put(chunk)
     }
@@ -174,6 +182,11 @@ class S3Stream(
         val span = Pb.first(spanHolder, 3) ?: return
         val text = Pb.first(span, 1)?.toString(Charsets.UTF_8) ?: return
         finalText = text
+        // aasi extension 74956224 (aatt): f4 intent enum (aats), f1 the verbatim transcript.
+        Pb.first(span, 74956224)?.let { voiceAction ->
+            intent = (Pb.firstVarint(voiceAction, 4) ?: 0L).toInt()
+            transcript = Pb.first(voiceAction, 1)?.toString(Charsets.UTF_8)
+        }
     }
 
     private fun readFully(src: java.io.InputStream, buf: ByteArray): Int {
@@ -264,6 +277,19 @@ internal class Chunker(private val size: Int) {
 
     fun drain(): List<ByteArray> =
         buf.toByteArray().also { buf.reset() }.let { if (it.isEmpty()) emptyList() else listOf(it) }
+}
+
+/** Rambler's user intents (aats). Only [DICTATION] and the ramble ones are text to type. */
+object UserIntent {
+    const val DICTATION = 0
+    const val EDIT = 1
+    const val EDIT_HISTORY = 2
+    const val REWRITE = 3
+    const val COMPOSE = 4
+    const val RAMBLE = 5
+    const val RAMBLE_HISTORY = 6
+
+    fun isDictation(intent: Int) = intent == DICTATION || intent == RAMBLE || intent == RAMBLE_HISTORY
 }
 
 /** [grpcStatus] is the gRPC status code, -1 when the response broke the protocol. */

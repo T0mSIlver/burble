@@ -1,6 +1,5 @@
 package dev.silver.burble
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -9,7 +8,6 @@ import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.accessibility.AccessibilityManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,14 +24,25 @@ object Dictation {
         data object Listening : State
         /** Audio ended; waiting for the server's final text. */
         data object Finishing : State
-        /** [delivered] is false when the text is held for the user ([Output.HOLD]). */
+        /** [output] says where the text went: the field, or only the clipboard. */
         data class Done(val text: String, val output: Output, val delivered: Boolean) : State
+        /**
+         * No field to type into yet: [text] is on the clipboard and goes into the next field the
+         * user focuses. Until then the keyboard stays hidden.
+         */
+        data class Ready(val text: String) : State
         /** [canRetry]: the audio is kept, and [retry] sends it again. */
         data class Error(
             val kind: ErrorKind,
             val detail: String? = null,
             val canRetry: Boolean = false,
-        ) : State
+        ) : State {
+            /**
+             * The error waits for the user, who taps to retry or drags to ✕ to drop the audio.
+             * Quota and rejection don't: retrying now would fail the same way.
+             */
+            val waits get() = canRetry && kind != ErrorKind.QUOTA && kind != ErrorKind.REJECTED
+        }
     }
 
     enum class ErrorKind { NO_MIC, NOTHING_HEARD, QUOTA, REJECTED, NETWORK, OTHER }
@@ -47,6 +56,9 @@ object Dictation {
     val level: StateFlow<Float> = _level.asStateFlow()
 
     private var session: DictationSession? = null
+    /** The field the dictation started in; the text goes back there even if it lost focus. */
+    private var target: InsertionService.Target? = null
+    @Volatile private var lastStream: S3Stream? = null
     private var debug = false
     @Volatile private var levelOverride: Float? = null
 
@@ -72,6 +84,8 @@ object Dictation {
         val pending = java.io.File(app.noBackupFilesDir, "pending")
         pending.deleteRecursively()
         _state.value = State.Listening
+        target = InsertionService.instance?.captureTarget()
+        lastStream = null
         levelOverride = null
         debug = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val settings = Prefs.settings.value
@@ -83,7 +97,8 @@ object Dictation {
         lateinit var s: DictationSession
         s = DictationSession(
             dir = java.io.File(pending, System.currentTimeMillis().toString()),
-            newRecognizer = { onDone -> S3Stream(request, onDone) },
+            // The last stream holds the final result's intent: later segments and retries make new ones.
+            newRecognizer = { onDone -> S3Stream(request, onDone).also { lastStream = it } },
             onLevel = { heard ->
                 val l = levelOverride ?: heard
                 _level.value = l
@@ -121,17 +136,30 @@ object Dictation {
     fun cancel() {
         session?.cancel()
         session = null
+        target = null
         _level.value = 0f
         _state.value = State.Idle
     }
 
-    /** Returns to [State.Idle] once an overlay has shown a [State.Done] or [State.Error]. */
+    /**
+     * Returns to [State.Idle] once an overlay has shown a [State.Done] or an [State.Error] that
+     * doesn't wait; one that [State.Error.waits] keeps its audio for the user (P5).
+     */
     fun acknowledge() {
-        if (_state.value is State.Done || _state.value is State.Error) _state.value = State.Idle
+        val st = _state.value
+        if (st is State.Done || (st is State.Error && !st.waits)) _state.value = State.Idle
     }
 
-    /** Types [text] into the focused field, as [Output.INSERT] does; used for held text. */
-    fun insert(context: Context, text: String) = InsertionService.deliver(context, text)
+    /** Drops text waiting in [State.Ready]; it stays on the clipboard. */
+    fun discard() {
+        if (_state.value is State.Ready) _state.value = State.Idle
+    }
+
+    /** [State.Ready]'s text went into a field the user focused. */
+    internal fun readyInserted() {
+        val ready = _state.value as? State.Ready ?: return
+        _state.value = State.Done(ready.text, Output.INSERT, delivered = true)
+    }
 
     fun copy(context: Context, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -144,26 +172,34 @@ object Dictation {
     }
 
     /** Delivers [text] as if the server had sent it; for the debug build's test hook. */
-    internal fun fakeResult(context: Context, text: String) {
+    internal fun fakeResult(context: Context, text: String, intent: Int = UserIntent.DICTATION) {
+        if (_state.value != State.Listening) target = InsertionService.instance?.captureTarget()
         session?.cancel()
         session = null
         _state.value = State.Finishing
-        finish(context.applicationContext, null, Result.success(text))
+        finish(context.applicationContext, null, Result.success(text), intent, text)
     }
 
     private fun finish(context: Context, from: DictationSession?, r: Result<String>) {
+        val last = lastStream
+        finish(context, from, r, last?.intent ?: UserIntent.DICTATION, last?.transcript)
+    }
+
+    private fun finish(context: Context, from: DictationSession?, r: Result<String>, intent: Int, transcript: String?) {
         if (_state.value == State.Idle || from !== session) return // cancelled or replaced
         _level.value = 0f
-        // A failed dictation keeps its session, and with it the audio, for retry.
+        // A failed dictation keeps its session, and with it the audio and the field, for retry.
         val retryable = r.isFailure && kindOf(r.exceptionOrNull()!!) != ErrorKind.NO_MIC
+        val into = target
         if (!retryable) {
             session?.discard()
             session = null
+            target = null
         }
         _state.value = r.fold(
             onSuccess = { text ->
                 if (text.isBlank()) State.Error(ErrorKind.NOTHING_HEARD)
-                else deliver(context, text)
+                else deliver(context, text, intent, transcript, into)
             },
             onFailure = { e ->
                 android.util.Log.e(TAG, "dictation failed", e)
@@ -172,24 +208,25 @@ object Dictation {
         )
     }
 
-    private fun deliver(context: Context, text: String): State.Done {
-        // Without the accessibility service the insert broadcast reaches no one: copy instead,
-        // and say so.
-        val output = Prefs.settings.value.output.let {
-            if (it == Output.INSERT && !canInsert(context)) Output.CLIPBOARD else it
+    /**
+     * Into the field the dictation started in while it still exists. Otherwise onto the
+     * clipboard, where Android's own preview offers paste and edit, and [State.Ready] until the
+     * user focuses a field. A result the server read as a command (edit, rewrite, compose) is
+     * never typed as if dictated: the user's own words go to the clipboard only.
+     */
+    private fun deliver(
+        context: Context, text: String, intent: Int, transcript: String?, into: InsertionService.Target?,
+    ): State {
+        if (!UserIntent.isDictation(intent)) {
+            val words = transcript?.takeIf { it.isNotBlank() } ?: text
+            copy(context, words)
+            return State.Done(words, Output.CLIPBOARD, delivered = true)
         }
-        when (output) {
-            Output.INSERT -> InsertionService.deliver(context, text)
-            Output.CLIPBOARD -> copy(context, text)
-            Output.HOLD -> Unit
+        if (into != null && InsertionService.instance?.insert(into, text) == true) {
+            return State.Done(text, Output.INSERT, delivered = true)
         }
-        return State.Done(text, output, delivered = output != Output.HOLD)
-    }
-
-    private fun canInsert(context: Context): Boolean {
-        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-        return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-            .any { it.resolveInfo.serviceInfo.packageName == context.packageName }
+        copy(context, text)
+        return State.Ready(text)
     }
 
     internal fun kindOf(e: Throwable): ErrorKind = when (e) {

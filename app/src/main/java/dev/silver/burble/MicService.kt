@@ -23,16 +23,12 @@ import kotlinx.coroutines.launch
  * the while-in-use RECORD_AUDIO permission at creation; from Android 14 creating one while
  * the app is in the background throws SecurityException
  * (https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start#wiu-restrictions).
- * Every trigger starts it while the app holds that permission:
- * - Accessibility button: comes through [ButtonService], itself an accessibility service.
- * - Quick Settings tile: needs [InsertionService] connected.
- *   The system binds accessibility services with BIND_INCLUDE_CAPABILITIES and
+ * Every start holds that permission:
+ * - Bubble: hosted by [InsertionService] as an accessibility overlay. The system binds
+ *   accessibility services with BIND_INCLUDE_CAPABILITIES and
  *   BIND_ALLOW_BACKGROUND_ACTIVITY_STARTS (AOSP AccessibilityServiceConnection.bindLocked),
  *   so our process inherits system_server's microphone capability and may start foreground
  *   services from the background ("your app can start an activity from the background").
- *   A tile click also puts us on the power-save temp allowlist for 15 s
- *   (AOSP TileLifecycleManager.onClick, REASON_TILE_ONCLICK).
- * - Bubble: hosted by [InsertionService] as an accessibility overlay, same binding as above.
  * - In-app buttons: the activity is visible.
  */
 class MicService : Service() {

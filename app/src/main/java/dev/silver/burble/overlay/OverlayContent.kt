@@ -3,13 +3,13 @@ package dev.silver.burble.overlay
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.updateTransition
-import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,39 +19,31 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.VoiceOverOff
-import androidx.compose.material3.Button
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.toPath
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -63,302 +55,275 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Matrix
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import dev.silver.burble.BubbleShape
+import dev.silver.burble.BubbleSize
 import dev.silver.burble.Dictation
 import dev.silver.burble.Dictation.ErrorKind
-import dev.silver.burble.Output
 import dev.silver.burble.Prefs
 import dev.silver.burble.R
 import kotlinx.coroutines.delay
-import kotlin.math.max
 
-/** What the overlay draws; several [Dictation.State]s share one. */
+/** What the bubble draws; several [Dictation.State]s share one. */
 internal sealed interface Look {
     data object Idle : Look
     data object Listening : Look
     data object Finishing : Look
-    data object Inserted : Look
-    data object Copied : Look
-    data class Held(val text: String) : Look
-    data class Failed(val kind: ErrorKind) : Look
+    data object Done : Look
+    data object Ready : Look
+    /** [waits]: the audio is kept; a tap retries it. */
+    data class Failed(val kind: ErrorKind, val waits: Boolean = false) : Look
 }
 
 internal fun Dictation.State.look(): Look = when (this) {
     Dictation.State.Idle -> Look.Idle
     Dictation.State.Listening -> Look.Listening
     Dictation.State.Finishing -> Look.Finishing
-    is Dictation.State.Done -> when (output) {
-        Output.INSERT -> Look.Inserted
-        Output.CLIPBOARD -> Look.Copied
-        Output.HOLD -> Look.Held(text)
-    }
-    is Dictation.State.Error -> Look.Failed(kind)
+    is Dictation.State.Done -> Look.Done
+    is Dictation.State.Ready -> Look.Ready
+    is Dictation.State.Error -> Look.Failed(kind, waits)
 }
 
-internal class OverlayActions(
-    val start: () -> Unit,
-    val cancel: () -> Unit,
-    val stop: () -> Unit,
-    val insert: (String) -> Unit,
-    val copy: (String) -> Unit,
-    val dismiss: () -> Unit,
-) {
-    companion object {
-        val None = OverlayActions({}, {}, {}, {}, {}, {})
-    }
+internal fun BubbleSize.dp(): Dp = when (this) {
+    BubbleSize.SMALL -> 52.dp
+    BubbleSize.MEDIUM -> 64.dp
+    BubbleSize.LARGE -> 76.dp
 }
 
-/** The overlay wired to [Dictation] and [Prefs]: confirmations time out, haptics mark changes. */
+/** The bubble wired to [Dictation] and [Prefs]: results time out, haptics mark changes. */
 @Composable
-internal fun LiveOverlay(idleBubble: State<Boolean>, alignEnd: State<Boolean>) {
+internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>) {
     val context = LocalContext.current
     val state by Dictation.state.collectAsState()
     val settings by Prefs.settings.collectAsState()
     val look = state.look()
     val view = LocalView.current
     var last by remember { mutableStateOf(look) }
+    var labelled by remember { mutableStateOf(false) }
     LaunchedEffect(look) {
         if (look::class != last::class) haptic(view, look)
         last = look
+        labelled = look is Look.Failed
         val hold = when (look) {
-            Look.Inserted -> 900L
-            Look.Copied -> 1500L
-            is Look.Failed -> if (look.kind == ErrorKind.QUOTA || look.kind == ErrorKind.REJECTED) 5000L else 3000L
+            Look.Done -> 700L
+            is Look.Failed -> 4000L
             else -> return@LaunchedEffect
         }
         delay(hold)
+        labelled = false
+        // A waiting error stays: error colour and retry glyph, until a tap or ✕.
         Dictation.acknowledge()
     }
-    if (look == Look.Idle && !idleBubble.value) return
-    val actions = remember(context) {
-        OverlayActions(
-            start = { Dictation.start(context) },
-            cancel = { Dictation.cancel() },
-            stop = { Dictation.stop() },
-            insert = { Dictation.insert(context, it); Dictation.acknowledge() },
-            copy = { Dictation.copy(context, it); Dictation.acknowledge() },
-            dismiss = { Dictation.acknowledge() },
-        )
-    }
-    OverlayContent(look, settings.shape, actions, alignEnd.value) { color, modifier ->
-        LiveWave(Dictation.level, color, modifier)
-    }
+    if (locked.value) return
+    OverlayContent(look, settings.shape, settings.bubbleSize, alignEnd.value, labelled, onTap = {
+        when (look) {
+            // Ready: the waiting text stays on the clipboard. Failed: retries the kept audio,
+            // or starts over when there is none.
+            Look.Idle, Look.Ready, Look.Listening, is Look.Failed -> Dictation.toggle(context)
+            Look.Finishing, Look.Done -> Unit
+        }
+    }) { color, modifier -> LiveWave(Dictation.level, color, modifier) }
 }
 
 private fun haptic(view: View, look: Look) {
     val effect = when (look) {
-        Look.Listening -> HapticFeedbackConstants.VIRTUAL_KEY
-        Look.Finishing -> HapticFeedbackConstants.VIRTUAL_KEY_RELEASE
-        Look.Inserted, Look.Copied, is Look.Held ->
-            HapticFeedbackConstants.CONFIRM
+        Look.Listening -> HapticFeedbackConstants.GESTURE_START
+        Look.Finishing -> HapticFeedbackConstants.GESTURE_END
+        Look.Done, Look.Ready -> HapticFeedbackConstants.CONFIRM
         is Look.Failed -> HapticFeedbackConstants.REJECT
         Look.Idle -> return
     }
     view.performHapticFeedback(effect)
 }
 
-/** Draws the wave band; the host passes the live one, screenshot tests a frozen one. */
+/**
+ * The wave's hue: the theme's tertiary, as Gboard's bar uses, at a light tone. Light themes'
+ * tertiary is dark (tone 40), so it is lifted towards its container; dark themes' is already
+ * light (tone 80).
+ */
+internal fun ColorScheme.waveColor(): Color =
+    if (surface.luminance() < 0.5f) tertiary else lerp(tertiary, tertiaryContainer, 0.6f)
+
+/** Draws the wave; the live overlay passes the mic's, screenshot tests a frozen one. */
 internal typealias WaveSlot = @Composable (color: Color, modifier: Modifier) -> Unit
 
-private val Corner = 28.dp
-private val Bubble = 56.dp
-
 /**
- * The bubble and the shapes it turns into. Leaving idle, the bubble's shape first morphs to a
- * circle, then the circle stretches into the pill; coming back, the reverse. Every wider look is
- * a rounded rectangle with the circle's corner radius, so the stretch has no seam.
+ * The bubble, the only thing Burble draws over other apps. It keeps its shape and size in
+ * every state, so nothing it covers changes while you talk: the wave, the loader and the check
+ * all play inside it. An error tints it and puts a one-line reason beside it, on the side
+ * facing the middle of the screen.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun OverlayContent(
     look: Look,
     shape: BubbleShape,
-    actions: OverlayActions,
-    /** Pinned to the right edge: grow leftwards. */
+    size: BubbleSize,
+    /** Pinned to the right edge: the label goes on the left. */
     alignEnd: Boolean,
+    /** An error's reason shows beside the bubble; it goes after 4 s, the error colour stays. */
+    labelled: Boolean,
+    onTap: () -> Unit,
     wave: WaveSlot,
 ) {
-    val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-    val fast = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
-    val morph = remember(shape) { Morph(shape.polygon(), MaterialShapes.Circle) }
-    val progress = remember { Animatable(if (look == Look.Idle) 0f else 1f) }
-    var shown by remember { mutableStateOf(look) }
-    LaunchedEffect(look) {
-        when {
-            shown == Look.Idle && look != Look.Idle -> {
-                progress.animateTo(1f, fast)
-                shown = look
-            }
-            look == Look.Idle && shown != Look.Idle -> {
-                shown = look
-                delay(250) // let the pill shrink back to a circle first
-                progress.animateTo(0f, spatial)
-            }
-            else -> shown = look
-        }
-    }
-
     val colors = MaterialTheme.colorScheme
-    val (container, content) = when (shown) {
-        Look.Idle, Look.Finishing -> colors.primaryContainer to colors.onPrimaryContainer
-        Look.Inserted -> colors.primary to colors.onPrimary
-        is Look.Failed -> if ((shown as Look.Failed).kind == ErrorKind.NOTHING_HEARD) {
-            colors.surfaceContainerHigh to colors.onSurface
-        } else {
-            colors.errorContainer to colors.onErrorContainer
-        }
-        else -> colors.surfaceContainerHigh to colors.onSurface
+    val (container, content) = when (look) {
+        Look.Done -> colors.primary to colors.onPrimary
+        Look.Ready -> colors.tertiaryContainer to colors.onTertiaryContainer
+        is Look.Failed -> colors.errorContainer to colors.onErrorContainer
+        // Gboard's bar: the glow on the plain surface.
+        Look.Listening -> colors.surfaceContainerLowest to colors.onSurface
+        else -> colors.primaryContainer to colors.onPrimaryContainer
     }
     val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Color>()
-    val fadeSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val fadeInSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     val fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val sizeSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntSize>()
     val bg by animateColorAsState(container, effects)
     val fg by animateColorAsState(content, effects)
-
     val press = remember { MutableInteractionSource() }
     val pressed by press.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.9f else 1f, fast)
-    val rounded = remember { RoundedCornerShape(Corner) }
+    val scale by animateFloatAsState(if (pressed) 0.9f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
+    val polygon = shape.polygon()
+    val outline = polygon.toShape()
+    val side = size.dp()
+    val label = (look as? Look.Failed)?.takeIf { labelled }?.let { stringResource(it.kind.message()) }
 
-    // Resizing an overlay window is a round trip to the system, too slow to do every frame.
-    // During a change of look the window takes both looks' bounds at once, and the container
-    // animates inside it.
-    val transition = updateTransition(shown, label = "look")
-    var bounds by remember { mutableStateOf(IntSize.Zero) }
-    Box(
-        Modifier
-            .padding(8.dp) // room for the shadow
-            .layout { measurable, constraints ->
-                val p = measurable.measure(constraints)
-                val hold = transition.isRunning || transition.currentState != transition.targetState
-                val w = if (hold) max(p.width, bounds.width) else p.width
-                val h = if (hold) max(p.height, bounds.height) else p.height
-                layout(w, h) { p.place(if (alignEnd) w - p.width else 0, 0) }
-            },
+    // Room for the shadow inside the window.
+    Row(
+        Modifier.padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (alignEnd) Label(label)
         Box(
             Modifier
+                .size(side)
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                     shadowElevation = 6.dp.toPx()
-                    this.shape = progress.value.let { if (it >= 1f) rounded else MorphShape(morph, it, rounded) }
-                    clip = true
+                    this.shape = outline
                 }
-                .drawBehind { drawRect(bg) },
+                // Drawn offscreen, then everything outside the shape cleared: a mask, not a clip.
+                // Android clips children to a non-convex outline only from 13 on, and a child
+                // fading in at partial alpha showed its square past the shape.
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithCache {
+                    val outside = Path().apply {
+                        addRect(Rect(Offset.Zero, this@drawWithCache.size))
+                        addOutline(outline.createOutline(this@drawWithCache.size, layoutDirection, this@drawWithCache))
+                        fillType = PathFillType.EvenOdd
+                    }
+                    onDrawWithContent {
+                        drawRect(bg)
+                        drawContent()
+                        drawPath(outside, Color.Black, blendMode = BlendMode.Clear)
+                    }
+                }
+                .clickable(press, null, onClickLabel = stringResource(look.action())) { onTap() },
+            contentAlignment = Alignment.Center,
         ) {
-            transition.AnimatedContent(
+            AnimatedContent(
+                targetState = look,
                 contentKey = { it::class },
-                contentAlignment = if (alignEnd) Alignment.TopEnd else Alignment.TopStart,
                 transitionSpec = {
-                    fadeIn(fadeSpec) togetherWith fadeOut(fadeOutSpec) using
-                        SizeTransform(clip = false) { from, to ->
-                            bounds = IntSize(max(from.width, to.width), max(from.height, to.height))
-                            sizeSpec
-                        }
+                    // Every look fills the bubble, so no size transform clips one to a growing box.
+                    fadeIn(fadeInSpec) togetherWith fadeOut(fadeOutSpec) using null
                 },
+                contentAlignment = Alignment.Center,
             ) { s ->
-                when (s) {
-                    Look.Idle -> Box(
-                        Modifier.size(Bubble).clickable(press, null, onClickLabel = null) { actions.start() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Rounded.Mic, stringResource(R.string.overlay_start), Modifier.size(26.dp), fg)
-                    }
-                    // The wave spans the whole pill under the buttons, as in Gboard's voice bar.
-                    Look.Listening -> Box(Modifier.width(264.dp).height(Bubble)) {
-                        wave(colors.primary, Modifier.fillMaxWidth().height(44.dp).align(Alignment.BottomCenter))
-                        Row(
-                            Modifier.matchParentSize().padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RoundButton(Icons.Rounded.Close, stringResource(R.string.overlay_cancel),
-                                colors.surfaceContainerLowest, colors.onSurface, actions.cancel)
-                            Spacer(Modifier.weight(1f))
-                            RoundButton(Icons.Rounded.Check, stringResource(R.string.overlay_stop),
-                                colors.primary, colors.onPrimary, actions.stop)
-                        }
-                    }
-                    Look.Finishing -> Box(Modifier.size(Bubble), contentAlignment = Alignment.Center) {
-                        LoadingIndicator(Modifier.size(44.dp), color = fg)
-                    }
-                    Look.Inserted -> Box(Modifier.size(Bubble), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Check, stringResource(R.string.overlay_inserted), Modifier.size(28.dp), fg)
-                    }
-                    Look.Copied -> Note(Icons.Rounded.ContentCopy, stringResource(R.string.overlay_copied), fg,
-                        colors.primary, actions.dismiss)
-                    is Look.Held -> Held(s.text, fg, actions)
-                    is Look.Failed -> Note(s.kind.icon(), stringResource(s.kind.message()), fg, fg, actions.dismiss)
-                }
+                val glyph = Modifier.size(side * 0.42f)
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { when (s) {
+                    Look.Idle -> Icon(Icons.Rounded.Mic, stringResource(R.string.overlay_start), glyph, fg)
+                    Look.Listening -> wave(colors.waveColor(), Modifier.fillMaxSize())
+                    Look.Finishing -> LoadingIndicator(Modifier.size(side * 0.72f), color = colors.primary)
+                    Look.Done -> Icon(Icons.Rounded.Check, stringResource(R.string.overlay_inserted), glyph, fg)
+                    Look.Ready -> Icon(Icons.Rounded.ContentPaste, stringResource(R.string.overlay_ready), glyph, fg)
+                    is Look.Failed -> Icon(if (s.waits) Icons.Rounded.Refresh else s.kind.icon(),
+                        stringResource(s.kind.message()), glyph, fg)
+                } }
             }
         }
+        if (!alignEnd) Label(label)
     }
 }
 
+/** The reason for an error, beside the bubble: one line, on the inverse surface like a snackbar. */
 @Composable
-private fun RoundButton(icon: ImageVector, label: String, container: Color, content: Color, onClick: () -> Unit) {
-    Box(
-        Modifier.size(40.dp).background(container, CircleShape).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, label, Modifier.size(22.dp), content)
-    }
-}
-
-/** One line or two, with an icon: confirmations and errors. Tap to dismiss. */
-@Composable
-private fun Note(icon: ImageVector, text: String, fg: Color, iconColor: Color, onClick: () -> Unit) {
-    Row(
-        Modifier.widthIn(max = 296.dp).heightIn(min = Bubble).clickable(onClick = onClick)
-            .padding(start = 18.dp, end = 22.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Icon(icon, null, Modifier.size(22.dp), iconColor)
-        Text(text, color = fg, style = MaterialTheme.typography.bodyLarge, maxLines = 2,
-            overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-private fun Held(text: String, fg: Color, actions: OverlayActions) {
-    Column(Modifier.width(296.dp).padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 8.dp)) {
+private fun Label(text: String?) {
+    AnimatedVisibility(text != null, enter = fadeIn() + scaleIn(initialScale = 0.9f), exit = fadeOut()) {
         Text(
-            text,
-            Modifier.heightIn(max = 168.dp).padding(end = 8.dp).verticalScroll(rememberScrollState()),
-            color = fg,
-            style = MaterialTheme.typography.bodyLarge,
+            text.orEmpty(),
+            Modifier
+                .widthIn(max = 260.dp)
+                .graphicsLayer { shadowElevation = 3.dp.toPx(); shape = CircleShape; clip = true }
+                .background(MaterialTheme.colorScheme.inverseSurface)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.inverseOnSurface,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(actions.dismiss) {
-                Icon(Icons.Rounded.Close, stringResource(R.string.overlay_dismiss),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Spacer(Modifier.weight(1f))
-            FilledTonalButton({ actions.copy(text) }) { Text(stringResource(R.string.overlay_copy)) }
-            Spacer(Modifier.width(8.dp))
-            Button({ actions.insert(text) }) { Text(stringResource(R.string.overlay_insert)) }
-        }
     }
+}
+
+/**
+ * The drop target at the bottom of the screen while the bubble is dragged. [discards]: a
+ * dictation is running or its text waits for a field, so dropping drops it; otherwise dropping
+ * turns the bubble off.
+ */
+@Composable
+internal fun DismissTarget(armed: Boolean, discards: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    val grow by animateFloatAsState(if (armed) 1.2f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
+    val bg by animateColorAsState(if (armed) colors.error else colors.inverseSurface)
+    val fg by animateColorAsState(if (armed) colors.onError else colors.inverseOnSurface)
+    Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .size(64.dp)
+                .graphicsLayer { scaleX = grow; scaleY = grow; shadowElevation = 6.dp.toPx(); shape = CircleShape; clip = true }
+                .drawBehind { drawRect(bg) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Close, null, Modifier.size(28.dp), fg)
+        }
+        Text(
+            stringResource(if (discards) R.string.overlay_drop_cancel else R.string.overlay_drop_off),
+            Modifier
+                .padding(top = 12.dp)
+                .background(colors.inverseSurface, CircleShape)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            color = colors.inverseOnSurface,
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
+}
+
+private fun Look.action() = when (this) {
+    Look.Listening -> R.string.overlay_stop
+    Look.Ready -> R.string.overlay_start
+    is Look.Failed -> R.string.overlay_retry
+    else -> R.string.overlay_start
 }
 
 private fun ErrorKind.message() = when (this) {
@@ -370,7 +335,7 @@ private fun ErrorKind.message() = when (this) {
     ErrorKind.OTHER -> R.string.overlay_error_other
 }
 
-private fun ErrorKind.icon() = when (this) {
+private fun ErrorKind.icon(): ImageVector = when (this) {
     ErrorKind.NO_MIC -> Icons.Rounded.MicOff
     ErrorKind.NOTHING_HEARD -> Icons.Rounded.VoiceOverOff
     ErrorKind.QUOTA -> Icons.Rounded.HourglassEmpty
@@ -387,15 +352,4 @@ internal fun BubbleShape.polygon(): RoundedPolygon = when (this) {
     BubbleShape.CIRCLE -> MaterialShapes.Circle
     BubbleShape.PILL -> MaterialShapes.Pill
     BubbleShape.SOFT_BURST -> MaterialShapes.SoftBurst
-}
-
-/** The bubble's shape [progress] of the way to a circle; [wide] once it is no longer square. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private class MorphShape(private val morph: Morph, private val progress: Float, private val wide: Shape) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        if (kotlin.math.abs(size.width - size.height) > 0.5f) return wide.createOutline(size, layoutDirection, density)
-        val path = morph.toPath(progress)
-        path.transform(Matrix().apply { scale(size.width, size.height) })
-        return Outline.Generic(path)
-    }
 }

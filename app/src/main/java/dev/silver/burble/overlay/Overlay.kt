@@ -28,7 +28,10 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import dev.silver.burble.OverlayHost
+import android.view.HapticFeedbackConstants
+import dev.silver.burble.Dictation
+import dev.silver.burble.Prefs
+import dev.silver.burble.recording
 import dev.silver.burble.ui.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -39,10 +42,11 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * The floating dictation overlay: a Compose window outside any activity that renders
- * [dev.silver.burble.Dictation]. Drag it anywhere; on release it springs to the nearest
- * side edge and remembers where it sits. [windowType] is the host's: TYPE_APPLICATION_OVERLAY
- * from a service, TYPE_ACCESSIBILITY_OVERLAY from the accessibility service.
+ * The bubble: a Compose window outside any activity that renders [Dictation]. Drag it anywhere;
+ * on release it springs to the nearest side edge and remembers where it sits. While dragging, a
+ * ✕ target shows at the bottom: dropping the bubble there cancels a dictation, drops the audio
+ * of an error waiting for retry or text waiting for a field, or else turns the bubble off. [windowType] is the host's, TYPE_ACCESSIBILITY_OVERLAY from the
+ * accessibility service.
  *
  * A configuration change (rotation, fold, dark mode) only re-places the window: the view, its
  * composition and the dictation all carry on.
@@ -51,12 +55,28 @@ class Overlay(
     private val context: Context,
     private val windowManager: WindowManager,
     private val windowType: Int,
-) : OverlayHost {
-    /** When false, the overlay shows only while a dictation is under way, not the idle bubble. */
-    var idleBubble: Boolean
-        get() = showIdle.value
-        set(value) { showIdle.value = value }
-    private val showIdle = mutableStateOf(true)
+) {
+    /** While true (the lock screen is up) nothing shows; a dictation carries on unseen. */
+    var locked: Boolean
+        get() = hidden.value
+        set(value) { hidden.value = value }
+    private val hidden = mutableStateOf(false)
+
+    private val density = context.resources.displayMetrics.density
+    private var target: ComposeView? = null
+    private val armed = mutableStateOf(false)
+    private val targetParams = WindowManager.LayoutParams(
+        WindowManager.LayoutParams.WRAP_CONTENT,
+        WindowManager.LayoutParams.WRAP_CONTENT,
+        windowType,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+        PixelFormat.TRANSLUCENT,
+    ).apply {
+        title = "Burble dismiss"
+        gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+    }
 
     private val prefs = context.getSharedPreferences("overlay", Context.MODE_PRIVATE)
     private var root: DragFrame? = null
@@ -75,7 +95,7 @@ class Overlay(
     ).apply { title = "Burble" }
 
     /** Pinned to the right edge; then [WindowManager.LayoutParams.x] counts from the right, so
-     * the pill grows towards the middle of the screen whichever side it sits on. */
+     * the error label grows towards the middle of the screen whichever side it sits on. */
     private val alignEnd = mutableStateOf(prefs.getBoolean(KEY_RIGHT, true))
     private var onRight
         get() = alignEnd.value
@@ -85,7 +105,7 @@ class Overlay(
 
     val isShown get() = root != null
 
-    override fun show() {
+    fun show() {
         if (root != null) return
         val o = Owner().also { owner = it }
         scope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main)
@@ -94,10 +114,10 @@ class Overlay(
         frame.setViewTreeSavedStateRegistryOwner(o)
         frame.setViewTreeViewModelStoreOwner(o)
         frame.addView(ComposeView(context).apply {
-            setContent { AppTheme { LiveOverlay(showIdle, alignEnd) } }
+            setContent { AppTheme { LiveOverlay(alignEnd, hidden) } }
         })
         frame.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
-            // A state change resized the window (the pill, the held text): keep it on screen.
+            // The error label resized the window: keep it on screen.
             if (r - l != oldR - oldL || b - t != oldB - oldT) place(animate = true)
         }
         place(animate = false)
@@ -106,8 +126,9 @@ class Overlay(
         o.resume()
     }
 
-    override fun hide() {
+    fun hide() {
         val frame = root ?: return
+        hideTarget()
         root = null
         scope?.cancel()
         scope = null
@@ -128,7 +149,7 @@ class Overlay(
             b.width()
     }
 
-    private fun width() = root?.width?.takeIf { it > 0 } ?: (BUBBLE_DP * context.resources.displayMetrics.density).roundToInt()
+    private fun width() = root?.width?.takeIf { it > 0 } ?: (BUBBLE_DP * density).roundToInt()
     private fun height() = root?.height?.takeIf { it > 0 } ?: width()
 
     /** Puts the window at its remembered side and height, clamped to the current screen. */
@@ -167,8 +188,66 @@ class Overlay(
         }
     }
 
-    /** After a drag: pick the nearer side, spring to it, remember it. */
+    // ---- dismiss target ----
+
+    private fun showTarget() {
+        if (target != null) return
+        val (area, _) = area()
+        targetParams.y = windowManager.currentWindowMetrics.bounds.bottom - area.bottom +
+            (TARGET_MARGIN_DP * density).roundToInt()
+        armed.value = false
+        val view = ComposeView(context).apply {
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
+            setViewTreeViewModelStoreOwner(owner)
+            val st = Dictation.state.value
+            val discards = st.recording || st is Dictation.State.Ready || (st as? Dictation.State.Error)?.waits == true
+            setContent { AppTheme { DismissTarget(armed.value, discards) } }
+        }
+        runCatching { windowManager.addView(view, targetParams) }
+        target = view
+    }
+
+    private fun hideTarget() {
+        target?.let { runCatching { windowManager.removeView(it) } }
+        target = null
+        armed.value = false
+    }
+
+    /** The target's centre and the bubble's, in screen pixels; arms the target when close. */
+    private fun track() {
+        val frame = root ?: return
+        val b = windowManager.currentWindowMetrics.bounds
+        val tx = b.width() / 2f
+        val half = TARGET_DP * density / 2
+        val ty = b.bottom - targetParams.y - half
+        val pad = PADDING_DP * density
+        val bubble = frame.height - 2 * pad
+        val left = if (onRight) b.width() - params.x - frame.width else params.x
+        val cx = left + if (onRight) frame.width - pad - bubble / 2 else pad + bubble / 2
+        val cy = params.y + frame.height / 2f
+        val near = kotlin.math.hypot(cx - tx, cy - ty) < ARM_DP * density
+        if (near != armed.value) {
+            armed.value = near
+            if (near) frame.performHapticFeedback(HapticFeedbackConstants.SEGMENT_TICK)
+        }
+    }
+
+    /** After a drag: drop on ✕, or pick the nearer side, spring to it, remember it. */
     private fun release() {
+        val drop = armed.value
+        hideTarget()
+        if (drop) {
+            root?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            val st = Dictation.state.value
+            when {
+                st.recording || (st as? Dictation.State.Error)?.waits == true -> Dictation.cancel()
+                st is Dictation.State.Ready -> Dictation.discard()
+                else -> Prefs.update { it.copy(bubbleOn = false) }
+            }
+            place(animate = true)
+            return
+        }
         val (area, screenW) = area()
         val w = width()
         val h = height()
@@ -212,6 +291,7 @@ class Overlay(
                     val dy = e.rawY - downY
                     if (!dragging && abs(dx) + abs(dy) > slop) {
                         dragging = true
+                        showTarget()
                         val cancel = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }
                         super.dispatchTouchEvent(cancel)
                         cancel.recycle()
@@ -220,6 +300,7 @@ class Overlay(
                         params.x = startX + ((if (onRight) -1 else 1) * dx).roundToInt()
                         params.y = startY + dy.roundToInt()
                         apply()
+                        track()
                         return true
                     }
                 }
@@ -235,6 +316,7 @@ class Overlay(
         override fun onConfigurationChanged(newConfig: Configuration) {
             super.onConfigurationChanged(newConfig)
             dragging = false
+            hideTarget()
             // The new window metrics land after this callback.
             post { place(animate = false) }
         }
@@ -267,6 +349,11 @@ class Overlay(
     private companion object {
         const val KEY_RIGHT = "right"
         const val KEY_FRACTION = "fraction"
-        const val BUBBLE_DP = 68
+        const val BUBBLE_DP = 80
+        const val PADDING_DP = 8
+        const val TARGET_DP = 64
+        const val TARGET_MARGIN_DP = 32
+        /** How close the bubble's centre must come to the target's to drop there. */
+        const val ARM_DP = 72
     }
 }

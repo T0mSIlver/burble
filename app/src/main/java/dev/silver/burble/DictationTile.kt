@@ -17,9 +17,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
- * Quick Settings tile that starts and stops dictation. It needs [InsertionService]
- * connected: that is where the text goes, and what lets the tile start the microphone from
- * the background (see [MicService]). Without it the tile opens the app.
+ * Quick Settings tile that turns the bubble on and off. The bubble lives in [InsertionService],
+ * so without it the tile opens the app to set it up.
  */
 class DictationTile : TileService() {
 
@@ -30,7 +29,8 @@ class DictationTile : TileService() {
         super.onStartListening()
         watch?.cancel()
         watch = scope.launch {
-            combine(Dictation.state, InsertionService.connected, ::tileLook).collect(::render)
+            combine(Prefs.settings, InsertionService.connected) { s, on -> tileLook(s.bubbleOn, on) }
+                .collect(::render)
         }
     }
 
@@ -51,9 +51,7 @@ class DictationTile : TileService() {
             openApp()
             return
         }
-        // On the lock screen nothing is focused to type into, and the clipboard would leak
-        // dictation to whoever holds the phone.
-        if (isLocked) unlockAndRun { Dictation.toggle(this) } else Dictation.toggle(this)
+        Prefs.update { it.copy(bubbleOn = !it.bubbleOn) }
     }
 
     private fun render(look: TileLook) {
@@ -99,9 +97,8 @@ class DictationTile : TileService() {
 
 internal data class TileLook(val state: Int, val subtitle: Int?)
 
-internal fun tileLook(st: Dictation.State, serviceOn: Boolean): TileLook = when {
+internal fun tileLook(bubbleOn: Boolean, serviceOn: Boolean): TileLook = when {
     !serviceOn -> TileLook(Tile.STATE_INACTIVE, R.string.tile_needs_service)
-    st == Dictation.State.Listening -> TileLook(Tile.STATE_ACTIVE, R.string.tile_listening)
-    st == Dictation.State.Finishing -> TileLook(Tile.STATE_ACTIVE, R.string.tile_finishing)
+    bubbleOn -> TileLook(Tile.STATE_ACTIVE, null)
     else -> TileLook(Tile.STATE_INACTIVE, null)
 }

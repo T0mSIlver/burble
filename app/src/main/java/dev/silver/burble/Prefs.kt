@@ -36,6 +36,8 @@ data class Settings(
     val checkUpdates: Boolean = true,
     /** BCP-47 tags the user speaks; the first is [language], the others go as secondary locales. */
     val languages: List<String> = listOf(language),
+    /** The bubble is on; the Quick Settings tile and dragging it to ✕ turn it off. */
+    val bubbleOn: Boolean = true,
 )
 
 /** App settings in SharedPreferences, mirrored in a StateFlow every screen and service reads. */
@@ -64,6 +66,7 @@ object Prefs {
             .putBoolean("checkUpdates", next.checkUpdates)
             .putBoolean("hideKeyboard", next.hideKeyboard)
             .putString("languages", next.languages.joinToString(","))
+            .putBoolean("bubbleOn", next.bubbleOn)
             .apply()
         _settings.value = next
     }
@@ -84,6 +87,7 @@ object Prefs {
             hideKeyboard = sp.getBoolean("hideKeyboard", d.hideKeyboard),
             languages = sp.getString("languages", null)?.split(',')?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
                 ?: listOf(language),
+            bubbleOn = sp.getBoolean("bubbleOn", d.bubbleOn),
         )
     }
 

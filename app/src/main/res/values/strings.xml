@@ -4,7 +4,6 @@
     <string name="no_mic">Microphone permission missing</string>
     <string name="empty_result">Nothing was heard</string>
     <string name="quota">Dictation quota used up for now; try again later</string>
-    <string name="copied">No text field; copied: %1$s</string>
     <string name="failed">Dictation failed: %1$s</string>
     <string name="a11y_desc">Burble needs this to type your dictated words into the text field you are using. Android offers no other way to insert text into another app. After you dictate, it finds the focused text field and puts the words at the cursor. It does not read your screen, record what you type or watch other apps, and it sends nothing anywhere.</string>
     <string name="disclaimer_short">Burble is not affiliated with Google. Your dictation audio is sent to Google servers, through a service Google has not opened to third-party apps. It may stop working at any time.</string>
@@ -16,24 +15,21 @@
     <string name="mic_finishing">Getting the text…</string>
     <string name="mic_stop">Stop</string>
     <string name="mic_cancel">Cancel</string>
-    <string name="tile_label">Dictate</string>
-    <string name="tile_listening">Listening</string>
-    <string name="tile_finishing">Getting the text</string>
+    <string name="tile_label">Burble</string>
     <string name="tile_needs_service">Set up in the app</string>
     <string name="overlay_start">Start dictation</string>
-    <string name="overlay_cancel">Cancel</string>
     <string name="overlay_stop">Stop</string>
+    <string name="overlay_retry">Retry</string>
+    <string name="overlay_drop_cancel">Discard</string>
+    <string name="overlay_drop_off">Turn off the bubble</string>
     <string name="overlay_inserted">Inserted</string>
-    <string name="overlay_copied">Copied</string>
-    <string name="overlay_insert">Insert</string>
-    <string name="overlay_copy">Copy</string>
-    <string name="overlay_dismiss">Dismiss</string>
+    <string name="overlay_ready">Text ready. Tap a text field to insert it</string>
     <string name="overlay_error_no_mic">Can\'t use the microphone</string>
     <string name="overlay_error_nothing_heard">Didn\'t hear anything</string>
-    <string name="overlay_error_quota">Dictation limit reached. Try again later</string>
-    <string name="overlay_error_rejected">Google stopped accepting this app; check for an update</string>
-    <string name="overlay_error_network">Can\'t reach Google. Check your connection</string>
-    <string name="overlay_error_other">Dictation failed. Try again</string>
+    <string name="overlay_error_quota">Google\'s limit reached. Try later</string>
+    <string name="overlay_error_rejected">Google refused Burble. Update the app</string>
+    <string name="overlay_error_network">No connection. Tap to retry.</string>
+    <string name="overlay_error_other">Dictation failed. Tap to retry.</string>
 
     <!-- Onboarding -->
     <string name="onb_welcome_title">Dictate in any app</string>
@@ -79,8 +75,6 @@
     <string name="shape_pill">Pill</string>
     <string name="shape_burst">Burst</string>
     <string name="version">Version %1$s</string>
-    <string name="a11y_button_label">Burble dictation button</string>
-    <string name="a11y_button_desc">Starts and stops dictation from Android\'s accessibility button. Turn this on only if you want that button; the bubble and the Quick Settings tile don\'t need it. It reads nothing on screen.</string>
 
     <!-- Onboarding, optional steps -->
     <string name="onb_battery_title">Unrestricted battery</string>
