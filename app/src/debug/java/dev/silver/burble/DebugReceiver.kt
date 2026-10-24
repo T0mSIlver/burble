@@ -10,9 +10,10 @@ import android.content.Intent
  *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --es output HOLD
  *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --es text 'Hello there'
  *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --ef level 0.8
+ *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --es do start|stop|retry
  *
  * `output` sets [Settings.output]; `text` delivers a finished dictation through that output;
- * `level` replaces the mic level for the current dictation.
+ * `level` replaces the mic level for the current dictation; `do` acts as the bubble would.
  */
 class DebugReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -20,6 +21,11 @@ class DebugReceiver : BroadcastReceiver() {
             Prefs.update { it.copy(output = Output.valueOf(name)) }
         }
         intent.getStringExtra("text")?.let { Dictation.fakeResult(context, it) }
+        when (intent.getStringExtra("do")) {
+            "start" -> Dictation.start(context)
+            "stop" -> Dictation.stop()
+            "retry" -> Dictation.retry()
+        }
         if (intent.hasExtra("level")) Dictation.fakeLevel(intent.getFloatExtra("level", 0f))
     }
 }
