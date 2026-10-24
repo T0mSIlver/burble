@@ -298,17 +298,30 @@ private fun Label(text: String?) {
 }
 
 /**
- * The drop target at the bottom of the screen while the bubble is dragged. [discards]: a
- * dictation is running or its text waits for a field, so dropping drops it; otherwise dropping
- * turns the bubble off.
+ * The ✕ at the bottom of the screen while the bubble is dragged: a surface-container circle that
+ * grows and turns the error container colour when the bubble is over it. Dropping there closes
+ * the bubble. [hint], once ever, says how to bring it back.
  */
 @Composable
-internal fun DismissTarget(armed: Boolean, discards: Boolean) {
+internal fun DismissTarget(armed: Boolean, hint: String? = null) {
     val colors = MaterialTheme.colorScheme
     val grow by animateFloatAsState(if (armed) 1.2f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
-    val bg by animateColorAsState(if (armed) colors.error else colors.inverseSurface)
-    val fg by animateColorAsState(if (armed) colors.onError else colors.inverseOnSurface)
+    val bg by animateColorAsState(if (armed) colors.errorContainer else colors.surfaceContainerHighest)
+    val fg by animateColorAsState(if (armed) colors.onErrorContainer else colors.onSurface)
     Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (hint != null) {
+            Text(
+                hint,
+                Modifier
+                    .padding(bottom = 16.dp)
+                    .widthIn(max = 320.dp)
+                    .graphicsLayer { shadowElevation = 3.dp.toPx(); shape = CircleShape; clip = true }
+                    .background(colors.inverseSurface)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                color = colors.inverseOnSurface,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
         Box(
             Modifier
                 .size(64.dp)
@@ -316,17 +329,8 @@ internal fun DismissTarget(armed: Boolean, discards: Boolean) {
                 .drawBehind { drawRect(bg) },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Rounded.Close, null, Modifier.size(28.dp), fg)
+            Icon(Icons.Rounded.Close, stringResource(R.string.overlay_close), Modifier.size(28.dp), fg)
         }
-        Text(
-            stringResource(if (discards) R.string.overlay_drop_cancel else R.string.overlay_drop_off),
-            Modifier
-                .padding(top = 12.dp)
-                .background(colors.inverseSurface, CircleShape)
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            color = colors.inverseOnSurface,
-            style = MaterialTheme.typography.labelLarge,
-        )
     }
 }
 

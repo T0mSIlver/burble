@@ -3,6 +3,7 @@ package dev.silver.burble.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -15,18 +16,39 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
-/** One row of a settings card; [Group] gives it the shape of its place in the card. */
+/** One row of a settings group; [Group] gives it the shape of its place in the group. */
 typealias SettingRow = @Composable (ListItemShapes) -> Unit
 
-/** Rows joined into one card, as Android's own Settings groups them. */
+private val Outer = 24.dp
+private val Inner = 4.dp
+
+/**
+ * The corners of item [index] of [count] in a group, as Android 16's Settings draws them: large
+ * at the group's outer edges, small between items, large all round for a lone item. Every card
+ * and group in the app takes its shape from here.
+ */
+fun segmentShape(index: Int, count: Int): Shape {
+    val top = if (index == 0) Outer else Inner
+    val bottom = if (index == count - 1) Outer else Inner
+    return RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
+}
+
+/** The gap between the separate surfaces of one group. */
+val GroupGap = 2.dp
+
+/** Rows joined into one group, as Android's own Settings groups them. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun Group(rows: List<SettingRow>) {
-    Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-        rows.forEachIndexed { i, row -> row(ListItemDefaults.segmentedShapes(i, rows.size)) }
+    Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
+        rows.forEachIndexed { i, row ->
+            val shape = segmentShape(i, rows.size)
+            row(ListItemShapes(shape, shape, shape, shape, shape, shape))
+        }
     }
 }
 

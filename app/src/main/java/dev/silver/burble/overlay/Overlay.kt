@@ -32,6 +32,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import android.view.HapticFeedbackConstants
 import dev.silver.burble.Dictation
 import dev.silver.burble.Prefs
+import dev.silver.burble.R
 import dev.silver.burble.recording
 import dev.silver.burble.ui.theme.AppTheme
 import dev.silver.burble.BubbleShape
@@ -49,7 +50,7 @@ import kotlin.math.roundToInt
  * The bubble: a Compose window outside any activity that renders [Dictation]. Drag it anywhere;
  * on release it springs to the nearest side edge and remembers where it sits. While dragging, a
  * ✕ target shows at the bottom: dropping the bubble there cancels a dictation, drops the audio
- * of an error waiting for retry or text waiting for a field, or else turns the bubble off. [windowType] is the host's, TYPE_ACCESSIBILITY_OVERLAY from the
+ * of an error waiting for retry or text waiting for a field, or else closes the bubble. [windowType] is the host's, TYPE_ACCESSIBILITY_OVERLAY from the
  * accessibility service.
  *
  * A configuration change (rotation, fold, dark mode) only re-places the window: the view, its
@@ -229,9 +230,7 @@ class Overlay(
             setViewTreeLifecycleOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
-            val st = Dictation.state.value
-            val discards = st.recording || st is Dictation.State.Ready || (st as? Dictation.State.Error)?.waits == true
-            setContent { AppTheme { DismissTarget(armed.value, discards) } }
+            setContent { AppTheme { DismissTarget(armed.value) } }
         }
         runCatching { windowManager.addView(view, targetParams) }
         target = view
@@ -241,6 +240,26 @@ class Overlay(
         target?.let { runCatching { windowManager.removeView(it) } }
         target = null
         armed.value = false
+    }
+
+    /**
+     * The first time the bubble is closed, the ✕ stays 3 s with a line saying how to bring it
+     * back. Its own window and lifecycle: the bubble's go as the bubble closes.
+     */
+    private fun showHiddenHint() {
+        val o = Owner()
+        val view = ComposeView(context).apply {
+            setViewTreeLifecycleOwner(o)
+            setViewTreeSavedStateRegistryOwner(o)
+            setViewTreeViewModelStoreOwner(o)
+            setContent { AppTheme { DismissTarget(armed = true, hint = context.getString(R.string.overlay_hidden_hint)) } }
+        }
+        if (runCatching { windowManager.addView(view, targetParams) }.isFailure) return
+        o.resume()
+        view.postDelayed({
+            runCatching { windowManager.removeView(view) }
+            o.destroy()
+        }, HINT_MS)
     }
 
     /** The target's centre and the bubble's, in screen pixels; arms the target when close. */
@@ -272,7 +291,10 @@ class Overlay(
             when {
                 st.recording || (st as? Dictation.State.Error)?.waits == true -> Dictation.cancel()
                 st is Dictation.State.Ready -> Dictation.discard()
-                else -> Prefs.update { it.copy(bubbleOn = false) }
+                else -> {
+                    if (!Prefs.settings.value.hiddenHintShown) showHiddenHint()
+                    Prefs.update { it.copy(bubbleOn = false, hiddenHintShown = true) }
+                }
             }
             place(animate = true)
             return
@@ -379,6 +401,7 @@ class Overlay(
         const val KEY_RIGHT = "right"
         const val KEY_FRACTION = "fraction"
         const val KEY_DRAWING = "drawing_shape"
+        const val HINT_MS = 3000L
         const val TAG = "Overlay"
         const val BUBBLE_DP = 80
         const val PADDING_DP = 8

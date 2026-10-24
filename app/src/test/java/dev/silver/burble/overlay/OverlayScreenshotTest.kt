@@ -83,8 +83,9 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
                 Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), labelled = false)
             }
             Row(verticalAlignment = Alignment.Bottom) {
-                DismissTarget(armed = false, discards = false)
-                DismissTarget(armed = true, discards = true)
+                DismissTarget(armed = false)
+                DismissTarget(armed = true)
+                DismissTarget(armed = true, hint = "Hidden. Bring it back from Quick Settings or the Burble app.")
             }
         }
     }

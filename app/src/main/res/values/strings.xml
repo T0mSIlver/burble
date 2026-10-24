@@ -20,8 +20,10 @@
     <string name="overlay_start">Start dictation</string>
     <string name="overlay_stop">Stop</string>
     <string name="overlay_retry">Retry</string>
-    <string name="overlay_drop_cancel">Discard</string>
-    <string name="overlay_drop_off">Turn off the bubble</string>
+    <string name="overlay_close">Close the bubble</string>
+    <string name="bubble_hidden">Bubble hidden</string>
+    <string name="bubble_show">Show</string>
+    <string name="overlay_hidden_hint">Hidden. Bring it back from Quick Settings or the Burble app.</string>
     <string name="overlay_inserted">Inserted</string>
     <string name="overlay_ready">Text ready. Tap a text field to insert it</string>
     <string name="overlay_error_no_mic">Can\'t use the microphone</string>
@@ -81,7 +83,7 @@
     <string name="onb_battery_why">Some phones stop accessibility services to save battery, and the bubble goes with them.</string>
     <string name="onb_battery_not">Burble uses almost no battery until you dictate.</string>
     <string name="onb_tile_title">Quick Settings tile</string>
-    <string name="onb_tile_why">Turns the bubble on and off from Quick Settings.</string>
+    <string name="onb_tile_why">The quickest way to bring the bubble back after you close it, and to close it again.</string>
     <string name="onb_tile_how">Swipe down twice, tap the pencil, then drag Burble into your tiles.</string>
     <string name="onb_tile_add">Add the tile</string>
     <string name="onb_tile_added">Added</string>

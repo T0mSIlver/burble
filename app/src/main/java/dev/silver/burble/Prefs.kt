@@ -38,6 +38,8 @@ data class Settings(
     val languages: List<String> = listOf(language),
     /** The bubble is on; the Quick Settings tile and dragging it to ✕ turn it off. */
     val bubbleOn: Boolean = true,
+    /** The one-time line under the ✕ on how to bring a closed bubble back has been shown. */
+    val hiddenHintShown: Boolean = false,
 )
 
 /** App settings in SharedPreferences, mirrored in a StateFlow every screen and service reads. */
@@ -67,6 +69,7 @@ object Prefs {
             .putBoolean("hideKeyboard", next.hideKeyboard)
             .putString("languages", next.languages.joinToString(","))
             .putBoolean("bubbleOn", next.bubbleOn)
+            .putBoolean("hiddenHintShown", next.hiddenHintShown)
             .apply()
         _settings.value = next
     }
@@ -88,6 +91,7 @@ object Prefs {
             languages = sp.getString("languages", null)?.split(',')?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
                 ?: listOf(language),
             bubbleOn = sp.getBoolean("bubbleOn", d.bubbleOn),
+            hiddenHintShown = sp.getBoolean("hiddenHintShown", d.hiddenHintShown),
         )
     }
 

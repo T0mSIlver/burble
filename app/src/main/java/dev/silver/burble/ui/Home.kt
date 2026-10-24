@@ -51,6 +51,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +61,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -142,7 +145,8 @@ fun Home(
 
             item { SectionHeader(stringResource(R.string.section_bubble)) }
             item {
-                Group(listOf(
+                Group(listOfNotNull(
+                    if (!settings.bubbleOn) hiddenRow { set { it.copy(bubbleOn = true) } } else null,
                     contentRow(Icons.Outlined.Interests, stringResource(R.string.bubble_shape)) {
                         ShapePicker(settings.shape) { s -> set { it.copy(shape = s) } }
                     },
@@ -195,7 +199,7 @@ private fun Status(access: Access, actions: AccessActions) {
     val colors = MaterialTheme.colorScheme
     Card(
         colors = CardDefaults.cardColors(containerColor = if (ready) colors.tertiaryContainer else colors.surfaceContainerHigh),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = segmentShape(0, 1),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     ) {
         Column(Modifier.padding(20.dp)) {
@@ -317,16 +321,42 @@ private fun BubblePreview(shape: BubbleShape, size: Dp, selected: Boolean, modif
     }
 }
 
+/** Shown when the bubble was closed with ✕ while the app is open; opening the app shows it again. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+private fun hiddenRow(onShow: () -> Unit): SettingRow = { shapes ->
+    SegmentedListItem(
+        onClick = onShow,
+        shapes = shapes,
+        colors = listColors(),
+        leadingContent = { Icon(Icons.Outlined.VisibilityOff, contentDescription = null) },
+        trailingContent = { TextButton(onClick = onShow) { Text(stringResource(R.string.bubble_show)) } },
+    ) { Text(stringResource(R.string.bubble_hidden)) }
+}
+
+/** Two rows of three, each shape at a real bubble size with its name, so each is easy to hit. */
 @Composable
 private fun ShapePicker(selected: BubbleShape, onPick: (BubbleShape) -> Unit) {
-    Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.SpaceBetween) {
-        BubbleShape.entries.forEach { shape ->
-            val name = stringResource(shape.label)
-            BubblePreview(
-                shape, 36.dp, shape == selected,
-                Modifier.selectable(selected = shape == selected, role = Role.RadioButton, onClick = { onPick(shape) })
-                    .semantics { contentDescription = name },
-            )
+    Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BubbleShape.entries.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                row.forEach { shape ->
+                    Column(
+                        Modifier
+                            .clip(MaterialTheme.shapes.large)
+                            .selectable(selected = shape == selected, role = Role.RadioButton, onClick = { onPick(shape) })
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        BubblePreview(shape, 56.dp, shape == selected)
+                        Text(
+                            stringResource(shape.label),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (shape == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }
