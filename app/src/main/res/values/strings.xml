@@ -37,7 +37,7 @@
 
     <!-- Onboarding -->
     <string name="onb_welcome_title">Dictate in any app</string>
-    <string name="onb_welcome_body">Tap the bubble, speak, then tap ✓. Your words go into the text field you\'re in.</string>
+    <string name="onb_welcome_body">Tap the bubble and speak, with no keyboard in the way. Tap it again: your words go into the text field you\'re in, or the next one you tap.</string>
     <string name="onb_mic_title">Microphone</string>
     <string name="onb_mic_why">Records your voice while you dictate.</string>
     <string name="onb_mic_not">It doesn\'t listen at any other time, and keeps no recordings.</string>
@@ -65,40 +65,69 @@
 
     <!-- Home -->
     <string name="status_ready">Ready</string>
-    <string name="status_ready_body">Start a dictation, speak, then tap ✓.</string>
+    <string name="status_ready_body">Tap the bubble, speak, then tap it again.</string>
     <string name="status_setup">Finish setup</string>
     <string name="status_setup_body">Dictation needs these first.</string>
     <string name="status_restricted">Blocked? In App info, tap ⋮, then Allow restricted settings</string>
     <string name="test_hint">Sends a 12-second English recording to check that the server answers.</string>
     <string name="test_failed">No answer from the server: %1$s</string>
-    <string name="section_triggers">Start dictation with</string>
-    <string name="trigger_bubble">Bubble</string>
-    <string name="trigger_bubble_hint">Floats over every app. Drag it anywhere.</string>
-    <string name="trigger_a11y">Accessibility button</string>
-    <string name="trigger_a11y_hint">Turn on Burble dictation button in accessibility settings</string>
-    <string name="trigger_a11y_action">Set up</string>
-    <string name="trigger_tile">Quick Settings tile</string>
-    <string name="trigger_tile_hint">Add it when you edit Quick Settings</string>
-    <string name="trigger_tile_hint_add">A Dictate tile in Quick Settings</string>
-    <string name="trigger_tile_action">Add the tile</string>
-    <string name="section_output">When you stop</string>
-    <string name="output_insert">Insert</string>
-    <string name="output_insert_hint">Types the text into the field you\'re in, or copies it if there\'s none</string>
-    <string name="output_hold">Hold</string>
-    <string name="output_hold_hint">Keeps the text in a pill, to insert, copy or dismiss</string>
-    <string name="output_clipboard">Copy</string>
-    <string name="output_clipboard_hint">Copies the text. On Android 13+, the clipboard preview lets you edit it.</string>
-    <string name="section_shape">Bubble shape</string>
     <string name="shape_cookie">Cookie</string>
     <string name="shape_sunny">Sun</string>
     <string name="shape_clover">Clover</string>
     <string name="shape_circle">Circle</string>
     <string name="shape_pill">Pill</string>
     <string name="shape_burst">Burst</string>
-    <string name="section_language">Language</string>
-    <string name="language_hint">The language you speak</string>
-    <string name="language_title">Dictation language</string>
     <string name="version">Version %1$s</string>
     <string name="a11y_button_label">Burble dictation button</string>
     <string name="a11y_button_desc">Starts and stops dictation from Android\'s accessibility button. Turn this on only if you want that button; the bubble and the Quick Settings tile don\'t need it. It reads nothing on screen.</string>
+
+    <!-- Onboarding, optional steps -->
+    <string name="onb_battery_title">Unrestricted battery</string>
+    <string name="onb_battery_why">Some phones stop accessibility services to save battery, and the bubble goes with them.</string>
+    <string name="onb_battery_not">Burble only uses the battery while you dictate.</string>
+    <string name="onb_tile_title">Quick Settings tile</string>
+    <string name="onb_tile_why">Turns the bubble on and off from Quick Settings.</string>
+    <string name="onb_tile_how">Swipe down twice, tap the pencil, then drag Burble into your tiles.</string>
+    <string name="onb_tile_add">Add the tile</string>
+    <string name="onb_tile_added">Added</string>
+
+    <!-- Home and settings -->
+    <string name="status_stopped">Accessibility service stopped</string>
+    <string name="status_stopped_hint">Android stopped it. Turn Burble off and on again in accessibility settings.</string>
+    <string name="status_battery_hint">Stops Android from stopping the service again</string>
+    <string name="section_bubble">Bubble</string>
+    <string name="section_dictation">Dictation</string>
+    <string name="section_updates">Updates</string>
+    <string name="section_about">About</string>
+    <string name="bubble_shape">Shape</string>
+    <string name="bubble_size">Size</string>
+    <string name="size_small">Small</string>
+    <string name="size_medium">Medium</string>
+    <string name="size_large">Large</string>
+    <string name="hide_keyboard">Hide the keyboard while dictating</string>
+    <string name="hide_keyboard_hint">The keyboard comes back once your words are in.</string>
+    <string name="languages">Languages</string>
+    <string name="languages_hint">Pick the languages you speak. The first one you pick is the main one.</string>
+    <string name="languages_main">Main</string>
+    <string name="test_connection">Test the connection</string>
+    <string name="privacy">Privacy policy</string>
+    <string name="privacy_hint">What is sent, and where</string>
+    <string name="licence">Licence</string>
+    <string name="licence_hint">GNU GPL version 3</string>
+    <string name="source">Source code</string>
+    <string name="updates_auto">Check for updates</string>
+    <string name="updates_auto_hint">Asks GitHub once a day when you open Burble</string>
+    <string name="updates_check">Check now</string>
+    <string name="updates_checking">Checking…</string>
+    <string name="updates_none">You have the latest version.</string>
+    <string name="updates_available">Burble %1$s is available.</string>
+    <string name="updates_downloading">Downloading Burble %1$s…</string>
+    <string name="updates_installing">Installing Burble %1$s…</string>
+    <string name="updates_install">Download and install</string>
+    <string name="updates_retry">Try again</string>
+    <string name="updates_failed_network">Couldn\'t reach GitHub.</string>
+    <string name="updates_failed_apk">The download isn\'t a Burble APK.</string>
+    <string name="updates_failed_signature">The download isn\'t signed with Burble\'s key, so it wasn\'t installed.</string>
+    <string name="updates_failed_older">The download isn\'t newer than this version.</string>
+    <string name="updates_failed_install">Android didn\'t install the update.</string>
 </resources>

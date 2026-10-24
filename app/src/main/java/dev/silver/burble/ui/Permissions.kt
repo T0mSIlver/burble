@@ -1,12 +1,14 @@
 package dev.silver.burble.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import dev.silver.burble.InsertionService
 
@@ -15,8 +17,12 @@ data class Access(
     val microphone: Boolean,
     /** Always true below Android 13, where apps need no permission to notify. */
     val notifications: Boolean,
-    /** The accessibility service that inserts text is on. */
+    /** The accessibility service that inserts text is on in Settings. */
     val insertion: Boolean,
+    /** On in Settings but not running: Android or a battery saver stopped it. */
+    val stopped: Boolean = false,
+    /** Exempt from battery optimisation, so no battery saver stops the service. */
+    val battery: Boolean = true,
     /**
      * The app came from a file on Android 13+ and the accessibility service is off, so Android
      * probably blocks it until the user allows restricted settings.
@@ -24,20 +30,23 @@ data class Access(
     val restricted: Boolean,
 ) {
     /** The accessibility service hosts the bubble, the accessibility button and insertion. */
-    val ready get() = microphone && insertion
+    val ready get() = microphone && insertion && !stopped
 
     companion object {
         val All = Access(microphone = true, notifications = true, insertion = true, restricted = false)
-        val None = Access(microphone = false, notifications = false, insertion = false, restricted = true)
+        val None = Access(microphone = false, notifications = false, insertion = false, restricted = true, battery = false)
     }
 }
 
 object Permissions {
 
-    fun read(context: Context) = Access(
+    fun read(context: Context, connected: Boolean = InsertionService.connected.value) = Access(
         microphone = granted(context, Manifest.permission.RECORD_AUDIO),
         notifications = Build.VERSION.SDK_INT < 33 || granted(context, Manifest.permission.POST_NOTIFICATIONS),
         insertion = insertion(context),
+        // The service runs in this process, so its connection flag is the truth about it.
+        stopped = insertion(context) && !connected,
+        battery = context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName),
         restricted = restricted(context),
     )
 
@@ -62,6 +71,11 @@ object Permissions {
     }
 
     fun accessibilitySettings() = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+
+    /** Android's own prompt to exempt the app from battery optimisation. */
+    @SuppressLint("BatteryLife")
+    fun batterySettings(context: Context) =
+        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))
 
     fun appInfo(context: Context) =
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))

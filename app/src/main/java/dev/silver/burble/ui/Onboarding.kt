@@ -27,7 +27,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.LockOpen
@@ -68,13 +70,16 @@ class AccessActions(
     val requestNotifications: () -> Unit,
     val openAccessibility: () -> Unit,
     val openAppInfo: () -> Unit,
+    val openBattery: () -> Unit,
+    /** Asks Android 13+ to add the tile; [onAdded] runs when it is in Quick Settings. */
+    val addTile: (onAdded: () -> Unit) -> Unit,
 ) {
     companion object {
-        val None = AccessActions({}, {}, {}, {})
+        val None = AccessActions({}, {}, {}, {}, {}, {})
     }
 }
 
-enum class Step { WELCOME, MICROPHONE, NOTIFICATIONS, UNLOCK, INSERTION }
+enum class Step { WELCOME, MICROPHONE, NOTIFICATIONS, UNLOCK, INSERTION, BATTERY, TILE }
 
 /**
  * The steps this phone needs, fixed when onboarding opens so that a step granted midway keeps its
@@ -86,18 +91,22 @@ fun onboardingSteps(access: Access, sdk: Int = Build.VERSION.SDK_INT) = buildLis
     if (sdk >= 33) add(Step.NOTIFICATIONS)
     if (access.restricted) add(Step.UNLOCK)
     add(Step.INSERTION)
+    add(Step.BATTERY)
+    add(Step.TILE)
 }
 
-private fun Step.done(access: Access) = when (this) {
+private fun Step.done(access: Access, tileAdded: Boolean) = when (this) {
     Step.WELCOME -> false
     Step.MICROPHONE -> access.microphone
     Step.NOTIFICATIONS -> access.notifications
     Step.UNLOCK -> !access.restricted
     Step.INSERTION -> access.insertion
+    Step.BATTERY -> access.battery
+    Step.TILE -> tileAdded
 }
 
-/** Steps the app works without; the home screen lists them as missing. */
-private val Step.optional get() = this == Step.NOTIFICATIONS || this == Step.UNLOCK || this == Step.INSERTION
+/** Steps the app works without; the home screen lists the essential ones as missing. */
+private val Step.optional get() = this != Step.WELCOME && this != Step.MICROPHONE
 
 @Composable
 fun Onboarding(
@@ -111,9 +120,13 @@ fun Onboarding(
     // Whether restricted settings got allowed can't be read, so once the user has been to App
     // info the step lets them go on; the next step checks the service itself.
     var appInfoOpened by rememberSaveable { mutableStateOf(false) }
+    // Android has no query for "the tile is in Quick Settings"; its answer to the request is all.
+    var tileAdded by rememberSaveable { mutableStateOf(false) }
     val stepActions = AccessActions(
         actions.requestMicrophone, actions.requestNotifications, actions.openAccessibility,
         openAppInfo = { appInfoOpened = true; actions.openAppInfo() },
+        openBattery = actions.openBattery,
+        addTile = { actions.addTile { tileAdded = true } },
     )
     BackHandler(enabled = index > 0) { index-- }
     val next: () -> Unit = { if (index < steps.lastIndex) index++ else onDone() }
@@ -136,7 +149,7 @@ fun Onboarding(
                 label = "step",
             ) { i ->
                 val step = steps[i]
-                StepPage(step, access, stepActions, appInfoOpened, last = i == steps.lastIndex, onNext = next)
+                StepPage(step, access, stepActions, appInfoOpened, tileAdded, last = i == steps.lastIndex, onNext = next)
             }
         }
     }
@@ -144,8 +157,19 @@ fun Onboarding(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun StepPage(step: Step, access: Access, actions: AccessActions, appInfoOpened: Boolean, last: Boolean, onNext: () -> Unit) {
-    val done = step.done(access)
+private fun StepPage(
+    step: Step,
+    access: Access,
+    actions: AccessActions,
+    appInfoOpened: Boolean,
+    tileAdded: Boolean,
+    last: Boolean,
+    onNext: () -> Unit,
+    sdk: Int = Build.VERSION.SDK_INT,
+) {
+    val done = step.done(access, tileAdded)
+    // Before Android 13 the app can't add its tile: the step only says how.
+    val tileRequest = sdk >= 33
     val canGo = done || (step == Step.UNLOCK && appInfoOpened)
     Column(Modifier.fillMaxSize()) {
         Column(
@@ -168,6 +192,16 @@ private fun StepPage(step: Step, access: Access, actions: AccessActions, appInfo
                     R.string.onb_insert_title, R.string.onb_insert_why, R.string.onb_insert_not,
                     how = R.string.onb_insert_how,
                 )
+                Step.BATTERY -> Permission(
+                    Icons.Rounded.BatteryFull, MaterialShapes.Clover8Leaf, done,
+                    R.string.onb_battery_title, R.string.onb_battery_why, R.string.onb_battery_not,
+                )
+                Step.TILE -> Permission(
+                    Icons.Rounded.ToggleOn, MaterialShapes.Cookie4Sided, done,
+                    R.string.onb_tile_title, R.string.onb_tile_why, null,
+                    how = if (tileRequest) null else R.string.onb_tile_how,
+                    doneLabel = R.string.onb_tile_added,
+                )
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -183,11 +217,14 @@ private fun StepPage(step: Step, access: Access, actions: AccessActions, appInfo
                 Step.NOTIFICATIONS -> actions.requestNotifications
                 Step.UNLOCK -> actions.openAppInfo
                 Step.INSERTION -> actions.openAccessibility
+                Step.BATTERY -> actions.openBattery
+                Step.TILE -> if (tileRequest) ({ actions.addTile {} }) else null
             }
             val label = when {
                 grant != null && !canGo -> when (step) {
                     Step.MICROPHONE, Step.NOTIFICATIONS -> R.string.onb_allow
                     Step.UNLOCK -> R.string.open_app_info
+                    Step.TILE -> R.string.onb_tile_add
                     else -> R.string.open_settings
                 }
                 last -> R.string.onb_finish
@@ -243,22 +280,25 @@ private fun Permission(
     done: Boolean,
     title: Int,
     why: Int,
-    not: Int,
+    not: Int?,
     how: Int? = null,
+    doneLabel: Int = R.string.onb_granted,
 ) {
     ShapeBadge(icon, shape, done = done)
     Title(title)
     Text(stringResource(why), style = MaterialTheme.typography.bodyLarge)
-    Spacer(Modifier.height(20.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(Icons.Outlined.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-        Text(stringResource(not), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (not != null) {
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Outlined.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            Text(stringResource(not), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
     if (how != null && !done) {
         Spacer(Modifier.height(20.dp))
         Text(stringResource(how), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    if (done) Granted()
+    if (done) Granted(doneLabel)
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -293,7 +333,7 @@ private fun Unlock(done: Boolean, appInfoOpened: Boolean, actions: AccessActions
 }
 
 @Composable
-private fun Granted() {
+private fun Granted(label: Int = R.string.onb_granted) {
     Spacer(Modifier.height(24.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
@@ -303,6 +343,6 @@ private fun Granted() {
             modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(8.dp))
-        Text(stringResource(R.string.onb_granted), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+        Text(stringResource(label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
     }
 }

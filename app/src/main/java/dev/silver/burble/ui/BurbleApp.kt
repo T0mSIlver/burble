@@ -2,10 +2,13 @@ package dev.silver.burble.ui
 
 import android.Manifest
 import android.app.Activity
+import android.app.StatusBarManager
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -15,7 +18,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.silver.burble.DictationTile
+import dev.silver.burble.InsertionService
 import dev.silver.burble.Prefs
+import dev.silver.burble.updater.Updater
 
 /** Onboarding until the user finishes it, then home. */
 @Composable
@@ -23,11 +28,16 @@ fun BurbleApp() {
     val context = LocalContext.current
     val settings by Prefs.settings.collectAsStateWithLifecycle()
     val test by TestAudio.state.collectAsStateWithLifecycle()
+    val update by Updater.state.collectAsStateWithLifecycle()
+    val connected by InsertionService.connected.collectAsStateWithLifecycle()
     var access by remember { mutableStateOf(Permissions.read(context)) }
     LifecycleResumeEffect(Unit) {
         access = Permissions.read(context)
+        if (Prefs.settings.value.checkUpdates) Updater.checkIfDue(context)
         onPauseOrDispose {}
     }
+    // Android binds the service a moment after the user turns it on, and may stop it any time.
+    LaunchedEffect(connected) { access = Permissions.read(context, connected) }
 
     val open = { intent: Intent -> context.startActivity(intent) }
     var micAsked by rememberSaveable { mutableStateOf(false) }
@@ -43,6 +53,13 @@ fun BurbleApp() {
         requestNotifications = { askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) },
         openAccessibility = { open(Permissions.accessibilitySettings()) },
         openAppInfo = { open(Permissions.appInfo(context)) },
+        openBattery = { open(Permissions.batterySettings(context)) },
+        addTile = { onAdded ->
+            DictationTile.requestAdd(context) { result ->
+                if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
+                    result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) onAdded()
+            }
+        },
     )
 
     if (!settings.onboarded) {
@@ -53,15 +70,16 @@ fun BurbleApp() {
             settings = settings,
             access = access,
             test = test,
+            update = update,
             actions = HomeActions(
                 access = actions,
-                // The service's own page needs OPEN_ACCESSIBILITY_DETAILS_SETTINGS, a privileged permission.
-                openShortcutSettings = { open(Permissions.accessibilitySettings()) },
-                addTile = { DictationTile.requestAdd(context) {} },
                 sendTestAudio = { TestAudio.send(context) },
                 update = Prefs::update,
+                checkForUpdate = { Updater.check(context) },
+                installUpdate = { Updater.install(context, it) },
+                openUrl = { open(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
             ),
-            version = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty(),
+            version = Updater.installedVersion(context),
         )
     }
 }
