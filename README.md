@@ -51,7 +51,10 @@ export ANDROID_HOME=<sdk>   # platform android-37, build-tools 36+
 ./gradlew assembleDebug
 ```
 
-Gradle 9.8, AGP 9.4 with built-in Kotlin, Java 21. When
+Gradle 9.8, AGP 9.4 with built-in Kotlin, Java 21.
+
+The app is set in Google Sans Flex, under the SIL Open Font License
+(`licenses/GoogleSansFlex-OFL.txt`). When
 `starbridge.mavenMirror` is set in `~/.gradle/gradle.properties`, dependencies
 resolve through that mirror first.
 
