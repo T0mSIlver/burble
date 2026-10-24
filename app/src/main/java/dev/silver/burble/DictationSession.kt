@@ -48,7 +48,7 @@ class DictationSession(
                 while (!stopping && android.os.SystemClock.elapsedRealtime() - t0 < maxMs) {
                     val n = r.read(pcm, 0, pcm.size)
                     if (n <= 0) break
-                    onLevel(rms(pcm, n))
+                    onLevel(levelOf(pcm, n))
                     val ogg = encoder.get().encode(pcm.copyOf(n))
                     if (ogg.isNotEmpty()) s.feed(ogg)
                 }
@@ -83,20 +83,25 @@ class DictationSession(
         onResult(r)
     }
 
-    /** RMS of 16-bit little-endian PCM, scaled so normal speech sits around 0.3–0.7. */
-    private fun rms(pcm: ByteArray, n: Int): Float {
-        var sum = 0.0
-        var i = 0
-        while (i + 1 < n) {
-            val v = (pcm[i].toInt() and 0xFF) or (pcm[i + 1].toInt() shl 8)
-            sum += v.toDouble() * v
-            i += 2
-        }
-        val r = kotlin.math.sqrt(sum / maxOf(1, n / 2)) / 32768.0
-        return (r * 6).coerceIn(0.0, 1.0).toFloat()
-    }
-
     companion object {
+        /**
+         * Loudness of 16-bit little-endian PCM, 0..1: -60 dBFS (a quiet room) to -20 dBFS (close,
+         * loud speech), linear in decibels. VOICE_RECOGNITION audio has no gain control, so
+         * speech at arm's length sits near -40 dBFS; a linear amplitude scale left it near 0.
+         */
+        internal fun levelOf(pcm: ByteArray, n: Int): Float {
+            var sum = 0.0
+            var i = 0
+            while (i + 1 < n) {
+                val v = (pcm[i].toInt() and 0xFF) or (pcm[i + 1].toInt() shl 8)
+                sum += v.toDouble() * v
+                i += 2
+            }
+            val rms = kotlin.math.sqrt(sum / maxOf(1, n / 2)) / 32768.0
+            val db = 20 * kotlin.math.log10(maxOf(rms, 1e-6))
+            return ((db + 60) / 40).coerceIn(0.0, 1.0).toFloat()
+        }
+
         // The encoder is thread-local because the session thread is created once per session.
         private val encoder = object : InheritableThreadLocal<OggOpusEncoder>() {
             override fun initialValue() = OggOpusEncoder()

@@ -4,9 +4,11 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.accessibility.AccessibilityManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +42,8 @@ object Dictation {
     val level: StateFlow<Float> = _level.asStateFlow()
 
     private var session: DictationSession? = null
+    private var debug = false
+    @Volatile private var levelOverride: Float? = null
 
     fun toggle(context: Context) {
         when (_state.value) {
@@ -59,9 +63,15 @@ object Dictation {
             return
         }
         _state.value = State.Listening
+        levelOverride = null
+        debug = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val s = DictationSession(
             onPartial = {},
-            onLevel = { _level.value = it },
+            onLevel = { heard ->
+                val l = levelOverride ?: heard
+                _level.value = l
+                if (debug) Log.d(TAG, "level %.2f".format(l))
+            },
             onResult = { r -> main.post { finish(app, r) } },
             language = Prefs.settings.value.language.ifBlank { Locale.getDefault().toLanguageTag() },
         )
@@ -98,6 +108,11 @@ object Dictation {
     fun copy(context: Context, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("dictation", text))
+    }
+
+    /** Replaces the mic level until the dictation ends; for the debug build's test hook. */
+    internal fun fakeLevel(level: Float) {
+        levelOverride = level
     }
 
     /** Delivers [text] as if the server had sent it; for the debug build's test hook. */
