@@ -2,6 +2,7 @@ package dev.silver.ramblerbubble.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MotionScheme
@@ -39,19 +40,28 @@ private val GoogleDark = darkColorScheme(
     onSurface = Color(0xFFE3E3E3), onSurfaceVariant = Color(0xFFC4C7C5),
 )
 
-/** Material 3 Expressive with the wallpaper's colours where Android offers them. */
+/**
+ * Material 3 Expressive with the wallpaper's colours where Android offers them. Screenshot tests
+ * pass [dynamic] false for the Google blue fallback, or a wallpaper scheme as [colors].
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun AppTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+fun AppTheme(
+    dark: Boolean = isSystemInDarkTheme(),
+    dynamic: Boolean = true,
+    colors: ColorScheme? = null,
+    content: @Composable () -> Unit,
+) {
     val context = LocalContext.current
-    val colors = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+    val scheme = when {
+        colors != null -> colors
+        dynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         dark -> GoogleDark
         else -> GoogleLight
     }
     MaterialExpressiveTheme(
-        colorScheme = colors,
+        colorScheme = scheme,
         motionScheme = MotionScheme.expressive(),
         content = content,
     )
