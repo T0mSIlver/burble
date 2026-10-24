@@ -16,6 +16,8 @@ import com.google.android.material.color.utilities.SchemeTonalSpot
 enum class Wallpaper(val seed: Int) {
     Warm(0xFFB5562B.toInt()),
     Green(0xFF4E7A3C.toInt()),
+    /** Close to the owner's in the Gboard Rambler study: pink, so tertiary comes out violet. */
+    Pink(0xFFB86E8E.toInt()),
     ;
 
     fun scheme(dark: Boolean): ColorScheme {
