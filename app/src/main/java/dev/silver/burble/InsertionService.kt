@@ -102,6 +102,9 @@ class InsertionService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // Not every unlock sends ACTION_USER_PRESENT, but a window always changes when the lock
+        // screen goes.
+        if (locked) updateLock()
         if (Dictation.state.value !is Dictation.State.Ready) return
         // Focus moves in bursts (a window opens, then a field takes focus): look once it settles.
         main.removeCallbacks(focusCheck)
