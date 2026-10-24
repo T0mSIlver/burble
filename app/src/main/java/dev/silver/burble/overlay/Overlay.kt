@@ -5,8 +5,6 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.Rect
-import android.os.Build
-import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewConfiguration
@@ -122,19 +120,12 @@ class Overlay(
 
     /** The screen area clear of system bars and cutouts, in screen coordinates. */
     private fun area(): Pair<Rect, Int> {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val m = windowManager.currentWindowMetrics
-            val i = m.windowInsets.getInsetsIgnoringVisibility(
-                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            val b = m.bounds
-            return Rect(b.left + i.left, b.top + i.top, b.right - i.right, b.bottom - i.bottom) to
-                b.width()
-        }
-        val dm = DisplayMetrics()
-        @Suppress("DEPRECATION") windowManager.defaultDisplay.getRealMetrics(dm)
-        // Android 10 has no inset metrics outside a window: assume the usual bar heights.
-        return Rect(0, (24 * dm.density).roundToInt(), dm.widthPixels,
-            dm.heightPixels - (48 * dm.density).roundToInt()) to dm.widthPixels
+        val m = windowManager.currentWindowMetrics
+        val i = m.windowInsets.getInsetsIgnoringVisibility(
+            WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+        val b = m.bounds
+        return Rect(b.left + i.left, b.top + i.top, b.right - i.right, b.bottom - i.bottom) to
+            b.width()
     }
 
     private fun width() = root?.width?.takeIf { it > 0 } ?: (BUBBLE_DP * context.resources.displayMetrics.density).roundToInt()

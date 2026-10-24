@@ -8,7 +8,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import kotlinx.coroutines.MainScope
@@ -96,9 +95,7 @@ class MicService : Service() {
             .setCategory(Notification.CATEGORY_SERVICE)
         // Android 12+ delays foreground service notifications by up to 10 s; a recording
         // indicator must show at once.
-        if (Build.VERSION.SDK_INT >= 31) {
-            b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-        }
+        b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
         return if (st == Dictation.State.Finishing) {
             b.setContentTitle(getString(R.string.mic_finishing))
                 .addAction(action(ACTION_CANCEL, R.string.mic_cancel, 3))

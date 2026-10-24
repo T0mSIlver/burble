@@ -1,6 +1,5 @@
 package dev.silver.burble.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -21,7 +20,7 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import dev.silver.burble.R
 
-// Without dynamic colour (Android 10–11, some OEM skins) the app falls back to the blue
+// Without dynamic colour (Material You off, some OEM skins) the app falls back to the blue
 // Google's own apps use, not Material's baseline purple.
 private val GoogleLight = lightColorScheme(
     primary = Color(0xFF0B57D0), onPrimary = Color.White,
@@ -118,7 +117,7 @@ fun AppTheme(
     val context = LocalContext.current
     val scheme = when {
         colors != null -> colors
-        dynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+        dynamic ->
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         dark -> GoogleDark
         else -> GoogleLight

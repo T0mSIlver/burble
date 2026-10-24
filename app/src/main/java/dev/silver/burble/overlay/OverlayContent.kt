@@ -1,6 +1,5 @@
 package dev.silver.burble.overlay
 
-import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.animation.AnimatedContent
@@ -165,13 +164,12 @@ internal fun LiveOverlay(idleBubble: State<Boolean>, alignEnd: State<Boolean>) {
 }
 
 private fun haptic(view: View, look: Look) {
-    val r = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
     val effect = when (look) {
         Look.Listening -> HapticFeedbackConstants.VIRTUAL_KEY
         Look.Finishing -> HapticFeedbackConstants.VIRTUAL_KEY_RELEASE
         Look.Inserted, Look.Copied, is Look.Held ->
-            if (r) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.CONTEXT_CLICK
-        is Look.Failed -> if (r) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS
+            HapticFeedbackConstants.CONFIRM
+        is Look.Failed -> HapticFeedbackConstants.REJECT
         Look.Idle -> return
     }
     view.performHapticFeedback(effect)
