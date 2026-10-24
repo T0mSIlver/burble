@@ -28,7 +28,12 @@ object Dictation {
         data object Finishing : State
         /** [delivered] is false when the text is held for the user ([Output.HOLD]). */
         data class Done(val text: String, val output: Output, val delivered: Boolean) : State
-        data class Error(val kind: ErrorKind, val detail: String? = null) : State
+        /** [canRetry]: the audio is kept, and [retry] sends it again. */
+        data class Error(
+            val kind: ErrorKind,
+            val detail: String? = null,
+            val canRetry: Boolean = false,
+        ) : State
     }
 
     enum class ErrorKind { NO_MIC, NOTHING_HEARD, QUOTA, REJECTED, NETWORK, OTHER }
@@ -50,7 +55,7 @@ object Dictation {
             State.Listening -> stop()
             // The session is no longer active while finishing; starting here would run two.
             State.Finishing -> Unit
-            else -> start(context)
+            else -> if (!retry()) start(context)
         }
     }
 
@@ -62,18 +67,29 @@ object Dictation {
             _state.value = State.Error(ErrorKind.NO_MIC)
             return
         }
+        // Starting over drops the audio of a failed dictation, and anything a crash left behind.
+        session?.cancel()
+        val pending = java.io.File(app.noBackupFilesDir, "pending")
+        pending.deleteRecursively()
         _state.value = State.Listening
         levelOverride = null
         debug = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        val s = DictationSession(
-            onPartial = {},
+        val settings = Prefs.settings.value
+        val request = S3Request(
+            language = settings.language.ifBlank { Locale.getDefault().toLanguageTag() },
+            extraLanguages = settings.languages.drop(1),
+            triggerApp = InsertionService.focusedApp(),
+        )
+        lateinit var s: DictationSession
+        s = DictationSession(
+            dir = java.io.File(pending, System.currentTimeMillis().toString()),
+            newRecognizer = { onDone -> S3Stream(request, onDone) },
             onLevel = { heard ->
                 val l = levelOverride ?: heard
                 _level.value = l
                 if (debug) Log.d(TAG, "level %.2f".format(l))
             },
-            onResult = { r -> main.post { finish(app, r) } },
-            language = Prefs.settings.value.language.ifBlank { Locale.getDefault().toLanguageTag() },
+            onResult = { r -> main.post { finish(app, s, r) } },
         )
         session = s
         MicService.start(app)
@@ -87,6 +103,18 @@ object Dictation {
         s.stop()
         _level.value = 0f
         _state.value = State.Finishing
+    }
+
+    /**
+     * Sends the kept audio of a failed dictation again; the bubble calls it when tapped in the
+     * error state. False when there is nothing to send.
+     */
+    fun retry(): Boolean {
+        val st = _state.value as? State.Error ?: return false
+        val s = session ?: return false
+        if (!st.canRetry || !s.retry()) return false
+        _state.value = State.Finishing
+        return true
     }
 
     /** Drops the dictation without delivering anything. */
@@ -120,13 +148,18 @@ object Dictation {
         session?.cancel()
         session = null
         _state.value = State.Finishing
-        finish(context.applicationContext, Result.success(text))
+        finish(context.applicationContext, null, Result.success(text))
     }
 
-    private fun finish(context: Context, r: Result<String>) {
-        if (_state.value == State.Idle) return // cancelled
-        session = null
+    private fun finish(context: Context, from: DictationSession?, r: Result<String>) {
+        if (_state.value == State.Idle || from !== session) return // cancelled or replaced
         _level.value = 0f
+        // A failed dictation keeps its session, and with it the audio, for retry.
+        val retryable = r.isFailure && kindOf(r.exceptionOrNull()!!) != ErrorKind.NO_MIC
+        if (!retryable) {
+            session?.discard()
+            session = null
+        }
         _state.value = r.fold(
             onSuccess = { text ->
                 if (text.isBlank()) State.Error(ErrorKind.NOTHING_HEARD)
@@ -134,7 +167,7 @@ object Dictation {
             },
             onFailure = { e ->
                 android.util.Log.e(TAG, "dictation failed", e)
-                State.Error(kindOf(e), e.message?.take(120))
+                State.Error(kindOf(e), e.message?.take(120), canRetry = retryable)
             },
         )
     }

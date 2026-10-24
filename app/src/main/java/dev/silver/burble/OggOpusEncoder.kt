@@ -5,12 +5,20 @@ import android.media.MediaFormat
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** PCM16 mono 16 kHz in, one Ogg stream out. Each server session needs a fresh one. */
+interface AudioEncoder {
+    /** Encodes one PCM16 buffer; returns the Ogg bytes completed since the last call. */
+    fun encode(pcm: ByteArray): ByteArray
+    /** Ends the stream and frees the encoder; returns the remaining Ogg bytes. */
+    fun flush(): ByteArray
+}
+
 /**
  * Streams PCM16 mono 16 kHz through MediaCodec's Opus encoder and produces Ogg Opus bytes,
  * mirroring the stream Gboard sends (16 kHz, 24 kbps, Ogg container, OpusHead preskip 312).
  * Feed with [encode]; call [flush] at end of audio.
  */
-class OggOpusEncoder {
+class OggOpusEncoder : AudioEncoder {
 
     private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS)
     private val stopped = AtomicBoolean(false)
@@ -36,8 +44,7 @@ class OggOpusEncoder {
         pages.write(oggPage(tags, lacingFor(tags.size), 0x00, 0))
     }
 
-    /** Encodes one PCM16 buffer; returns Ogg bytes accumulated since the last call. */
-    fun encode(pcm: ByteArray): ByteArray {
+    override fun encode(pcm: ByteArray): ByteArray {
         if (stopped.get()) return ByteArray(0)
         val idx = codec.dequeueInputBuffer(10_000)
         if (idx >= 0) {
@@ -50,8 +57,7 @@ class OggOpusEncoder {
         return takePages(force = false)
     }
 
-    /** Flushes the encoder; returns the remaining Ogg bytes. */
-    fun flush(): ByteArray {
+    override fun flush(): ByteArray {
         if (!stopped.compareAndSet(false, true)) return ByteArray(0)
         val idx = codec.dequeueInputBuffer(10_000)
         if (idx >= 0) {
@@ -138,7 +144,7 @@ class OggOpusEncoder {
     }
 
     private fun tagsPacket(): ByteArray {
-        val vendor = "rambler-bubble".toByteArray(Charsets.ISO_8859_1)
+        val vendor = Identity.OGG_VENDOR.toByteArray(Charsets.ISO_8859_1)
         val b = ByteArrayOutputStream()
         b.write("OpusTags".toByteArray(Charsets.ISO_8859_1))
         writeIntLE(b, vendor.size)

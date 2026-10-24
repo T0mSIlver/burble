@@ -1,6 +1,7 @@
 package dev.silver.burble.ui
 
 import android.content.Context
+import dev.silver.burble.S3Request
 import dev.silver.burble.S3Stream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +27,7 @@ object TestAudio {
         Thread {
             val audio = assets.open("test12s.opus").use { it.readBytes() }
             val s = S3Stream(
-                onPartial = {},
+                S3Request(),
                 onDone = { r ->
                     _state.value = r.fold(
                         onSuccess = { State.Heard(it.trim()) },
@@ -35,12 +36,7 @@ object TestAudio {
                 },
             )
             s.start()
-            // Feed like the dictation loop does: 224-byte Ogg chunks.
-            var i = 0
-            while (i < audio.size) {
-                s.feed(audio.copyOfRange(i, minOf(i + 224, audio.size)))
-                i += 224
-            }
+            s.feed(audio)
             s.finish()
         }.start()
     }

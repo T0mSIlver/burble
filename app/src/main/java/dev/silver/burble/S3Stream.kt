@@ -12,18 +12,38 @@ import java.io.IOException
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
+/** What a request says about the dictation, beyond its audio. */
+data class S3Request(
+    /** BCP-47 tag of the main spoken language. */
+    val language: String = "en-US",
+    /** Other languages the speaker mixes in, sent as Gboard sends its other keyboard languages. */
+    val extraLanguages: List<String> = emptyList(),
+    /** Package of the app being typed into; Gboard omits the field when it has none. */
+    val triggerApp: String? = null,
+    val maskOffensiveWords: Boolean = false,
+)
+
+/** One server session's audio sink, as [DictationSession] drives it. */
+interface Recognizer {
+    fun start()
+    /** Queues Ogg bytes of any length. */
+    fun feed(chunk: ByteArray)
+    /** Ends the audio; the result follows. */
+    fun finish()
+    /** Drops the session; no result follows. */
+    fun cancel()
+}
+
 /**
  * Client for Gboard's Rambler dictation backend: gRPC bidi streaming to
  * speech.s3.S3StubbyClientConnectorService/S3Bidi with hand-encoded protobuf.
  * Field numbers reverse-engineered from Gboard 18.5.3 (aatd/aasw/aasv/aatf/aatb/aawg/aatk).
  */
 class S3Stream(
-    private val onPartial: (String) -> Unit,
+    private val request: S3Request,
     private val onDone: (Result<String>) -> Unit,
-    /** BCP-47 tag of the spoken language. */
-    private val language: String = "en-US",
     client: OkHttpClient = S3.client(),
-) {
+) : Recognizer {
     private val http = client
     /** Encoded Ogg Opus bytes; the empty array marks the end of audio. */
     private val queue = LinkedBlockingQueue<ByteArray>()
@@ -31,76 +51,51 @@ class S3Stream(
     @Volatile private var finished = false
     private var finalText: String? = null
 
-    fun feed(chunk: ByteArray) {
+    override fun feed(chunk: ByteArray) {
         if (chunk.isNotEmpty()) queue.put(chunk)
     }
 
-    fun finish() {
+    override fun finish() {
         queue.put(END)
     }
 
-    fun cancel() {
+    override fun cancel() {
         finished = true
         queue.clear()
         queue.put(END)
         call?.cancel()
     }
 
-    // ---- request encoding ----
-
-    private fun headerMessage(): ByteArray {
-        val aasw = Pb.int(3, 10) + Pb.f32(2, 16000.0f) + Pb.int(4, 1)
-        val aatf = Pb.msg(2, Pb.str(1, language)) + Pb.bool(20, true)
-        val aasz = Pb.bool(1, false)
-        val aatb = Pb.str(8, "Android") + Pb.str(9, android.os.Build.DISPLAY) +
-            Pb.str(11, android.os.Build.MODEL) + Pb.msg(22, aasz) +
-            Pb.str(2, "gboard") + Pb.str(16, "com.google.android.googlequicksearchbox") +
-            Pb.str(10, "-1") + Pb.int(26, 1)
-        val aawg = Pb.bool(5, true) + Pb.bool(13, true) + Pb.bool(20, true) +
-            Pb.bool(40, false) + Pb.int(7, 0) + Pb.bool(41, true) +
-            Pb.msg(1, Pb.bool(4, false)) + Pb.msg(91, Pb.bool(2, true)) +
-            Pb.str(50, "gboard_gemini_v3_streaming_voice_edit_mul")
-        return Pb.str(1, "beyond-a2a-recognizer") + Pb.bool(2, true) +
-            Pb.msg(293100, aasw) + Pb.msg(293000, aatf) + Pb.msg(294000, aatb) +
-            Pb.msg(294500, aawg) + Pb.msg(29735924, Pb.int(1, 500))
-    }
-
-    private fun audioMessage(chunk: ByteArray, elapsedMs: Long) =
-        Pb.msg(293101, Pb.bytes(1, chunk)) + Pb.msg(293100, Pb.int(9, elapsedMs))
-
-    private fun endMessage() = Pb.bool(2, true) + Pb.bool(3, true)
-
-    /** gRPC frame: 1-byte compressed flag + 4-byte big-endian length + payload. */
-    private fun frame(payload: ByteArray): ByteArray =
-        byteArrayOf(0, (payload.size shr 24).toByte(), (payload.size shr 16).toByte(),
-            (payload.size shr 8).toByte(), payload.size.toByte()) + payload
-
     // ---- streaming ----
 
-    fun start() {
+    override fun start() {
+        val t0 = System.nanoTime()
+        fun elapsedMs() = (System.nanoTime() - t0) / 1_000_000
         val body = object : RequestBody() {
             override fun contentType() = "application/grpc".toMediaType()
             override fun isOneShot() = true
 
             override fun writeTo(sink: BufferedSink) {
-                sink.write(frame(headerMessage()))
-                var sent = 0L
+                sink.write(grpcFrame(s3Header(request, elapsedMs())))
+                val chunks = Chunker(Identity.CHUNK)
                 while (true) {
-                    val chunk = queue.poll(120, TimeUnit.SECONDS)
+                    val bytes = queue.poll(120, TimeUnit.SECONDS)
                         ?: throw IOException("no audio within 120 s")
-                    if (chunk === END || chunk.isEmpty()) break
-                    sink.write(frame(audioMessage(chunk, sent * 8 / 24)))
-                    sent += chunk.size
+                    val end = bytes === END
+                    for (c in if (end) chunks.drain() else chunks.add(bytes)) {
+                        sink.write(grpcFrame(s3Audio(c, elapsedMs())))
+                    }
+                    if (end) break
                 }
-                sink.write(frame(endMessage()))
+                sink.write(grpcFrame(S3_END))
             }
         }
         val req = Request.Builder()
-            .url("https://speechs3proto2-pa.googleapis.com/speech.s3.S3StubbyClientConnectorService/S3Bidi")
+            .url(Identity.URL)
             .header("te", "trailers")
-            .header("x-goog-api-key", API_KEY)
-            .header("x-android-package", PACKAGE)
-            .header("x-android-cert", CERT)
+            .header("x-goog-api-key", Identity.API_KEY)
+            .header("x-android-package", Identity.PACKAGE)
+            .header("x-android-cert", Identity.CERT)
             .post(body)
             .build()
         call = http.newCall(req)
@@ -179,7 +174,6 @@ class S3Stream(
         val span = Pb.first(spanHolder, 3) ?: return
         val text = Pb.first(span, 1)?.toString(Charsets.UTF_8) ?: return
         finalText = text
-        onPartial(text)
     }
 
     private fun readFully(src: java.io.InputStream, buf: ByteArray): Int {
@@ -200,10 +194,76 @@ class S3Stream(
 
     companion object {
         private val END = ByteArray(0)
-        const val API_KEY = "AIzaSyDbHU30I-v5OpOJm1-uff09-NJbd6I8InU"
-        const val PACKAGE = "com.google.android.googlequicksearchbox"
-        const val CERT = "58E1C4133F7441EC3D2C270270A14802DA47BA0E"
     }
+}
+
+// ---- request encoding ----
+// Protobuf writes fields in number order, extensions among them, so these do too: the bytes match
+// what Gboard 18.5.3's S3HeaderProducer and S3RequestMutator produce for a voice-typing session.
+
+/**
+ * aatd header: recognizer name, then extensions aatf (locales), aasw (audio), aatb (client),
+ * aawg (recognizer options) and aatk. [elapsedMs] runs from the session start, like Gboard's
+ * stopwatch.
+ */
+internal fun s3Header(r: S3Request, elapsedMs: Long): ByteArray {
+    // Gboard renames these primary locales for the server; secondary ones go as they are.
+    val primary = when (r.language) {
+        "zh-CN" -> "zh-Hans"
+        "zh-TW" -> "zh-Hant"
+        "zh-HK" -> "yue"
+        else -> r.language
+    }
+    fun locale(tag: String) = Pb.str(1, tag) + Pb.int(2, 1)
+    val aatf = r.extraLanguages.filter { it != r.language }.distinct()
+        .fold(Pb.msg(2, locale(primary))) { acc, tag -> acc + Pb.msg(4, locale(tag)) } +
+        Pb.bool(20, true)
+    // 16 kHz, OGG_OPUS (10), one channel.
+    val aasw = Pb.f32(2, 16000.0f) + Pb.int(3, 10) + Pb.int(4, 1) + Pb.int(9, elapsedMs)
+    val aatb = Pb.str(2, Identity.CLIENT) + Pb.str(8, "Android") +
+        Pb.str(9, android.os.Build.DISPLAY ?: "") + Pb.str(10, Identity.VERSION) +
+        Pb.str(11, android.os.Build.MODEL ?: "") +
+        (r.triggerApp?.takeIf { it.isNotEmpty() }?.let { Pb.str(16, it) } ?: ByteArray(0)) +
+        Pb.msg(22, Pb.bool(1, false)) + Pb.int(26, 1)
+    // f7 is 2 when Gboard's "Block offensive words" is on. f40, f91.2 and aatf f20 follow
+    // Gboard's server-tuned flags, whose live values aren't known; these are their defaults.
+    val aawg = Pb.msg(1, Pb.bool(4, false)) + Pb.bool(5, true) +
+        Pb.int(7, if (r.maskOffensiveWords) 2 else 0) + Pb.bool(13, true) + Pb.bool(20, true) +
+        Pb.bool(40, false) + Pb.bool(41, true) + Pb.str(50, Identity.ROUTING_KEY) +
+        Pb.msg(91, Pb.bool(2, true))
+    return Pb.str(1, Identity.RECOGNIZER) + Pb.bool(2, true) +
+        Pb.msg(293000, aatf) + Pb.msg(293100, aasw) + Pb.msg(294000, aatb) +
+        Pb.msg(294500, aawg) + Pb.msg(29735924, Pb.int(1, 500))
+}
+
+/** aatd audio: aasw with the send time, then aasv with the Ogg bytes. */
+internal fun s3Audio(chunk: ByteArray, elapsedMs: Long): ByteArray =
+    Pb.msg(293100, Pb.int(9, elapsedMs)) + Pb.msg(293101, Pb.bytes(1, chunk))
+
+/** aatd end of data. */
+internal val S3_END: ByteArray = Pb.bool(2, true) + Pb.bool(3, true)
+
+/** gRPC frame: 1-byte compressed flag + 4-byte big-endian length + payload. */
+internal fun grpcFrame(payload: ByteArray): ByteArray =
+    byteArrayOf(0, (payload.size shr 24).toByte(), (payload.size shr 16).toByte(),
+        (payload.size shr 8).toByte(), payload.size.toByte()) + payload
+
+/** Cuts bytes arriving in any lengths into [size]-byte pieces; [drain] returns what is left. */
+internal class Chunker(private val size: Int) {
+    private val buf = java.io.ByteArrayOutputStream()
+
+    fun add(bytes: ByteArray): List<ByteArray> {
+        buf.write(bytes)
+        if (buf.size() < size) return emptyList()
+        val all = buf.toByteArray()
+        val whole = all.size / size * size
+        buf.reset()
+        buf.write(all, whole, all.size - whole)
+        return (0 until whole step size).map { all.copyOfRange(it, it + size) }
+    }
+
+    fun drain(): List<ByteArray> =
+        buf.toByteArray().also { buf.reset() }.let { if (it.isEmpty()) emptyList() else listOf(it) }
 }
 
 /** [grpcStatus] is the gRPC status code, -1 when the response broke the protocol. */

@@ -41,6 +41,7 @@ class InsertionService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         registerReceiver(receiver, IntentFilter(ACTION_INSERT), RECEIVER_NOT_EXPORTED)
+        instance = this
         _connected.value = true
         scope.launch {
             Prefs.settings.map { it.triggers }.distinctUntilChanged().collect { triggers ->
@@ -55,6 +56,7 @@ class InsertionService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        instance = null
         _connected.value = false
         scope.cancel()
         setOverlay(false)
@@ -123,6 +125,14 @@ class InsertionService : AccessibilityService() {
         private val _connected = MutableStateFlow(false)
         /** True while Android has this service bound, which every background trigger needs. */
         val connected: StateFlow<Boolean> = _connected.asStateFlow()
+
+        @Volatile private var instance: InsertionService? = null
+
+        /** Package of the app whose field has input focus; Rambler gets it as the trigger app. */
+        fun focusedApp(): String? = runCatching {
+            instance?.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                ?.packageName?.toString()
+        }.getOrNull()
 
         const val ACTION_INSERT = "dev.silver.burble.INSERT"
         const val EXTRA_TEXT = "text"
