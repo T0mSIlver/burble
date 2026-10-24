@@ -22,7 +22,7 @@ enum class Trigger { BUBBLE, ACCESSIBILITY_BUTTON, QUICK_SETTINGS }
 /** The bubble's shape, by MaterialShapes name. */
 enum class BubbleShape { COOKIE_9, SUNNY, CLOVER_4, CIRCLE, PILL, SOFT_BURST }
 
-enum class BubbleSize { S, M, L }
+enum class BubbleSize { SMALL, MEDIUM, LARGE }
 
 /** When the bubble shows. It always shows while dictating or while a card is open. */
 enum class BubbleVisibility { FIELD_FOCUSED, ALWAYS }
@@ -51,7 +51,7 @@ data class Settings(
     val stopAfterSilenceSeconds: Int = 120,
     val maskOffensiveWords: Boolean = false,
     val bubbleVisibility: BubbleVisibility = BubbleVisibility.FIELD_FOCUSED,
-    val bubbleSize: BubbleSize = BubbleSize.M,
+    val bubbleSize: BubbleSize = BubbleSize.MEDIUM,
     val sounds: Boolean = false,
     /** Days recent dictations stay on the phone; 0 keeps none. */
     val historyDays: Int = 1,
