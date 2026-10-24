@@ -233,7 +233,10 @@ internal fun s3Header(r: S3Request, elapsedMs: Long): ByteArray {
         Pb.msg(91, Pb.bool(2, true))
     return Pb.str(1, Identity.RECOGNIZER) + Pb.bool(2, true) +
         Pb.msg(293000, aatf) + Pb.msg(293100, aasw) + Pb.msg(294000, aatb) +
-        Pb.msg(294500, aawg) + Pb.msg(29735924, Pb.int(1, 500))
+        Pb.msg(294500, aawg) + Pb.msg(29735924, Pb.int(1, 500)) +
+        // aatr f5: the custom instruction Gboard sends from its Rambler settings. Without it the
+        // server treats instruction-like sentences ("keep it minimal") as edits and drops them.
+        Pb.msg(1203, Pb.str(5, Identity.CUSTOM_INSTRUCTION))
 }
 
 /** aatd audio: aasw with the send time, then aasv with the Ogg bytes. */
