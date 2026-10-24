@@ -1,0 +1,6 @@
+# OkHttp
+-dontwarn okhttp3.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+-keepclassmembers class dev.silver.ramblerbubble.** { *; }
