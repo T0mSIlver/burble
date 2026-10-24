@@ -1,14 +1,17 @@
 package dev.silver.ramblerbubble
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import android.view.accessibility.AccessibilityManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.Locale
 
 /**
  * The one dictation in progress, shared by every trigger (bubble, accessibility button,
@@ -55,7 +58,7 @@ object Dictation {
             onPartial = {},
             onLevel = { _level.value = it },
             onResult = { r -> main.post { finish(app, r) } },
-            language = Prefs.settings.value.language,
+            language = Prefs.settings.value.language.ifBlank { Locale.getDefault().toLanguageTag() },
         )
         session = s
         s.start()
@@ -83,6 +86,9 @@ object Dictation {
         if (_state.value is State.Done || _state.value is State.Error) _state.value = State.Idle
     }
 
+    /** Types [text] into the focused field, as [Output.INSERT] does; used for held text. */
+    fun insert(context: Context, text: String) = InsertionService.deliver(context, text)
+
     fun copy(context: Context, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("dictation", text))
@@ -105,7 +111,11 @@ object Dictation {
     }
 
     private fun deliver(context: Context, text: String): State.Done {
-        val output = Prefs.settings.value.output
+        // Without the accessibility service the insert broadcast reaches no one: copy instead,
+        // and say so.
+        val output = Prefs.settings.value.output.let {
+            if (it == Output.INSERT && !canInsert(context)) Output.CLIPBOARD else it
+        }
         when (output) {
             Output.INSERT -> InsertionService.deliver(context, text)
             Output.CLIPBOARD -> copy(context, text)
@@ -114,11 +124,23 @@ object Dictation {
         return State.Done(text, output, delivered = output != Output.HOLD)
     }
 
-    private fun kindOf(e: Throwable): ErrorKind = when {
-        e is QuotaException -> ErrorKind.QUOTA
-        // PERMISSION_DENIED, UNAUTHENTICATED: the server no longer accepts this client.
-        e is S3Exception && e.grpcStatus in setOf(7, 16) -> ErrorKind.REJECTED
-        e is java.io.IOException -> ErrorKind.NETWORK
+    private fun canInsert(context: Context): Boolean {
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { it.resolveInfo.serviceInfo.packageName == context.packageName }
+    }
+
+    internal fun kindOf(e: Throwable): ErrorKind = when (e) {
+        is MicException, is SecurityException -> ErrorKind.NO_MIC
+        is S3Exception -> when (e.grpcStatus) {
+            8 -> ErrorKind.QUOTA // RESOURCE_EXHAUSTED
+            // PERMISSION_DENIED, UNAUTHENTICATED: the key or client is refused. UNIMPLEMENTED:
+            // the method is gone. Each needs a new app version, not a retry.
+            7, 16, 12 -> ErrorKind.REJECTED
+            4, 14 -> ErrorKind.NETWORK // DEADLINE_EXCEEDED, UNAVAILABLE
+            else -> ErrorKind.OTHER
+        }
+        is java.io.IOException -> ErrorKind.NETWORK
         else -> ErrorKind.OTHER
     }
 

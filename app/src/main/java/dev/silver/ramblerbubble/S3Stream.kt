@@ -83,9 +83,7 @@ class S3Stream(
             override fun isOneShot() = true
 
             override fun writeTo(sink: BufferedSink) {
-                val h = headerMessage()
-                android.util.Log.d("S3DBG", "header=" + h.joinToString("") { "%02x".format(it) })
-                sink.write(frame(h))
+                sink.write(frame(headerMessage()))
                 var sent = 0L
                 while (true) {
                     val chunk = queue.poll(120, TimeUnit.SECONDS)
@@ -115,9 +113,11 @@ class S3Stream(
                 response.use { resp ->
                     val earlyStatus = resp.header("grpc-status")
                     if (!resp.isSuccessful || (earlyStatus != null && earlyStatus != "0")) {
+                        // A trailers-only error carries its gRPC status in the headers; a proxy
+                        // error has only the HTTP one.
+                        val code = earlyStatus?.toIntOrNull() ?: grpcStatusOf(resp.code)
                         complete(Result.failure(
-                            S3Exception(earlyStatus?.toIntOrNull() ?: -1,
-                                resp.header("grpc-message") ?: resp.message)))
+                            S3Exception(code, resp.header("grpc-message") ?: resp.message)))
                         return
                     }
                     readResponses(resp)
@@ -141,8 +141,6 @@ class S3Stream(
                 if (len > 4_000_000) throw S3Exception(-1, "oversized frame $len")
                 val payload = ByteArray(len)
                 if (readFully(src, payload) < len) break
-                android.util.Log.d("S3DBG", "frame len=" + len + " hex=" +
-                    payload.joinToString("") { "%02x".format(it) }.take(400))
                 handleMessage(payload)
             }
             val trailers = resp.trailers()
@@ -172,8 +170,7 @@ class S3Stream(
         if (status != null && status != 0L && status != 1L) {
             val code = (Pb.firstVarint(payload, 2) ?: -1).toInt()
             val msg = Pb.first(payload, 3)?.toString(Charsets.UTF_8) ?: ""
-            complete(Result.failure(
-                if (code == 8) QuotaException(msg) else S3Exception(code, msg)))
+            complete(Result.failure(S3Exception(code, msg)))
             return
         }
         val aawe = Pb.first(payload, 1253625) ?: return
@@ -209,8 +206,19 @@ class S3Stream(
     }
 }
 
+/** [grpcStatus] is the gRPC status code, -1 when the response broke the protocol. */
 class S3Exception(val grpcStatus: Int, message: String) : Exception("gRPC $grpcStatus: $message")
-class QuotaException(message: String) : Exception(message)
+
+/** The gRPC status an HTTP error stands for, per the gRPC HTTP/2 spec; 429 is quota here. */
+internal fun grpcStatusOf(http: Int): Int = when (http) {
+    400 -> 13 // INTERNAL
+    401 -> 16 // UNAUTHENTICATED
+    403 -> 7 // PERMISSION_DENIED
+    404 -> 12 // UNIMPLEMENTED
+    429 -> 8 // RESOURCE_EXHAUSTED
+    502, 503, 504 -> 14 // UNAVAILABLE
+    else -> 2 // UNKNOWN
+}
 
 object S3 {
     fun client(): OkHttpClient = OkHttpClient.Builder()

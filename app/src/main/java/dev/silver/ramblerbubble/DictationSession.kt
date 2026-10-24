@@ -37,12 +37,12 @@ class DictationSession(
                 val r = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
                     maxOf(minBuf, 32000))
-                if (r.state != AudioRecord.STATE_INITIALIZED) {
-                    throw IllegalStateException("AudioRecord init failed: ${r.state}")
-                }
                 record = r
-                s.start()
+                if (r.state != AudioRecord.STATE_INITIALIZED) throw MicException("init ${r.state}")
                 r.startRecording()
+                // Another app holding the mic (a call, a recorder) fails here, not at init.
+                if (r.recordingState != AudioRecord.RECORDSTATE_RECORDING) throw MicException("busy")
+                s.start()
                 val pcm = ByteArray(3200) // 100 ms
                 val t0 = android.os.SystemClock.elapsedRealtime()
                 while (!stopping && android.os.SystemClock.elapsedRealtime() - t0 < maxMs) {
@@ -103,3 +103,6 @@ class DictationSession(
         }
     }
 }
+
+/** The microphone could not be opened: permission revoked, or another app holds it. */
+class MicException(message: String) : Exception(message)
