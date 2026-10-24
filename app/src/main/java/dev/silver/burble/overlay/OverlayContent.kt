@@ -81,6 +81,7 @@ import dev.silver.burble.Dictation
 import dev.silver.burble.Dictation.ErrorKind
 import dev.silver.burble.Prefs
 import dev.silver.burble.R
+import dev.silver.burble.ui.theme.LocalWallpaperColors
 import kotlinx.coroutines.delay
 
 /** What the bubble draws; several [Dictation.State]s share one. */
@@ -156,12 +157,15 @@ private fun haptic(view: View, look: Look) {
 }
 
 /**
- * The wave's hue: the theme's tertiary, as Gboard's bar uses, at a light tone. Light themes'
- * tertiary is dark (tone 40), so it is lifted towards its container; dark themes' is already
- * light (tone 80).
+ * The wave's hue, at a light tone: the wallpaper's tertiary, as Gboard's bar uses; under the
+ * Google blue fallback, whose tertiary is a green that would look accidental, the primary blue.
+ * Light themes' accents are dark (tone 40), so they are lifted towards their container; dark
+ * themes' are already light (tone 80).
  */
-internal fun ColorScheme.waveColor(): Color =
-    if (surface.luminance() < 0.5f) tertiary else lerp(tertiary, tertiaryContainer, 0.6f)
+internal fun ColorScheme.waveColor(wallpaper: Boolean): Color {
+    val (accent, container) = if (wallpaper) tertiary to tertiaryContainer else primary to primaryContainer
+    return if (surface.luminance() < 0.5f) accent else lerp(accent, container, 0.6f)
+}
 
 /** Draws the wave; the live overlay passes the mic's, screenshot tests a frozen one. */
 internal typealias WaveSlot = @Composable (color: Color, modifier: Modifier) -> Unit
@@ -188,7 +192,9 @@ internal fun OverlayContent(
     val colors = MaterialTheme.colorScheme
     val (container, content) = when (look) {
         Look.Done -> colors.primary to colors.onPrimary
-        Look.Ready -> colors.tertiaryContainer to colors.onTertiaryContainer
+        // Tertiary is the wallpaper's accent; the Google blue fallback's is an accidental green.
+        Look.Ready -> if (LocalWallpaperColors.current) colors.tertiaryContainer to colors.onTertiaryContainer
+            else colors.secondaryContainer to colors.onSecondaryContainer
         is Look.Failed -> colors.errorContainer to colors.onErrorContainer
         // Gboard's bar: the glow on the plain surface.
         Look.Listening -> colors.surfaceContainerLowest to colors.onSurface
@@ -254,7 +260,7 @@ internal fun OverlayContent(
                 val glyph = Modifier.size(side * 0.42f)
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { when (s) {
                     Look.Idle -> Icon(Icons.Rounded.Mic, stringResource(R.string.overlay_start), glyph, fg)
-                    Look.Listening -> wave(colors.waveColor(), Modifier.fillMaxSize())
+                    Look.Listening -> wave(colors.waveColor(LocalWallpaperColors.current), Modifier.fillMaxSize())
                     Look.Finishing -> LoadingIndicator(Modifier.size(side * 0.72f), color = colors.primary)
                     Look.Done -> Icon(Icons.Rounded.Check, stringResource(R.string.overlay_inserted), glyph, fg)
                     Look.Ready -> Icon(Icons.Rounded.ContentPaste, stringResource(R.string.overlay_ready), glyph, fg)

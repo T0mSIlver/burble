@@ -24,6 +24,7 @@ import dev.silver.burble.BubbleSize
 import dev.silver.burble.Dictation.ErrorKind
 import dev.silver.burble.Wallpaper
 import dev.silver.burble.ui.theme.AppTheme
+import dev.silver.burble.ui.theme.LocalWallpaperColors
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -113,7 +114,7 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(width = 300.dp, height = 45.dp).clip(RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp))
                         .background(c.surfaceContainerLowest)) {
-                        Wave({ level }, { i * 0.1f }, c.waveColor(), Modifier.fillMaxSize(), shader = shader)
+                        Wave({ level }, { i * 0.1f }, c.waveColor(LocalWallpaperColors.current), Modifier.fillMaxSize(), shader = shader)
                     }
                     Bubble(Look.Listening, level = level, time = i * 0.1f, shader = shader)
                 }
