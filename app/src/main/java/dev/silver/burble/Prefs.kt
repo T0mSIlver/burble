@@ -32,6 +32,7 @@ data class Settings(
     val language: String = "en-US",
     val onboarded: Boolean = false,
     val bubbleSize: BubbleSize = BubbleSize.MEDIUM,
+    val hideKeyboard: Boolean = true,
     val checkUpdates: Boolean = true,
     /** BCP-47 tags the user speaks; the first is [language], the others go as secondary locales. */
     val languages: List<String> = listOf(language),
@@ -61,6 +62,7 @@ object Prefs {
             .putBoolean("onboarded", next.onboarded)
             .putString("bubbleSize", next.bubbleSize.name)
             .putBoolean("checkUpdates", next.checkUpdates)
+            .putBoolean("hideKeyboard", next.hideKeyboard)
             .putString("languages", next.languages.joinToString(","))
             .apply()
         _settings.value = next
@@ -79,6 +81,7 @@ object Prefs {
             onboarded = sp.getBoolean("onboarded", d.onboarded),
             bubbleSize = enumOr(sp.getString("bubbleSize", null), d.bubbleSize),
             checkUpdates = sp.getBoolean("checkUpdates", d.checkUpdates),
+            hideKeyboard = sp.getBoolean("hideKeyboard", d.hideKeyboard),
             languages = sp.getString("languages", null)?.split(',')?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
                 ?: listOf(language),
         )
