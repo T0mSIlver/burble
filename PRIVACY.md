@@ -1,6 +1,6 @@
 # Privacy
 
-Rambler Bubble has no server of its own. The developer receives nothing from
+Burble has no server of its own. The developer receives nothing from
 the app.
 
 ## What leaves your phone

@@ -15,11 +15,11 @@ class RobolectricSdk(@get:InputFiles @get:PathSensitive(PathSensitivity.NAME_ONL
 }
 
 android {
-    namespace = "dev.silver.ramblerbubble"
+    namespace = "dev.silver.burble"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "dev.silver.ramblerbubble"
+        applicationId = "dev.silver.burble"
         minSdk = 29
         targetSdk = 36
         versionCode = 1

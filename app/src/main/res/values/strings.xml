@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Rambler Bubble</string>
+    <string name="app_name">Burble</string>
     <string name="no_mic">Microphone permission missing</string>
     <string name="empty_result">Nothing was heard</string>
     <string name="quota">Dictation quota used up for now; try again later</string>
     <string name="copied">No text field; copied: %1$s</string>
     <string name="failed">Dictation failed: %1$s</string>
-    <string name="a11y_desc">Rambler Bubble needs this to type your dictated words into the text field you are using. Android offers no other way to insert text into another app. After you dictate, it finds the focused text field and puts the words at the cursor. It does not read your screen, record what you type or watch other apps, and it sends nothing anywhere.</string>
-    <string name="disclaimer_short">Rambler Bubble is not affiliated with Google. Your dictation audio is sent to Google servers, through a service Google has not opened to third-party apps. It may stop working at any time.</string>
+    <string name="a11y_desc">Burble needs this to type your dictated words into the text field you are using. Android offers no other way to insert text into another app. After you dictate, it finds the focused text field and puts the words at the cursor. It does not read your screen, record what you type or watch other apps, and it sends nothing anywhere.</string>
+    <string name="disclaimer_short">Burble is not affiliated with Google. Your dictation audio is sent to Google servers, through a service Google has not opened to third-party apps. It may stop working at any time.</string>
     <string name="send_test_audio">Send test audio</string>
     <string name="sending">Sending test audio…</string>
     <string name="test_result">Server heard: %1$s</string>
@@ -49,11 +49,11 @@
     <string name="onb_unlock_1">Open App info.</string>
     <string name="onb_unlock_2">Tap ⋮ at the top, then Allow restricted settings.</string>
     <string name="onb_unlock_3">Come back here.</string>
-    <string name="onb_unlock_hint">No such option? Try once to turn on Rambler Bubble in accessibility settings, then look again.</string>
+    <string name="onb_unlock_hint">No such option? Try once to turn on Burble in accessibility settings, then look again.</string>
     <string name="onb_insert_title">Accessibility service</string>
     <string name="onb_insert_why">Shows the bubble over other apps and types your words into the text field you\'re in. Android has no other way for an app to do this.</string>
     <string name="onb_insert_not">It doesn\'t read your screen, log what you type or send anything anywhere.</string>
-    <string name="onb_insert_how">In accessibility settings, find Rambler Bubble and turn it on.</string>
+    <string name="onb_insert_how">In accessibility settings, find Burble and turn it on.</string>
     <string name="onb_granted">Allowed</string>
     <string name="onb_allow">Allow</string>
     <string name="onb_skip">Skip</string>
@@ -75,7 +75,7 @@
     <string name="trigger_bubble">Bubble</string>
     <string name="trigger_bubble_hint">Floats over every app. Drag it anywhere.</string>
     <string name="trigger_a11y">Accessibility button</string>
-    <string name="trigger_a11y_hint">Turn on Rambler Bubble dictation button in accessibility settings</string>
+    <string name="trigger_a11y_hint">Turn on Burble dictation button in accessibility settings</string>
     <string name="trigger_a11y_action">Set up</string>
     <string name="trigger_tile">Quick Settings tile</string>
     <string name="trigger_tile_hint">Add it when you edit Quick Settings</string>
@@ -99,6 +99,6 @@
     <string name="language_hint">The language you speak</string>
     <string name="language_title">Dictation language</string>
     <string name="version">Version %1$s</string>
-    <string name="a11y_button_label">Rambler Bubble dictation button</string>
+    <string name="a11y_button_label">Burble dictation button</string>
     <string name="a11y_button_desc">Starts and stops dictation from Android\'s accessibility button. Turn this on only if you want that button; the bubble and the Quick Settings tile don\'t need it. It reads nothing on screen.</string>
 </resources>

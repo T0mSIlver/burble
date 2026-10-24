@@ -3,4 +3,4 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
--keepclassmembers class dev.silver.ramblerbubble.** { *; }
+-keepclassmembers class dev.silver.burble.** { *; }

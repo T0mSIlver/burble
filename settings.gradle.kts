@@ -30,5 +30,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "rambler-bubble"
+rootProject.name = "burble"
 include(":app")

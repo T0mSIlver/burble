@@ -1,4 +1,4 @@
-# Rambler Bubble
+# Burble
 
 A floating dictation bubble for Android that talks directly to Gboard's Rambler
 speech-to-text backend. Tap the bubble, talk, tap again: the text lands in the
@@ -60,10 +60,10 @@ resolve through that mirror first.
 
 ## Legal disclaimer
 
-Rambler Bubble is an independent project. It is not a modified Google app and
+Burble is an independent project. It is not a modified Google app and
 contains no Google code.
 
-- **No affiliation.** Rambler Bubble is not affiliated with, endorsed by or
+- **No affiliation.** Burble is not affiliated with, endorsed by or
   sponsored by Google LLC or Alphabet Inc.
 - **Trademarks.** Google, Gboard, Gemini, Android and other names are
   trademarks of their owners. They appear here only to say what this app works
