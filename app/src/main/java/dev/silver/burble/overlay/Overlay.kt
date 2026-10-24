@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewConfiguration
@@ -33,7 +34,10 @@ import dev.silver.burble.Dictation
 import dev.silver.burble.Prefs
 import dev.silver.burble.recording
 import dev.silver.burble.ui.theme.AppTheme
+import dev.silver.burble.BubbleShape
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -107,6 +111,7 @@ class Overlay(
 
     fun show() {
         if (root != null) return
+        dropShapeThatHung()
         val o = Owner().also { owner = it }
         scope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main)
         val frame = DragFrame(context)
@@ -124,6 +129,9 @@ class Overlay(
         windowManager.addView(frame, params)
         root = frame
         o.resume()
+        scope?.launch {
+            Prefs.settings.map { it.shape }.distinctUntilChanged().collect { guard(it, frame) }
+        }
     }
 
     fun hide() {
@@ -186,6 +194,27 @@ class Overlay(
             launch { ax.animateTo(x.toFloat(), spec) { params.x = value.roundToInt(); apply() } }
             launch { ay.animateTo(y.toFloat(), spec) { params.y = value.roundToInt(); apply() } }
         }
+    }
+
+    // ---- shape guard ----
+
+    // A shape is marked before it is drawn and unmarked once a frame with it reaches the screen.
+    // A mark left at the next start means the app hung or died drawing it (Skia's shadow once hung
+    // on SoftBurst at every launch): that shape is dropped for the cookie, so a bad choice can't
+    // lock the user out of the app.
+    private fun guard(shape: BubbleShape, frame: FrameLayout) {
+        prefs.edit().putString(KEY_DRAWING, shape.name).commit()
+        frame.viewTreeObserver.registerFrameCommitCallback {
+            if (prefs.getString(KEY_DRAWING, null) == shape.name) prefs.edit().remove(KEY_DRAWING).apply()
+        }
+        frame.invalidate()
+    }
+
+    private fun dropShapeThatHung() {
+        val hung = prefs.getString(KEY_DRAWING, null) ?: return
+        prefs.edit().remove(KEY_DRAWING).commit()
+        Log.w(TAG, "the last start never drew $hung; back to the cookie")
+        Prefs.update { if (it.shape.name == hung) it.copy(shape = BubbleShape.COOKIE_9) else it }
     }
 
     // ---- dismiss target ----
@@ -349,6 +378,8 @@ class Overlay(
     private companion object {
         const val KEY_RIGHT = "right"
         const val KEY_FRACTION = "fraction"
+        const val KEY_DRAWING = "drawing_shape"
+        const val TAG = "Overlay"
         const val BUBBLE_DP = 80
         const val PADDING_DP = 8
         const val TARGET_DP = 64
