@@ -14,6 +14,8 @@ import dev.silver.burble.ui.Onboarding
 import dev.silver.burble.ui.Step
 import dev.silver.burble.ui.TestAudio
 import dev.silver.burble.ui.theme.AppTheme
+import dev.silver.burble.updater.Release
+import dev.silver.burble.updater.Updater
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,38 +63,47 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     @Test fun notifications() = step(Step.NOTIFICATIONS, Access.None)
     @Test fun unlock() = step(Step.UNLOCK, Access.None)
     @Test fun insertion() = step(Step.INSERTION, Access.None)
+    @Test fun battery() = step(Step.BATTERY, Access.None)
+    @Test fun tile() = step(Step.TILE, Access.None)
 
     // The check mark the user sees on coming back from Settings.
     @Test fun insertionGranted() = capture("onboarding-insertion-granted") {
         Onboarding(Access.All, AccessActions.None, steps, onDone = {}, initial = steps.indexOf(Step.INSERTION))
     }
 
-    private val settings = Settings(onboarded = true)
+    private val settings = Settings(onboarded = true, languages = listOf("en-US", "fr-FR"))
+    private val release = Release(
+        version = "0.2.0",
+        notes = "- The bubble keeps your words when the screen rotates.\n- Languages: pick several; the first is the main one.\n- Fixes a crash when the network drops mid-dictation.",
+        apkUrl = "",
+        apkSize = 0,
+    )
 
-    @Config(qualifiers = "w412dp-h1900dp-xxhdpi")
+    @Config(qualifiers = "w412dp-h2000dp-xxhdpi")
     @Test fun home() = capture("home") {
-        Home(settings, Access.All, test = TestAudio.State.Heard("Hello, this is a test of dictation."), actions = HomeActions.None, version = "0.1.0")
+        Home(settings, Access.All, TestAudio.State.Heard("Hello, this is a test of dictation."), Updater.State.Available(release), HomeActions.None, "0.1.0")
     }
 
     @Test fun homeSetup() = capture("home-setup") {
+        Home(settings.copy(shape = BubbleShape.SUNNY), Access.None, TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0")
+    }
+
+    // On in Settings but stopped, with battery optimisation on: the usual cause.
+    @Test fun homeStopped() = capture("home-stopped") {
+        Home(settings, Access.All.copy(stopped = true, battery = false), TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0")
+    }
+
+    @Config(qualifiers = "w412dp-h2000dp-xxhdpi")
+    @Test fun homeUpdating() = capture("home-updating") {
         Home(
-            settings.copy(output = Output.HOLD, shape = BubbleShape.SUNNY),
-            Access.None,
-            test = TestAudio.State.Idle,
-            actions = HomeActions.None,
-            version = "0.1.0",
+            settings.copy(bubbleSize = BubbleSize.LARGE, shape = BubbleShape.CLOVER_4),
+            Access.All, TestAudio.State.Sending, Updater.State.Downloading(release, 0.4f), HomeActions.None, "0.1.0",
         )
     }
 
-    // Every trigger on: the accessibility button and tile rows offer their Android settings.
-    @Config(qualifiers = "w412dp-h1200dp-xxhdpi")
-    @Test fun homeTriggers() = capture("home-triggers") {
-        Home(settings.copy(triggers = Trigger.entries.toSet()), Access.All, test = TestAudio.State.Sending, actions = HomeActions.None, version = "0.1.0")
-    }
-
     @OptIn(ExperimentalRoborazziApi::class)
-    @Test fun language() {
-        themed { Home(settings.copy(language = "fr-FR"), Access.All, TestAudio.State.Idle, HomeActions.None, "0.1.0", languageOpen = true) }
-        captureScreenRoboImage("screenshots/home-language-$name.png")
+    @Test fun languages() {
+        themed { Home(settings, Access.All, TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0", languagesOpen = true) }
+        captureScreenRoboImage("screenshots/home-languages-$name.png")
     }
 }
