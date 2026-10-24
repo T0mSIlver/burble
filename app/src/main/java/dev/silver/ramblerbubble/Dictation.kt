@@ -100,6 +100,14 @@ object Dictation {
         cm.setPrimaryClip(ClipData.newPlainText("dictation", text))
     }
 
+    /** Delivers [text] as if the server had sent it; for the debug build's test hook. */
+    internal fun fakeResult(context: Context, text: String) {
+        session?.cancel()
+        session = null
+        _state.value = State.Finishing
+        finish(context.applicationContext, Result.success(text))
+    }
+
     private fun finish(context: Context, r: Result<String>) {
         if (_state.value == State.Idle) return // cancelled
         session = null

@@ -25,7 +25,8 @@ import kotlinx.coroutines.launch
  * the app is in the background throws SecurityException
  * (https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start#wiu-restrictions).
  * Every trigger starts it while the app holds that permission:
- * - Accessibility button and Quick Settings tile: both need [InsertionService] connected.
+ * - Accessibility button: comes through [ButtonService], itself an accessibility service.
+ * - Quick Settings tile: needs [InsertionService] connected.
  *   The system binds accessibility services with BIND_INCLUDE_CAPABILITIES and
  *   BIND_ALLOW_BACKGROUND_ACTIVITY_STARTS (AOSP AccessibilityServiceConnection.bindLocked),
  *   so our process inherits system_server's microphone capability and may start foreground

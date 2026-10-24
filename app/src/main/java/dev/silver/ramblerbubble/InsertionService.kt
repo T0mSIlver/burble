@@ -1,6 +1,5 @@
 package dev.silver.ramblerbubble
 
-import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityService
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -24,18 +23,13 @@ import kotlinx.coroutines.launch
 
 /**
  * Inserts dictated text into the focused editable field; when there is none,
- * copies it to the clipboard and says so. Also hosts the triggers that need a connected
- * accessibility service: the accessibility button and the bubble overlay.
+ * copies it to the clipboard and says so. Also hosts the bubble overlay. The accessibility
+ * button is [ButtonService]'s.
  */
 class InsertionService : AccessibilityService() {
 
     private val scope = MainScope()
     private var overlay: OverlayHost? = null
-
-    private val buttonCallback = object : AccessibilityButtonController.AccessibilityButtonCallback() {
-        override fun onClicked(controller: AccessibilityButtonController) =
-            Dictation.toggle(this@InsertionService)
-    }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -50,7 +44,6 @@ class InsertionService : AccessibilityService() {
         _connected.value = true
         scope.launch {
             Prefs.settings.map { it.triggers }.distinctUntilChanged().collect { triggers ->
-                setButton(Trigger.ACCESSIBILITY_BUTTON in triggers)
                 setOverlay(Trigger.BUBBLE in triggers)
             }
         }
@@ -67,20 +60,6 @@ class InsertionService : AccessibilityService() {
         setOverlay(false)
         runCatching { unregisterReceiver(receiver) }
         super.onDestroy()
-    }
-
-    /**
-     * flagRequestAccessibilityButton lives in accessibility_service.xml: from Android 11 a
-     * service can't change it at runtime (AccessibilityServiceInfo
-     * .updateDynamicallyConfigurableProperties), and without it the button turns the
-     * service off instead of calling back (AccessibilityManagerService
-     * .performAccessibilityShortcutTargetService). Whether the button shows is the user's
-     * Android setting; we only decide whether a press dictates.
-     */
-    private fun setButton(on: Boolean) {
-        val controller = accessibilityButtonController
-        if (on) controller.registerAccessibilityButtonCallback(buttonCallback)
-        else controller.unregisterAccessibilityButtonCallback(buttonCallback)
     }
 
     /**

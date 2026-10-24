@@ -166,7 +166,7 @@ private fun StepPage(step: Step, access: Access, actions: AccessActions, appInfo
                 Step.INSERTION -> Permission(
                     Icons.Rounded.Keyboard, MaterialShapes.SoftBurst, done,
                     R.string.onb_insert_title, R.string.onb_insert_why, R.string.onb_insert_not,
-                    how = if (Build.VERSION.SDK_INT >= 31) R.string.onb_insert_how_shortcut else R.string.onb_insert_how,
+                    how = R.string.onb_insert_how,
                 )
             }
             Spacer(Modifier.height(24.dp))
