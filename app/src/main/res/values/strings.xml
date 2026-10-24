@@ -23,4 +23,13 @@
     <string name="send_test_audio">Send test audio (checks the server)</string>
     <string name="sending">Sending test audio…</string>
     <string name="test_result">Server heard: %1$s</string>
+    <string name="mic_channel">While dictating</string>
+    <string name="mic_listening">Listening</string>
+    <string name="mic_finishing">Getting the text…</string>
+    <string name="mic_stop">Stop</string>
+    <string name="mic_cancel">Cancel</string>
+    <string name="tile_label">Dictate</string>
+    <string name="tile_listening">Listening</string>
+    <string name="tile_finishing">Getting the text</string>
+    <string name="tile_needs_service">Set up in the app</string>
 </resources>

@@ -66,6 +66,7 @@ object Dictation {
             language = Prefs.settings.value.language.ifBlank { Locale.getDefault().toLanguageTag() },
         )
         session = s
+        MicService.start(app)
         s.start()
     }
 

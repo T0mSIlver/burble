@@ -1,5 +1,6 @@
 package dev.silver.ramblerbubble
 
+import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityService
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -10,12 +11,29 @@ import android.content.IntentFilter
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * Inserts dictated text into the focused editable field; when there is none,
- * copies it to the clipboard and says so.
+ * copies it to the clipboard and says so. Also hosts the triggers that need a connected
+ * accessibility service: the accessibility button and the bubble overlay.
  */
 class InsertionService : AccessibilityService() {
+
+    private val scope = MainScope()
+    private var overlay: OverlayHost? = null
+
+    private val buttonCallback = object : AccessibilityButtonController.AccessibilityButtonCallback() {
+        override fun onClicked(controller: AccessibilityButtonController) =
+            Dictation.toggle(this@InsertionService)
+    }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -27,12 +45,62 @@ class InsertionService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         registerReceiver(receiver, IntentFilter(ACTION_INSERT), RECEIVER_NOT_EXPORTED)
+        _connected.value = true
+        scope.launch {
+            Prefs.settings.map { it.triggers }.distinctUntilChanged().collect { triggers ->
+                setButton(Trigger.ACCESSIBILITY_BUTTON in triggers)
+                setOverlay(Trigger.BUBBLE in triggers)
+            }
+        }
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        _connected.value = false
+        return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        _connected.value = false
+        scope.cancel()
+        setOverlay(false)
         runCatching { unregisterReceiver(receiver) }
         super.onDestroy()
     }
+
+    /**
+     * flagRequestAccessibilityButton lives in accessibility_service.xml: from Android 11 a
+     * service can't change it at runtime (AccessibilityServiceInfo
+     * .updateDynamicallyConfigurableProperties), and without it the button turns the
+     * service off instead of calling back (AccessibilityManagerService
+     * .performAccessibilityShortcutTargetService). Whether the button shows is the user's
+     * Android setting; we only decide whether a press dictates.
+     */
+    private fun setButton(on: Boolean) {
+        val controller = accessibilityButtonController
+        if (on) controller.registerAccessibilityButtonCallback(buttonCallback)
+        else controller.unregisterAccessibilityButtonCallback(buttonCallback)
+    }
+
+    /**
+     * Hosts the bubble as TYPE_ACCESSIBILITY_OVERLAY: no draw-over-apps permission, its
+     * touches are trusted (Android 12 blocks touches passing through other apps' overlays),
+     * apps that hide overlays (setHideOverlayWindows) don't hide it, and the windows under
+     * it stay visible to [rootInActiveWindow], which [insert] needs.
+     */
+    private fun setOverlay(on: Boolean) {
+        if (on && overlay == null) {
+            overlay = newOverlay()?.also { it.show() }
+        } else if (!on) {
+            overlay?.hide()
+            overlay = null
+        }
+    }
+
+    // TODO(integration): return Overlay(this, getSystemService(WindowManager::class.java),
+    //  TYPE_ACCESSIBILITY_OVERLAY) wrapped as an OverlayHost once overlay/Overlay.kt lands,
+    //  then drop SYSTEM_ALERT_WINDOW and BubbleService's bubble. It must use this service's
+    //  own WindowManager: the accessibility overlay type is only granted to its token.
+    private fun newOverlay(): OverlayHost? = null
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
     override fun onInterrupt() = Unit
@@ -72,6 +140,10 @@ class InsertionService : AccessibilityService() {
     }
 
     companion object {
+        private val _connected = MutableStateFlow(false)
+        /** True while Android has this service bound, which every background trigger needs. */
+        val connected: StateFlow<Boolean> = _connected.asStateFlow()
+
         const val ACTION_INSERT = "dev.silver.ramblerbubble.INSERT"
         const val EXTRA_TEXT = "text"
 
@@ -80,4 +152,10 @@ class InsertionService : AccessibilityService() {
                 .setPackage(context.packageName).putExtra(EXTRA_TEXT, text))
         }
     }
+}
+
+/** The floating overlay as [InsertionService] drives it; overlay/Overlay.kt provides it. */
+interface OverlayHost {
+    fun show()
+    fun hide()
 }
