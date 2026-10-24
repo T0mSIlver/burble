@@ -32,4 +32,18 @@
     <string name="tile_listening">Listening</string>
     <string name="tile_finishing">Getting the text</string>
     <string name="tile_needs_service">Set up in the app</string>
+    <string name="overlay_start">Start dictation</string>
+    <string name="overlay_cancel">Cancel</string>
+    <string name="overlay_stop">Stop</string>
+    <string name="overlay_inserted">Inserted</string>
+    <string name="overlay_copied">Copied</string>
+    <string name="overlay_insert">Insert</string>
+    <string name="overlay_copy">Copy</string>
+    <string name="overlay_dismiss">Dismiss</string>
+    <string name="overlay_error_no_mic">Can\'t use the microphone</string>
+    <string name="overlay_error_nothing_heard">Didn\'t hear anything</string>
+    <string name="overlay_error_quota">Dictation limit reached. Try again later</string>
+    <string name="overlay_error_rejected">Google stopped accepting this app; check for an update</string>
+    <string name="overlay_error_network">Can\'t reach Google. Check your connection</string>
+    <string name="overlay_error_other">Dictation failed. Try again</string>
 </resources>
