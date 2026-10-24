@@ -24,7 +24,7 @@ class LevelTest {
     }
 
     @Test fun speechLandsMidScale() {
-        for ((dbfs, level) in listOf(-70.0 to 0f, -60.0 to 0f, -40.0 to 0.5f, -30.0 to 0.75f, -20.0 to 1f, -6.0 to 1f)) {
+        for ((dbfs, level) in listOf(-70.0 to 0f, -55.0 to 0f, -40.0 to 0.5f, -30.0 to 0.833f, -25.0 to 1f, -6.0 to 1f)) {
             assertEquals("$dbfs dBFS", level, DictationSession.levelOf(tone(dbfs), 3200), 0.02f)
         }
     }

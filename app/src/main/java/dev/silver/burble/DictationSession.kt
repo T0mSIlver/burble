@@ -238,9 +238,10 @@ class DictationSession(
         private const val QUIET = 0.25f
 
         /**
-         * Loudness of 16-bit little-endian PCM, 0..1: -60 dBFS (a quiet room) to -20 dBFS (close,
-         * loud speech), linear in decibels. VOICE_RECOGNITION audio has no gain control, so
-         * speech at arm's length sits near -40 dBFS; a linear amplitude scale left it near 0.
+         * Loudness of 16-bit little-endian PCM, 0..1: -55 dBFS (a quiet room) to -25 dBFS (normal
+         * speech close to the phone), linear in decibels. VOICE_RECOGNITION audio has no gain
+         * control, so speech at arm's length sits near -40 dBFS; a linear amplitude scale left it
+         * near 0, and -60..-20 still moved the wave too little.
          */
         internal fun levelOf(pcm: ByteArray, n: Int): Float {
             var sum = 0.0
@@ -252,7 +253,7 @@ class DictationSession(
             }
             val rms = kotlin.math.sqrt(sum / maxOf(1, n / 2)) / 32768.0
             val db = 20 * kotlin.math.log10(maxOf(rms, 1e-6))
-            return ((db + 60) / 40).coerceIn(0.0, 1.0).toFloat()
+            return ((db + 55) / 30).coerceIn(0.0, 1.0).toFloat()
         }
     }
 }
