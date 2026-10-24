@@ -9,11 +9,11 @@ because dictation runs in this app, not in the keyboard.
 ## How to use
 
 1. Install the APK, open the app.
-2. Grant the three permissions it lists: draw over other apps, microphone,
-   text insertion (accessibility).
-3. Tap **Start the bubble**. A gray bubble appears.
-4. Focus any text field, tap the bubble, speak, tap again. The words are
-   inserted at the cursor. With no field focused, the text is copied and
+2. Grant the two permissions it lists: microphone and text insertion
+   (accessibility).
+3. Tap **Start the bubble**. The bubble appears.
+4. Focus any text field, tap the bubble, speak, then tap ✓ (✕ cancels). The
+   words are inserted at the cursor. With no field focused, the text is copied and
    announced.
 5. Drag the bubble to move it.
 

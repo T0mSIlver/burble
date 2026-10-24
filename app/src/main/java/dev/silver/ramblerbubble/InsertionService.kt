@@ -9,8 +9,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import dev.silver.ramblerbubble.overlay.Overlay
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,18 +91,16 @@ class InsertionService : AccessibilityService() {
      */
     private fun setOverlay(on: Boolean) {
         if (on && overlay == null) {
-            overlay = newOverlay()?.also { it.show() }
+            overlay = newOverlay().also { it.show() }
         } else if (!on) {
             overlay?.hide()
             overlay = null
         }
     }
 
-    // TODO(integration): return Overlay(this, getSystemService(WindowManager::class.java),
-    //  TYPE_ACCESSIBILITY_OVERLAY) wrapped as an OverlayHost once overlay/Overlay.kt lands,
-    //  then drop SYSTEM_ALERT_WINDOW and BubbleService's bubble. It must use this service's
-    //  own WindowManager: the accessibility overlay type is only granted to its token.
-    private fun newOverlay(): OverlayHost? = null
+    // This service's own WindowManager: the accessibility overlay type is only granted to its token.
+    private fun newOverlay(): OverlayHost = Overlay(this, getSystemService(WindowManager::class.java),
+        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
     override fun onInterrupt() = Unit

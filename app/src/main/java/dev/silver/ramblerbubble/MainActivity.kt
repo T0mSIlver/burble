@@ -3,7 +3,6 @@ package dev.silver.ramblerbubble
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
@@ -23,18 +22,16 @@ class MainActivity : AppCompatActivity() {
         status = findViewById(R.id.status)
         startButton = findViewById(R.id.start)
 
-        findViewById<Button>(R.id.overlay_perm).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")))
-        }
         findViewById<Button>(R.id.a11y_perm).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
         startButton.setOnClickListener {
-            if (ready()) BubbleService.start(this)
+            if (ready()) Prefs.update { it.copy(triggers = it.triggers + Trigger.BUBBLE) }
         }
         findViewById<Button>(R.id.test_audio).setOnClickListener { sendTestAudio() }
-        findViewById<Button>(R.id.stop).setOnClickListener { BubbleService.stop(this) }
+        findViewById<Button>(R.id.stop).setOnClickListener {
+            Prefs.update { it.copy(triggers = it.triggers - Trigger.BUBBLE) }
+        }
     }
 
     /** Streams the bundled 12 s clip through the app's own S3 client; shows the transcript. */
@@ -75,22 +72,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun ready(): Boolean {
-        val overlay = Settings.canDrawOverlays(this)
-        val mic = hasMic()
-        val a11y = isInsertionEnabled()
-        return overlay && mic && a11y
+        return hasMic() && isInsertionEnabled()
     }
 
     private fun refresh() {
-        val overlay = Settings.canDrawOverlays(this)
         val mic = hasMic()
         val a11y = isInsertionEnabled()
         status.text = buildString {
-            append(getString(R.string.perm_overlay, mark(overlay))); append('\n')
             append(getString(R.string.perm_mic, mark(mic))); append('\n')
             append(getString(R.string.perm_a11y, mark(a11y)))
         }
-        startButton.isEnabled = overlay && mic
+        startButton.isEnabled = mic && a11y
         if (!mic) ActivityCompat.requestPermissions(this,
             arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS), 1)
     }

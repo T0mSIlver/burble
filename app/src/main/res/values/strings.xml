@@ -1,16 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Rambler Bubble</string>
-    <string name="bubble_desc">Dictation bubble</string>
-    <string name="channel">Dictation</string>
-    <string name="notif_title">Rambler Bubble</string>
-    <string name="notif_text">Tap the bubble to dictate</string>
-    <string name="notif_stop">Stop</string>
-    <string name="grant_overlay">Allow draw over other apps</string>
     <string name="grant_a11y">Enable text insertion service</string>
     <string name="start_bubble">Start the bubble</string>
     <string name="stop_bubble">Stop the bubble</string>
-    <string name="perm_overlay">Draw over other apps: %1$s</string>
     <string name="perm_mic">Microphone: %1$s</string>
     <string name="perm_a11y">Text insertion service: %1$s</string>
     <string name="no_mic">Microphone permission missing</string>

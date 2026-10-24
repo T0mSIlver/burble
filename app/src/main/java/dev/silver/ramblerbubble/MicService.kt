@@ -33,8 +33,6 @@ import kotlinx.coroutines.launch
  *   A tile click also puts us on the power-save temp allowlist for 15 s
  *   (AOSP TileLifecycleManager.onClick, REASON_TILE_ONCLICK).
  * - Bubble: hosted by [InsertionService] as an accessibility overlay, same binding as above.
- *   Hosted by BubbleService as a TYPE_APPLICATION_OVERLAY, that service is already a
- *   microphone foreground service started from the activity.
  * - In-app buttons: the activity is visible.
  */
 class MicService : Service() {
