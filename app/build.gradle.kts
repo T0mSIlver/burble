@@ -22,19 +22,41 @@ android {
         applicationId = "dev.silver.burble"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // Release builds pass -PversionName from the tag (v1.2.3 gives 1.2.3).
+        val version = providers.gradleProperty("versionName").orNull ?: "0.1.0"
+        versionName = version
+        // 1.2.3 is 10203: the in-app updater only installs a higher versionCode.
+        versionCode = version.substringBefore('-').split('.').map { it.toInt() }
+            .let { (major, minor, patch) -> major * 10000 + minor * 100 + patch }
+        // -PupdatesUrl points the updater at a fake release for tests.
+        val updates = providers.gradleProperty("updatesUrl").orNull
+            ?: "https://api.github.com/repos/T0mSIlver/burble/releases/latest"
+        buildConfigField("String", "UPDATES_URL", "\"$updates\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystore = releaseKeystore() ?: return@create
+            storeFile = keystore.file
+            storePassword = keystore.password
+            keyAlias = keystore.alias
+            keyPassword = keystore.keyPassword
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Without the release key's environment (every build but release.yml's) release
+            // builds sign with the debug key.
+            signingConfig = signingConfigs.getByName(if (releaseKeystore() != null) "release" else "debug")
         }
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
@@ -84,4 +106,17 @@ dependencies {
     testImplementation("io.github.takahirom.roborazzi:roborazzi-junit-rule:1.76.0")
     // Only its colour utilities, to build wallpaper schemes from a seed in tests.
     testImplementation("com.google.android.material:material:1.14.0") { isTransitive = false }
+}
+
+class Keystore(val file: File, val password: String, val alias: String, val keyPassword: String)
+
+/**
+ * The release key, only from BURBLE_KEYSTORE (a path) and its passwords, which release.yml sets
+ * from the repository's secrets. It is never read from disk otherwise, so no local build can
+ * sign with it by accident.
+ */
+fun releaseKeystore(): Keystore? {
+    val path = System.getenv("BURBLE_KEYSTORE")?.takeIf { it.isNotEmpty() } ?: return null
+    fun env(name: String) = System.getenv(name)?.takeIf { it.isNotEmpty() } ?: error("BURBLE_KEYSTORE is set but $name is not")
+    return Keystore(File(path), env("BURBLE_KEYSTORE_PASSWORD"), env("BURBLE_KEY_ALIAS"), env("BURBLE_KEY_PASSWORD"))
 }
