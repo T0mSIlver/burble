@@ -89,9 +89,8 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
                 val t = i * 0.2f
                 val level = listOf(0f, 0.2f, 0.6f, 0.9f, 0.7f, 0.4f, 0.8f, 1f, 0.5f, 0.2f, 0f)[i]
                 Labelled("t=${"%.1f".format(t)} level=$level") {
-                    Box(Modifier.background(c.surfaceContainerHigh).padding(horizontal = 6.dp)) {
-                        Wave({ level }, { t }, c.tertiary, c.primary,
-                            Modifier.width(152.dp).height(40.dp), shader = shader)
+                    Box(Modifier.background(c.surfaceContainerHigh)) {
+                        Wave({ level }, { t }, c.primary, Modifier.width(264.dp).height(44.dp), shader = shader)
                     }
                 }
             }
@@ -109,8 +108,8 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
 
     @Composable
     private fun Look(look: Look, level: Float = 0f, shape: BubbleShape = BubbleShape.COOKIE_9) {
-        OverlayContent(look, shape, OverlayActions.None, alignEnd = false) { start, end, modifier ->
-            Wave({ level }, { 0.7f }, start, end, modifier, shader = false)
+        OverlayContent(look, shape, OverlayActions.None, alignEnd = false) { color, modifier ->
+            Wave({ level }, { 0.7f }, color, modifier, shader = true)
         }
     }
 }

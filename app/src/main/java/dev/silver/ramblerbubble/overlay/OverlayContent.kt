@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -157,8 +159,8 @@ internal fun LiveOverlay(idleBubble: State<Boolean>, alignEnd: State<Boolean>) {
             dismiss = { Dictation.acknowledge() },
         )
     }
-    OverlayContent(look, settings.shape, actions, alignEnd.value) { start, end, modifier ->
-        LiveWave(Dictation.level, start, end, modifier)
+    OverlayContent(look, settings.shape, actions, alignEnd.value) { color, modifier ->
+        LiveWave(Dictation.level, color, modifier)
     }
 }
 
@@ -176,7 +178,7 @@ private fun haptic(view: View, look: Look) {
 }
 
 /** Draws the wave band; the host passes the live one, screenshot tests a frozen one. */
-internal typealias WaveSlot = @Composable (start: Color, end: Color, modifier: Modifier) -> Unit
+internal typealias WaveSlot = @Composable (color: Color, modifier: Modifier) -> Unit
 
 private val Corner = 28.dp
 private val Bubble = 56.dp
@@ -284,16 +286,19 @@ internal fun OverlayContent(
                     ) {
                         Icon(Icons.Rounded.Mic, stringResource(R.string.overlay_start), Modifier.size(26.dp), fg)
                     }
-                    Look.Listening -> Row(
-                        Modifier.width(264.dp).padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RoundButton(Icons.Rounded.Close, stringResource(R.string.overlay_cancel),
-                            colors.surfaceContainerHighest, colors.onSurfaceVariant, actions.cancel)
-                        wave(colors.tertiary, colors.primary,
-                            Modifier.weight(1f).heightIn(40.dp, 40.dp).padding(horizontal = 6.dp))
-                        RoundButton(Icons.Rounded.Check, stringResource(R.string.overlay_stop),
-                            colors.primary, colors.onPrimary, actions.stop)
+                    // The wave spans the whole pill under the buttons, as in Gboard's voice bar.
+                    Look.Listening -> Box(Modifier.width(264.dp).height(Bubble)) {
+                        wave(colors.primary, Modifier.fillMaxWidth().height(44.dp).align(Alignment.BottomCenter))
+                        Row(
+                            Modifier.matchParentSize().padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RoundButton(Icons.Rounded.Close, stringResource(R.string.overlay_cancel),
+                                colors.surfaceContainerLowest, colors.onSurface, actions.cancel)
+                            Spacer(Modifier.weight(1f))
+                            RoundButton(Icons.Rounded.Check, stringResource(R.string.overlay_stop),
+                                colors.primary, colors.onPrimary, actions.stop)
+                        }
                     }
                     Look.Finishing -> Box(Modifier.size(Bubble), contentAlignment = Alignment.Center) {
                         LoadingIndicator(Modifier.size(44.dp), color = fg)
