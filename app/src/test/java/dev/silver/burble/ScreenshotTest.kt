@@ -62,7 +62,12 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     @Test fun microphone() = step(Step.MICROPHONE, Access.None)
     @Test fun notifications() = step(Step.NOTIFICATIONS, Access.None)
     @Test fun unlock() = step(Step.UNLOCK, Access.None)
-    @Test fun insertion() = step(Step.INSERTION, Access.None)
+
+    // Past the refusal: App info is next.
+    @Test fun unlockAppInfo() = capture("onboarding-unlock-appinfo") {
+        Onboarding(Access.None, AccessActions.None, steps, onDone = {}, initial = steps.indexOf(Step.UNLOCK), initialUnlockStage = 1)
+    }
+    @Test fun insertion() = step(Step.INSERTION, Access.None.copy(restricted = false))
     @Test fun battery() = step(Step.BATTERY, Access.None)
     @Test fun tile() = step(Step.TILE, Access.None)
 

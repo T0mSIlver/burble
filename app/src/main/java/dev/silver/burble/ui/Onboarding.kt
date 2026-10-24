@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.rounded.BatteryFull
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -48,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -56,12 +59,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.RoundedPolygon
+import kotlinx.coroutines.delay
 import dev.silver.burble.R
 
 /** Where the onboarding and home screens send the user to grant what's missing. */
@@ -89,8 +94,8 @@ fun onboardingSteps(access: Access, sdk: Int = Build.VERSION.SDK_INT) = buildLis
     add(Step.WELCOME)
     add(Step.MICROPHONE)
     if (sdk >= 33) add(Step.NOTIFICATIONS)
-    if (access.restricted) add(Step.UNLOCK)
-    add(Step.INSERTION)
+    // A file install gets the accessibility step with Android's unlock folded in.
+    add(if (access.restricted) Step.UNLOCK else Step.INSERTION)
     add(Step.BATTERY)
     add(Step.TILE)
 }
@@ -99,8 +104,7 @@ private fun Step.done(access: Access, tileAdded: Boolean) = when (this) {
     Step.WELCOME -> false
     Step.MICROPHONE -> access.microphone
     Step.NOTIFICATIONS -> access.notifications
-    Step.UNLOCK -> !access.restricted
-    Step.INSERTION -> access.insertion
+    Step.UNLOCK, Step.INSERTION -> access.insertion
     Step.BATTERY -> access.battery
     Step.TILE -> tileAdded
 }
@@ -115,21 +119,33 @@ fun Onboarding(
     steps: List<Step>,
     onDone: () -> Unit,
     initial: Int = 0,
+    initialUnlockStage: Int = 0,
 ) {
     var index by rememberSaveable { mutableIntStateOf(initial) }
-    // Whether restricted settings got allowed can't be read, so once the user has been to App
-    // info the step lets them go on; the next step checks the service itself.
-    var appInfoOpened by rememberSaveable { mutableStateOf(false) }
+    // Android shows "Allow restricted settings" only after the user tried to turn the service on
+    // and saw it refused, and apps can't read either fact: each button of the unlock moves the
+    // step on to the next one.
+    var unlockStage by rememberSaveable { mutableIntStateOf(initialUnlockStage) }
     // Android has no query for "the tile is in Quick Settings"; its answer to the request is all.
     var tileAdded by rememberSaveable { mutableStateOf(false) }
     val stepActions = AccessActions(
         actions.requestMicrophone, actions.requestNotifications, actions.openAccessibility,
-        openAppInfo = { appInfoOpened = true; actions.openAppInfo() },
+        openAppInfo = actions.openAppInfo,
         openBattery = actions.openBattery,
         addTile = { actions.addTile { tileAdded = true } },
     )
     BackHandler(enabled = index > 0) { index-- }
     val next: () -> Unit = { if (index < steps.lastIndex) index++ else onDone() }
+    // A step granted while the user is on it moves on by itself, after a beat to show the check.
+    // One already granted on arrival (the user came back to it) waits for Continue.
+    val done = steps[index].done(access, tileAdded)
+    val doneOnArrival = remember(index) { done }
+    LaunchedEffect(index, done) {
+        if (done && !doneOnArrival) {
+            delay(900)
+            next()
+        }
+    }
     val progress by animateFloatAsState((index + 1f) / steps.size, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "progress")
 
     Surface(color = MaterialTheme.colorScheme.surface) {
@@ -149,7 +165,7 @@ fun Onboarding(
                 label = "step",
             ) { i ->
                 val step = steps[i]
-                StepPage(step, access, stepActions, appInfoOpened, tileAdded, last = i == steps.lastIndex, onNext = next)
+                StepPage(step, access, stepActions, unlockStage, { unlockStage = it }, tileAdded, last = i == steps.lastIndex, onNext = next)
             }
         }
     }
@@ -161,7 +177,8 @@ private fun StepPage(
     step: Step,
     access: Access,
     actions: AccessActions,
-    appInfoOpened: Boolean,
+    unlockStage: Int,
+    setUnlockStage: (Int) -> Unit,
     tileAdded: Boolean,
     last: Boolean,
     onNext: () -> Unit,
@@ -170,7 +187,12 @@ private fun StepPage(
     val done = step.done(access, tileAdded)
     // Before Android 13 the app can't add its tile: the step only says how.
     val tileRequest = sdk >= 33
-    val canGo = done || (step == Step.UNLOCK && appInfoOpened)
+    val canGo = done
+    val unlock = listOf(
+        { actions.openAccessibility(); setUnlockStage(1) },
+        { actions.openAppInfo(); setUnlockStage(2) },
+        actions.openAccessibility,
+    )
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
@@ -186,7 +208,7 @@ private fun StepPage(
                     Icons.Rounded.Notifications, MaterialShapes.Sunny, done,
                     R.string.onb_notif_title, R.string.onb_notif_why, R.string.onb_notif_not,
                 )
-                Step.UNLOCK -> Unlock(done, appInfoOpened, actions)
+                Step.UNLOCK -> Unlock(done, unlockStage, unlock)
                 Step.INSERTION -> Permission(
                     Icons.Rounded.Keyboard, MaterialShapes.SoftBurst, done,
                     R.string.onb_insert_title, R.string.onb_insert_why, R.string.onb_insert_not,
@@ -215,7 +237,7 @@ private fun StepPage(
                 Step.WELCOME -> null
                 Step.MICROPHONE -> actions.requestMicrophone
                 Step.NOTIFICATIONS -> actions.requestNotifications
-                Step.UNLOCK -> actions.openAppInfo
+                Step.UNLOCK -> unlock[unlockStage]
                 Step.INSERTION -> actions.openAccessibility
                 Step.BATTERY -> actions.openBattery
                 Step.TILE -> if (tileRequest) ({ actions.addTile {} }) else null
@@ -223,7 +245,8 @@ private fun StepPage(
             val label = when {
                 grant != null && !canGo -> when (step) {
                     Step.MICROPHONE, Step.NOTIFICATIONS -> R.string.onb_allow
-                    Step.UNLOCK -> R.string.open_app_info
+                    Step.UNLOCK -> if (unlockStage == 1) R.string.open_app_info else R.string.open_settings
+                    Step.BATTERY -> R.string.onb_allow
                     Step.TILE -> R.string.onb_tile_add
                     else -> R.string.open_settings
                 }
@@ -301,34 +324,67 @@ private fun Permission(
     if (done) Granted(doneLabel)
 }
 
+/**
+ * The accessibility step for a file install, where Android refuses the service until the user
+ * has tried it once, then allowed restricted settings in App info. [stage] is the step the user
+ * is on; tapping an earlier one does it again.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun Unlock(done: Boolean, appInfoOpened: Boolean, actions: AccessActions) {
-    ShapeBadge(Icons.Rounded.LockOpen, MaterialShapes.Clover4Leaf, done = done)
-    Title(R.string.onb_unlock_title)
-    Text(stringResource(R.string.onb_unlock_why), style = MaterialTheme.typography.bodyLarge)
+private fun Unlock(done: Boolean, stage: Int, actions: List<() -> Unit>) {
+    ShapeBadge(Icons.Rounded.Keyboard, MaterialShapes.SoftBurst, done = done)
+    Title(R.string.onb_insert_title)
+    Text(stringResource(R.string.onb_insert_why), style = MaterialTheme.typography.bodyLarge)
+    Spacer(Modifier.height(20.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(Icons.Outlined.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        Text(stringResource(R.string.onb_insert_not), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     if (done) {
         Granted()
         return
     }
     Spacer(Modifier.height(24.dp))
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        listOf(R.string.onb_unlock_1, R.string.onb_unlock_2, R.string.onb_unlock_3).forEachIndexed { i, res ->
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(32.dp)) {
+    Text(stringResource(R.string.onb_unlock_why), style = MaterialTheme.typography.bodyLarge)
+    Spacer(Modifier.height(16.dp))
+    val colors = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf(
+            R.string.onb_unlock_1 to R.string.onb_unlock_1_detail,
+            R.string.onb_unlock_2 to R.string.onb_unlock_2_detail,
+            R.string.onb_unlock_3 to R.string.onb_unlock_3_detail,
+        ).forEachIndexed { i, (title, detail) ->
+            val past = i < stage
+            val current = i == stage
+            Row(
+                Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
+                    .clickable(enabled = i <= stage, onClick = actions[i]).padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = when {
+                        current -> colors.primary
+                        past -> colors.secondaryContainer
+                        else -> colors.surfaceContainerHigh
+                    },
+                    modifier = Modifier.size(32.dp),
+                ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text("${i + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        if (past) Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.onSecondaryContainer, modifier = Modifier.size(18.dp))
+                        else Text("${i + 1}", style = MaterialTheme.typography.labelLarge, color = if (current) colors.onPrimary else colors.onSurfaceVariant)
                     }
                 }
-                Text(stringResource(res), style = MaterialTheme.typography.bodyLarge)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(title),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (current) colors.onSurface else colors.onSurfaceVariant,
+                    )
+                    Text(stringResource(detail), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+                }
             }
         }
-    }
-    Spacer(Modifier.height(24.dp))
-    Text(stringResource(R.string.onb_unlock_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Row {
-        TextButton(onClick = actions.openAccessibility) { Text(stringResource(R.string.open_accessibility)) }
-        if (appInfoOpened) TextButton(onClick = actions.openAppInfo) { Text(stringResource(R.string.open_app_info)) }
     }
 }
 

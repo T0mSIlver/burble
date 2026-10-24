@@ -65,9 +65,15 @@ object Permissions {
         if (Build.VERSION.SDK_INT < 33 || insertion(context)) return false
         // The app op behind that menu item would say whether the user allowed it, but Android
         // refuses to show it to apps (GET_APP_OPS_STATS), so only the install source is known.
+        // An update through the in-app updater makes the source unspecified, but Android keeps
+        // the restriction (seen on Android 16), so a file install is remembered.
+        val sp = context.getSharedPreferences("access", Context.MODE_PRIVATE)
+        if (sp.getBoolean("fromFile", false)) return true
         val source = runCatching { context.packageManager.getInstallSourceInfo(context.packageName).packageSource }
             .getOrDefault(PackageInstaller.PACKAGE_SOURCE_UNSPECIFIED)
-        return source == PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE || source == PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE
+        val fromFile = source == PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE || source == PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE
+        if (fromFile) sp.edit().putBoolean("fromFile", true).apply()
+        return fromFile
     }
 
     fun accessibilitySettings() = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
