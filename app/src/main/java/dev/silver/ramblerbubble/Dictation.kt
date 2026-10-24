@@ -42,7 +42,12 @@ object Dictation {
     private var session: DictationSession? = null
 
     fun toggle(context: Context) {
-        if (_state.value == State.Listening) stop() else start(context)
+        when (_state.value) {
+            State.Listening -> stop()
+            // The session is no longer active while finishing; starting here would run two.
+            State.Finishing -> Unit
+            else -> start(context)
+        }
     }
 
     fun start(context: Context) {
