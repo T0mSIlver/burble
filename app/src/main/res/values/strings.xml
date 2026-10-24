@@ -1,11 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Rambler Bubble</string>
-    <string name="grant_a11y">Enable text insertion service</string>
-    <string name="start_bubble">Start the bubble</string>
-    <string name="stop_bubble">Stop the bubble</string>
-    <string name="perm_mic">Microphone: %1$s</string>
-    <string name="perm_a11y">Text insertion service: %1$s</string>
     <string name="no_mic">Microphone permission missing</string>
     <string name="empty_result">Nothing was heard</string>
     <string name="quota">Dictation quota used up for now; try again later</string>
@@ -13,7 +8,7 @@
     <string name="failed">Dictation failed: %1$s</string>
     <string name="a11y_desc">Rambler Bubble needs this to type your dictated words into the text field you are using. Android offers no other way to insert text into another app. After you dictate, it finds the focused text field and puts the words at the cursor. It does not read your screen, record what you type or watch other apps, and it sends nothing anywhere.</string>
     <string name="disclaimer_short">Rambler Bubble is not affiliated with Google. Your dictation audio is sent to Google servers, through a service Google has not opened to third-party apps. It may stop working at any time.</string>
-    <string name="send_test_audio">Send test audio (checks the server)</string>
+    <string name="send_test_audio">Send test audio</string>
     <string name="sending">Sending test audio…</string>
     <string name="test_result">Server heard: %1$s</string>
     <string name="mic_channel">While dictating</string>
@@ -39,4 +34,71 @@
     <string name="overlay_error_rejected">Google stopped accepting this app; check for an update</string>
     <string name="overlay_error_network">Can\'t reach Google. Check your connection</string>
     <string name="overlay_error_other">Dictation failed. Try again</string>
+
+    <!-- Onboarding -->
+    <string name="onb_welcome_title">Dictate in any app</string>
+    <string name="onb_welcome_body">Tap the bubble, speak, then tap ✓. Your words go into the text field you\'re in.</string>
+    <string name="onb_mic_title">Microphone</string>
+    <string name="onb_mic_why">Records your voice while you dictate.</string>
+    <string name="onb_mic_not">It doesn\'t listen at any other time, and keeps no recordings.</string>
+    <string name="onb_notif_title">Notifications</string>
+    <string name="onb_notif_why">Shows a notification with Stop and Cancel while you dictate.</string>
+    <string name="onb_notif_not">It never shows ads or reminders.</string>
+    <string name="onb_unlock_title">Allow restricted settings</string>
+    <string name="onb_unlock_why">Android blocks accessibility services of apps installed from a file until you allow it.</string>
+    <string name="onb_unlock_1">Open App info.</string>
+    <string name="onb_unlock_2">Tap ⋮ at the top, then Allow restricted settings.</string>
+    <string name="onb_unlock_3">Come back here.</string>
+    <string name="onb_unlock_hint">No such option? Try once to turn on Rambler Bubble in accessibility settings, then look again.</string>
+    <string name="onb_insert_title">Accessibility service</string>
+    <string name="onb_insert_why">Shows the bubble over other apps and types your words into the text field you\'re in. Android has no other way for an app to do this.</string>
+    <string name="onb_insert_not">It doesn\'t read your screen, log what you type or send anything anywhere.</string>
+    <string name="onb_insert_how">In accessibility settings, find Rambler Bubble and turn it on.</string>
+    <!-- Android 12+ replaces the switch of a service that asks for the accessibility button with its shortcut switch. -->
+    <string name="onb_insert_how_shortcut">In accessibility settings, open Rambler Bubble and turn on its shortcut.</string>
+    <string name="onb_granted">Allowed</string>
+    <string name="onb_allow">Allow</string>
+    <string name="onb_skip">Skip</string>
+    <string name="onb_continue">Continue</string>
+    <string name="onb_finish">Done</string>
+    <string name="open_settings">Open settings</string>
+    <string name="open_app_info">Open App info</string>
+    <string name="open_accessibility">Open accessibility settings</string>
+
+    <!-- Home -->
+    <string name="status_ready">Ready</string>
+    <string name="status_ready_body">Start a dictation, speak, then tap ✓.</string>
+    <string name="status_setup">Finish setup</string>
+    <string name="status_setup_body">Dictation needs these first.</string>
+    <string name="status_restricted">Blocked? In App info, tap ⋮, then Allow restricted settings</string>
+    <string name="test_hint">Sends a 12-second English recording to check that the server answers.</string>
+    <string name="test_failed">No answer from the server: %1$s</string>
+    <string name="section_triggers">Start dictation with</string>
+    <string name="trigger_bubble">Bubble</string>
+    <string name="trigger_bubble_hint">Floats over every app. Drag it anywhere.</string>
+    <string name="trigger_a11y">Accessibility button</string>
+    <string name="trigger_a11y_hint">Android shows the button once you turn on the Rambler Bubble shortcut in accessibility settings</string>
+    <string name="trigger_a11y_action">Shortcut settings</string>
+    <string name="trigger_tile">Quick Settings tile</string>
+    <string name="trigger_tile_hint">Add it when you edit Quick Settings</string>
+    <string name="trigger_tile_hint_add">A Dictate tile in Quick Settings</string>
+    <string name="trigger_tile_action">Add the tile</string>
+    <string name="section_output">When you stop</string>
+    <string name="output_insert">Insert</string>
+    <string name="output_insert_hint">Types the text into the field you\'re in, or copies it if there\'s none</string>
+    <string name="output_hold">Hold</string>
+    <string name="output_hold_hint">Keeps the text in a pill, to insert, copy or dismiss</string>
+    <string name="output_clipboard">Copy</string>
+    <string name="output_clipboard_hint">Copies the text. On Android 13+, the clipboard preview lets you edit it.</string>
+    <string name="section_shape">Bubble shape</string>
+    <string name="shape_cookie">Cookie</string>
+    <string name="shape_sunny">Sun</string>
+    <string name="shape_clover">Clover</string>
+    <string name="shape_circle">Circle</string>
+    <string name="shape_pill">Pill</string>
+    <string name="shape_burst">Burst</string>
+    <string name="section_language">Language</string>
+    <string name="language_hint">The language you speak</string>
+    <string name="language_title">Dictation language</string>
+    <string name="version">Version %1$s</string>
 </resources>
