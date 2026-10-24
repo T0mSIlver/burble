@@ -75,7 +75,7 @@
     <string name="trigger_bubble">Bubble</string>
     <string name="trigger_bubble_hint">Floats over every app. Drag it anywhere.</string>
     <string name="trigger_a11y">Accessibility button</string>
-    <string name="trigger_a11y_hint">Needs Rambler Bubble dictation button turned on in accessibility settings, with the accessibility button as its shortcut</string>
+    <string name="trigger_a11y_hint">Turn on Rambler Bubble dictation button in accessibility settings</string>
     <string name="trigger_a11y_action">Set up</string>
     <string name="trigger_tile">Quick Settings tile</string>
     <string name="trigger_tile_hint">Add it when you edit Quick Settings</string>

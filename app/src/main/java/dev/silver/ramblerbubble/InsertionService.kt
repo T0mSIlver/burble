@@ -88,7 +88,8 @@ class InsertionService : AccessibilityService() {
         val root = rootInActiveWindow
         val node = root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         if (node != null && node.isEditable) {
-            val existing = node.text?.toString() ?: ""
+            // An empty field reports its hint as its text.
+            val existing = if (node.isShowingHintText) "" else node.text?.toString() ?: ""
             val selStart = node.textSelectionStart
             val selEnd = node.textSelectionEnd
             val (base, at) = if (selStart in 0..existing.length && selStart == selEnd) {
