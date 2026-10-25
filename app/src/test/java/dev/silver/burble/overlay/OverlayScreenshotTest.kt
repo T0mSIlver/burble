@@ -20,7 +20,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.silver.burble.BubbleShape
-import dev.silver.burble.BubbleSize
+import dev.silver.burble.WhenIdle
 import dev.silver.burble.Dictation.ErrorKind
 import dev.silver.burble.Wallpaper
 import dev.silver.burble.ui.theme.AppTheme
@@ -63,8 +63,13 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
 
     @Test fun looks() = capture("looks") {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Labelled("small, medium, large") {
-                for (size in BubbleSize.entries) Bubble(Look.Idle, size = size)
+            Labelled("40, 64, 96 dp") {
+                for (size in listOf(40, 64, 96)) Bubble(Look.Idle, size = size)
+            }
+            Labelled("idle at 50 %: just touched, shrunk, dot") {
+                Bubble(Look.Idle, idleOpacity = 0.5f)
+                Bubble(Look.Idle, idleOpacity = 0.5f, rest = true)
+                Bubble(Look.Idle, idleOpacity = 0.5f, rest = true, whenIdle = WhenIdle.DOT)
             }
             for (row in BubbleShape.entries.chunked(3)) Labelled("shapes") {
                 for (shape in row) Bubble(Look.Idle, shape = shape)
@@ -138,12 +143,15 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
         level: Float = 0f,
         time: Float = 0.7f,
         shape: BubbleShape = BubbleShape.COOKIE_9,
-        size: BubbleSize = BubbleSize.MEDIUM,
+        size: Int = 64,
+        idleOpacity: Float = 1f,
+        rest: Boolean = false,
+        whenIdle: WhenIdle = WhenIdle.SHRINK,
         alignEnd: Boolean = false,
         shader: Boolean = true,
         labelled: Boolean = true,
     ) {
-        OverlayContent(look, shape, size, alignEnd, labelled, onTap = {}) { color, modifier ->
+        OverlayContent(look, shape, size.dp, alignEnd, labelled, rest, whenIdle, idleOpacity, onTap = {}) { color, modifier ->
             Wave({ level }, { time }, color, modifier, shader = shader)
         }
     }

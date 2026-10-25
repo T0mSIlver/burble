@@ -73,6 +73,9 @@ class Overlay(
         set(value) { awayState.value = value }
     private val awayState = mutableStateOf(false)
 
+    /** A finger is on the bubble, dragging or not: it shows at full size and opacity. */
+    private val touching = mutableStateOf(false)
+
     private val density = context.resources.displayMetrics.density
     private var target: ComposeView? = null
     private val armed = mutableStateOf(false)
@@ -126,7 +129,7 @@ class Overlay(
         frame.setViewTreeSavedStateRegistryOwner(o)
         frame.setViewTreeViewModelStoreOwner(o)
         frame.addView(ComposeView(context).apply {
-            setContent { AppTheme { LiveOverlay(alignEnd, hidden, awayState) } }
+            setContent { AppTheme { LiveOverlay(alignEnd, hidden, awayState, touching) } }
         })
         frame.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
             // The error label resized the window: keep it on screen.
@@ -338,6 +341,7 @@ class Overlay(
         override fun dispatchTouchEvent(e: MotionEvent): Boolean {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    touching.value = true
                     snap?.cancel()
                     downX = e.rawX; downY = e.rawY
                     startX = params.x; startY = params.y
@@ -361,10 +365,13 @@ class Overlay(
                         return true
                     }
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (dragging) {
-                    dragging = false
-                    release()
-                    return true
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    touching.value = false
+                    if (dragging) {
+                        dragging = false
+                        release()
+                        return true
+                    }
                 }
             }
             return super.dispatchTouchEvent(e)
@@ -373,6 +380,7 @@ class Overlay(
         override fun onConfigurationChanged(newConfig: Configuration) {
             super.onConfigurationChanged(newConfig)
             dragging = false
+            touching.value = false
             hideTarget()
             // The new window metrics land after this callback.
             post { place(animate = false) }

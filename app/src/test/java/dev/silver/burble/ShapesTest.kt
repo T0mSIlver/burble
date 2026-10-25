@@ -2,6 +2,7 @@ package dev.silver.burble
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.dp
 import dev.silver.burble.overlay.Look
 import dev.silver.burble.overlay.OverlayContent
 import dev.silver.burble.overlay.Wave
@@ -46,8 +47,8 @@ class ShapesTest(private val shape: BubbleShape) {
         compose.setContent {
             AppTheme(dynamic = false) {
                 Column {
-                    for (look in looks) for (size in BubbleSize.entries) {
-                        OverlayContent(look, shape, size, alignEnd = false, labelled = true, onTap = {}) { color, modifier ->
+                    for (look in looks) for (size in listOf(40, 64, 96)) {
+                        OverlayContent(look, shape, size.dp, alignEnd = false, labelled = true, onTap = {}) { color, modifier ->
                             Wave({ 0.6f }, { 0.3f }, color, modifier)
                         }
                     }

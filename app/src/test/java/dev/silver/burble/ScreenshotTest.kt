@@ -101,7 +101,7 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     @Config(qualifiers = "w412dp-h2000dp-xxhdpi")
     @Test fun homeUpdating() = capture("home-updating") {
         Home(
-            settings.copy(bubbleSize = BubbleSize.LARGE, shape = BubbleShape.CLOVER_4),
+            settings.copy(bubbleSize = 80, shape = BubbleShape.CLOVER_4, idleOpacity = 60, whenIdle = WhenIdle.DOT),
             Access.All, TestAudio.State.Sending, Updater.State.Downloading(release, 0.4f), HomeActions.None, "0.1.0",
         )
     }

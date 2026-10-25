@@ -22,7 +22,8 @@ enum class Trigger { BUBBLE, ACCESSIBILITY_BUTTON, QUICK_SETTINGS }
 /** The bubble's shape, by MaterialShapes name. */
 enum class BubbleShape { COOKIE_9, SUNNY, CLOVER_4, CIRCLE, PILL, SOFT_BURST }
 
-enum class BubbleSize { SMALL, MEDIUM, LARGE }
+/** What the bubble becomes after 3 s untouched in Idle. */
+enum class WhenIdle { FULL, SHRINK, DOT }
 
 /** When the bubble shows. */
 enum class BubbleShow {
@@ -38,7 +39,8 @@ data class Settings(
     /** BCP-47 tag sent to the server. */
     val language: String = "en-US",
     val onboarded: Boolean = false,
-    val bubbleSize: BubbleSize = BubbleSize.MEDIUM,
+    /** The bubble's side, 40 to 96 dp in steps of 8. */
+    val bubbleSize: Int = 64,
     val hideKeyboard: Boolean = true,
     val checkUpdates: Boolean = true,
     /** BCP-47 tags the user speaks; the first is [language], the others go as secondary locales. */
@@ -48,6 +50,9 @@ data class Settings(
     /** The one-time line under the ✕ on how to bring a closed bubble back has been shown. */
     val hiddenHintShown: Boolean = false,
     val bubbleShow: BubbleShow = BubbleShow.ALWAYS,
+    /** The bubble's opacity in Idle, 20 to 100 %; every other state is opaque. */
+    val idleOpacity: Int = 100,
+    val whenIdle: WhenIdle = WhenIdle.SHRINK,
 )
 
 /** App settings in SharedPreferences, mirrored in a StateFlow every screen and service reads. */
@@ -72,13 +77,16 @@ object Prefs {
             .putString("shape", next.shape.name)
             .putString("language", next.language)
             .putBoolean("onboarded", next.onboarded)
-            .putString("bubbleSize", next.bubbleSize.name)
+            .remove("bubbleSize")
+            .putInt("bubbleSizeDp", next.bubbleSize)
             .putBoolean("checkUpdates", next.checkUpdates)
             .putBoolean("hideKeyboard", next.hideKeyboard)
             .putString("languages", next.languages.joinToString(","))
             .putBoolean("bubbleOn", next.bubbleOn)
             .putBoolean("hiddenHintShown", next.hiddenHintShown)
             .putString("bubbleShow", next.bubbleShow.name)
+            .putInt("idleOpacity", next.idleOpacity)
+            .putString("whenIdle", next.whenIdle.name)
             .apply()
         _settings.value = next
     }
@@ -94,7 +102,12 @@ object Prefs {
             shape = enumOr(sp.getString("shape", null), d.shape),
             language = language,
             onboarded = sp.getBoolean("onboarded", d.onboarded),
-            bubbleSize = enumOr(sp.getString("bubbleSize", null), d.bubbleSize),
+            // The first versions had three sizes.
+            bubbleSize = sp.getInt("bubbleSizeDp", 0).takeIf { it > 0 } ?: when (sp.getString("bubbleSize", null)) {
+                "SMALL" -> 48
+                "LARGE" -> 80
+                else -> d.bubbleSize
+            },
             checkUpdates = sp.getBoolean("checkUpdates", d.checkUpdates),
             hideKeyboard = sp.getBoolean("hideKeyboard", d.hideKeyboard),
             languages = sp.getString("languages", null)?.split(',')?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
@@ -102,6 +115,8 @@ object Prefs {
             bubbleOn = sp.getBoolean("bubbleOn", d.bubbleOn),
             hiddenHintShown = sp.getBoolean("hiddenHintShown", d.hiddenHintShown),
             bubbleShow = enumOr(sp.getString("bubbleShow", null), d.bubbleShow),
+            idleOpacity = sp.getInt("idleOpacity", d.idleOpacity),
+            whenIdle = enumOr(sp.getString("whenIdle", null), d.whenIdle),
         )
     }
 

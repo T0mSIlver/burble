@@ -13,7 +13,6 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.silver.burble.BubbleShape
-import dev.silver.burble.BubbleSize
 import dev.silver.burble.Dictation.ErrorKind
 import dev.silver.burble.ui.theme.AppTheme
 import org.junit.Rule
@@ -42,7 +41,7 @@ class TransitionScreenshotTest {
                     for (shader in listOf(true, false)) Row {
                         looks.value.forEach { look ->
                             Box {
-                                OverlayContent(look, BubbleShape.COOKIE_9, BubbleSize.MEDIUM, alignEnd = false,
+                                OverlayContent(look, BubbleShape.COOKIE_9, 64.dp, alignEnd = false,
                                     labelled = false, onTap = {}) { color, modifier ->
                                     Wave({ 0.7f }, { 0.4f }, color, modifier, shader = shader)
                                 }

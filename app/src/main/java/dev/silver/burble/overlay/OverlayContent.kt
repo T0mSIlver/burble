@@ -55,7 +55,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.addOutline
@@ -65,7 +64,10 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.shadow.DropShadowPainter
 import androidx.compose.ui.graphics.shadow.Shadow
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -79,7 +81,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.RoundedPolygon
 import dev.silver.burble.BubbleShape
-import dev.silver.burble.BubbleSize
+import dev.silver.burble.WhenIdle
 import dev.silver.burble.Dictation
 import dev.silver.burble.Dictation.ErrorKind
 import dev.silver.burble.Prefs
@@ -107,15 +109,9 @@ internal fun Dictation.State.look(): Look = when (this) {
     is Dictation.State.Error -> Look.Failed(kind, waits)
 }
 
-internal fun BubbleSize.dp(): Dp = when (this) {
-    BubbleSize.SMALL -> 52.dp
-    BubbleSize.MEDIUM -> 64.dp
-    BubbleSize.LARGE -> 76.dp
-}
-
 /** The bubble wired to [Dictation] and [Prefs]: results time out, haptics mark changes. */
 @Composable
-internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>, away: State<Boolean>) {
+internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>, away: State<Boolean>, touching: State<Boolean>) {
     val context = LocalContext.current
     val state by Dictation.state.collectAsState()
     val settings by Prefs.settings.collectAsState()
@@ -137,9 +133,21 @@ internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>, away:
         // A waiting error stays: error colour and retry glyph, until a tap or ✕.
         Dictation.acknowledge()
     }
+    // 3 s untouched in Idle, counted again after every touch and every dictation.
+    var rest by remember { mutableStateOf(false) }
+    val idle = look is Look.Idle && !touching.value
+    LaunchedEffect(idle) {
+        rest = false
+        if (idle) {
+            delay(REST_MS)
+            rest = true
+        }
+    }
     if (locked.value) return
     AnimatedVisibility(!away.value, enter = fadeIn() + scaleIn(initialScale = 0.8f), exit = fadeOut() + scaleOut(targetScale = 0.8f)) {
-        OverlayContent(look, settings.shape, settings.bubbleSize, alignEnd.value, labelled, onTap = {
+        OverlayContent(look, settings.shape, settings.bubbleSize.dp, alignEnd.value, labelled,
+            rest = rest, whenIdle = settings.whenIdle, idleOpacity = settings.idleOpacity / 100f,
+            touching = touching.value, onTap = {
             when (look) {
                 // Ready: the waiting text stays on the clipboard. Failed: retries the kept audio,
                 // or starts over when there is none.
@@ -175,22 +183,36 @@ internal fun ColorScheme.waveColor(wallpaper: Boolean): Color {
 /** Draws the wave; the live overlay passes the mic's, screenshot tests a frozen one. */
 internal typealias WaveSlot = @Composable (color: Color, modifier: Modifier) -> Unit
 
+private const val REST_MS = 3000L
+
+/** "Shrink" draws the idle bubble at this share of its size. */
+private const val SHRUNK = 0.6f
+private val Dot = 12.dp
+
 /**
  * The bubble, the only thing Burble draws over other apps. It keeps its shape and size in
  * every state, so nothing it covers changes while you talk: the wave, the loader and the check
  * all play inside it. An error tints it and puts a one-line reason beside it, on the side
- * facing the middle of the screen.
+ * facing the middle of the screen. Only Idle fades and, once at rest, shrinks; its layout,
+ * and so its touch area and centre, keep the full size.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun OverlayContent(
     look: Look,
     shape: BubbleShape,
-    size: BubbleSize,
+    side: Dp,
     /** Pinned to the right edge: the label goes on the left. */
     alignEnd: Boolean,
     /** An error's reason shows beside the bubble; it goes after 4 s, the error colour stays. */
     labelled: Boolean,
+    /** Idle and untouched for 3 s: [whenIdle] applies. */
+    rest: Boolean = false,
+    whenIdle: WhenIdle = WhenIdle.SHRINK,
+    /** Idle's opacity, 0.2 to 1. */
+    idleOpacity: Float = 1f,
+    /** A finger is on the bubble, dragging or not: full size and opacity. */
+    touching: Boolean = false,
     onTap: () -> Unit,
     wave: WaveSlot,
 ) {
@@ -213,9 +235,20 @@ internal fun OverlayContent(
     val press = remember { MutableInteractionSource() }
     val pressed by press.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.9f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
+    val idle = look == Look.Idle && !touching && !pressed
+    val small = idle && rest && whenIdle != WhenIdle.FULL
+    val dot = small && whenIdle == WhenIdle.DOT
+    val shrink by animateFloatAsState(
+        if (!small) 1f else if (dot) Dot / side else SHRUNK,
+        MaterialTheme.motionScheme.defaultSpatialSpec(),
+    )
+    val opacity by animateFloatAsState(if (idle) idleOpacity else 1f, fadeInSpec)
+    // A 12 dp dot has no room for the glyph.
+    val glyphs by animateFloatAsState(if (dot) 0f else 1f, fadeInSpec)
     val polygon = shape.polygon()
     val outline = polygon.toShape()
-    val side = size.dp()
+    val keyShadow = remember(outline) { DropShadowPainter(outline, KeyShadow) }
+    val ambientShadow = remember(outline) { DropShadowPainter(outline, AmbientShadow) }
     val label = (look as? Look.Failed)?.takeIf { labelled }?.let { stringResource(it.kind.message()) }
 
     // Room for the shadow inside the window.
@@ -229,14 +262,27 @@ internal fun OverlayContent(
             Modifier
                 .size(side)
                 .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
+                    scaleX = scale * shrink
+                    scaleY = scale * shrink
+                    alpha = opacity
+                    // Offscreen, the fade would crop the shadow to the bubble's square.
+                    compositingStrategy = CompositingStrategy.ModulateAlpha
                 }
                 // M3's level-2 elevation, two layers, following the real outline. A blurred copy
                 // of the shape, not shadowElevation: Skia's shadow for a concave path hung the
-                // render thread on SoftBurst at every launch.
-                .dropShadow(outline, KeyShadow)
-                .dropShadow(outline, AmbientShadow)
+                // render thread on SoftBurst at every launch. Only outside the shape, so a faded
+                // bubble shows what is under it, not its shadow.
+                .drawWithCache {
+                    val inside = Path().apply {
+                        addOutline(outline.createOutline(this@drawWithCache.size, layoutDirection, this@drawWithCache))
+                    }
+                    onDrawBehind {
+                        clipPath(inside, ClipOp.Difference) {
+                            with(keyShadow) { draw(this@onDrawBehind.size) }
+                            with(ambientShadow) { draw(this@onDrawBehind.size) }
+                        }
+                    }
+                }
                 // Drawn offscreen, then everything outside the shape cleared: a mask, not a clip.
                 // Android clips children to a non-convex outline only from 13 on, and a child
                 // fading in at partial alpha showed its square past the shape.
@@ -258,6 +304,7 @@ internal fun OverlayContent(
         ) {
             AnimatedContent(
                 targetState = look,
+                modifier = Modifier.graphicsLayer { alpha = glyphs },
                 contentKey = { it::class },
                 transitionSpec = {
                     // Every look fills the bubble, so no size transform clips one to a growing box.

@@ -101,9 +101,13 @@
     <string name="bubble_when_typing">Only while typing</string>
     <string name="bubble_shape">Shape</string>
     <string name="bubble_size">Size</string>
-    <string name="size_small">Small</string>
-    <string name="size_medium">Medium</string>
-    <string name="size_large">Large</string>
+    <string name="idle_opacity">Opacity when idle</string>
+    <string name="when_idle">When idle</string>
+    <string name="when_idle_full">Full size</string>
+    <string name="when_idle_shrink">Shrink</string>
+    <string name="when_idle_dot">Dot</string>
+    <string name="dp">%d dp</string>
+    <string name="percent">%d %%</string>
     <string name="hide_keyboard">Hide the keyboard while dictating</string>
     <string name="hide_keyboard_hint">The keyboard comes back once your words are in.</string>
     <string name="languages">Languages</string>

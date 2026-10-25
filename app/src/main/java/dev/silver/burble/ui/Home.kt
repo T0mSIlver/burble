@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
@@ -25,7 +26,9 @@ import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.Interests
 import androidx.compose.material.icons.outlined.KeyboardHide
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.OpenInFull
+import androidx.compose.material.icons.outlined.Timelapse
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.WifiTethering
 import androidx.compose.material.icons.rounded.Check
@@ -48,6 +51,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
@@ -74,9 +78,10 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import dev.silver.burble.BubbleShape
 import dev.silver.burble.BubbleShow
-import dev.silver.burble.BubbleSize
+import dev.silver.burble.WhenIdle
 import dev.silver.burble.R
 import dev.silver.burble.Settings
 import dev.silver.burble.updater.Release
@@ -98,13 +103,6 @@ class HomeActions(
 private const val SOURCE = "https://github.com/T0mSIlver/burble"
 
 /** The bubble's diameter on screen; the overlay draws it at the same sizes. */
-val BubbleSize.dp: Dp
-    get() = when (this) {
-        BubbleSize.SMALL -> 52.dp
-        BubbleSize.MEDIUM -> 64.dp
-        BubbleSize.LARGE -> 76.dp
-    }
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun Home(
@@ -154,13 +152,23 @@ fun Home(
                 Group(listOfNotNull(
                     if (!settings.bubbleOn) hiddenRow { set { it.copy(bubbleOn = true) } } else null,
                     contentRow(Icons.Outlined.Visibility, stringResource(R.string.bubble_when)) {
-                        ShowPicker(settings.bubbleShow) { w -> set { it.copy(bubbleShow = w) } }
+                        Choices(listOf(BubbleShow.ALWAYS to R.string.bubble_when_always, BubbleShow.TYPING to R.string.bubble_when_typing),
+                            settings.bubbleShow) { w -> set { it.copy(bubbleShow = w) } }
                     },
                     contentRow(Icons.Outlined.Interests, stringResource(R.string.bubble_shape)) {
                         ShapePicker(settings.shape) { s -> set { it.copy(shape = s) } }
                     },
                     contentRow(Icons.Outlined.OpenInFull, stringResource(R.string.bubble_size)) {
                         SizePicker(settings.shape, settings.bubbleSize) { s -> set { it.copy(bubbleSize = s) } }
+                    },
+                    contentRow(Icons.Outlined.Opacity, stringResource(R.string.idle_opacity)) {
+                        Stepped(settings.idleOpacity, 20..100, 10, stringResource(R.string.percent, settings.idleOpacity)) { o ->
+                            set { it.copy(idleOpacity = o) }
+                        }
+                    },
+                    contentRow(Icons.Outlined.Timelapse, stringResource(R.string.when_idle)) {
+                        Choices(listOf(WhenIdle.FULL to R.string.when_idle_full, WhenIdle.SHRINK to R.string.when_idle_shrink,
+                            WhenIdle.DOT to R.string.when_idle_dot), settings.whenIdle) { w -> set { it.copy(whenIdle = w) } }
                     },
                 ))
             }
@@ -301,13 +309,6 @@ private val BubbleShape.label
         BubbleShape.SOFT_BURST -> R.string.shape_burst
     }
 
-private val BubbleSize.label
-    get() = when (this) {
-        BubbleSize.SMALL -> R.string.size_small
-        BubbleSize.MEDIUM -> R.string.size_medium
-        BubbleSize.LARGE -> R.string.size_large
-    }
-
 /** The idle bubble as the overlay draws it: the shape in primary container with a mic glyph. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -370,16 +371,20 @@ private fun ShapePicker(selected: BubbleShape, onPick: (BubbleShape) -> Unit) {
     }
 }
 
+/** One choice of a few, as a connected button group. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ShowPicker(selected: BubbleShow, onPick: (BubbleShow) -> Unit) {
-    val choices = listOf(BubbleShow.ALWAYS to R.string.bubble_when_always, BubbleShow.TYPING to R.string.bubble_when_typing)
+private fun <T> Choices(choices: List<Pair<T, Int>>, selected: T, onPick: (T) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
-        choices.forEachIndexed { i, (show, label) ->
+        choices.forEachIndexed { i, (choice, label) ->
             ToggleButton(
-                checked = show == selected,
-                onCheckedChange = { onPick(show) },
-                shapes = if (i == 0) ButtonGroupDefaults.connectedLeadingButtonShapes() else ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                checked = choice == selected,
+                onCheckedChange = { onPick(choice) },
+                shapes = when (i) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    choices.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
                 // The default unchecked colour is the card's own.
                 colors = ToggleButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                 modifier = Modifier.weight(1f).semantics { role = Role.RadioButton },
@@ -388,26 +393,32 @@ private fun ShowPicker(selected: BubbleShow, onPick: (BubbleShow) -> Unit) {
     }
 }
 
-/** Each size drawn at its real diameter, so the choice is what the screen will show. */
+/** The bubble at the chosen size above the slider, in room for the largest. */
 @Composable
-private fun SizePicker(shape: BubbleShape, selected: BubbleSize, onPick: (BubbleSize) -> Unit) {
-    Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
-        BubbleSize.entries.forEach { size ->
-            Column(
-                Modifier.selectable(selected = size == selected, role = Role.RadioButton, onClick = { onPick(size) }),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                BubblePreview(shape, size.dp, size == selected)
-                Text(
-                    stringResource(size.label),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (size == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-        }
+private fun SizePicker(shape: BubbleShape, selected: Int, onPick: (Int) -> Unit) {
+    Box(Modifier.fillMaxWidth().height(MAX_SIZE.dp + 12.dp), contentAlignment = Alignment.Center) {
+        BubblePreview(shape, selected.dp, selected = false)
+    }
+    Stepped(selected, MIN_SIZE..MAX_SIZE, 8, stringResource(R.string.dp, selected), onPick)
+}
+
+/** A slider over [range] in steps of [step], with its value written beside it. */
+@Composable
+private fun Stepped(value: Int, range: IntRange, step: Int, label: String, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onChange((it / step).roundToInt() * step) },
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = (range.last - range.first) / step - 1,
+            modifier = Modifier.weight(1f),
+        )
+        Text(label, Modifier.padding(start = 12.dp).widthIn(min = 48.dp), style = MaterialTheme.typography.labelLarge)
     }
 }
+
+private const val MIN_SIZE = 40
+private const val MAX_SIZE = 96
 
 /** Several languages; the order of picking is kept, and the first one is the main one. */
 @Composable
