@@ -66,8 +66,8 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             Labelled("small, medium, large") {
                 for (size in BubbleSize.entries) Bubble(Look.Idle, size = size)
             }
-            Labelled("shapes") {
-                for (shape in listOf(BubbleShape.COOKIE_9, BubbleShape.SUNNY, BubbleShape.CLOVER_4)) Bubble(Look.Idle, shape = shape)
+            for (row in BubbleShape.entries.chunked(3)) Labelled("shapes") {
+                for (shape in row) Bubble(Look.Idle, shape = shape)
             }
             Labelled("listening 0, 0.4, 0.9") {
                 for (level in listOf(0f, 0.4f, 0.9f)) Bubble(Look.Listening, level = level)

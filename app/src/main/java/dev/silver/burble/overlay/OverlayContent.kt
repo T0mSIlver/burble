@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Check
@@ -56,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.addOutline
@@ -65,7 +65,7 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -75,6 +75,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.RoundedPolygon
 import dev.silver.burble.BubbleShape
@@ -212,7 +213,6 @@ internal fun OverlayContent(
     val scale by animateFloatAsState(if (pressed) 0.9f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
     val polygon = shape.polygon()
     val outline = polygon.toShape()
-    val shadow = remember(polygon) { convexHull(polygon) }
     val side = size.dp()
     val label = (look as? Look.Failed)?.takeIf { labelled }?.let { stringResource(it.kind.message()) }
 
@@ -229,11 +229,12 @@ internal fun OverlayContent(
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
-                    shadowElevation = 6.dp.toPx()
-                    // Skia's shadow for a concave path can hang the render thread (SoftBurst did,
-                    // on every launch): the shadow takes the shape's convex hull instead.
-                    this.shape = shadow
                 }
+                // M3's level-2 elevation, two layers, following the real outline. A blurred copy
+                // of the shape, not shadowElevation: Skia's shadow for a concave path hung the
+                // render thread on SoftBurst at every launch.
+                .dropShadow(outline, KeyShadow)
+                .dropShadow(outline, AmbientShadow)
                 // Drawn offscreen, then everything outside the shape cleared: a mask, not a clip.
                 // Android clips children to a non-convex outline only from 13 on, and a child
                 // fading in at partial alpha showed its square past the shape.
@@ -277,6 +278,9 @@ internal fun OverlayContent(
         if (!alignEnd) Label(label)
     }
 }
+
+private val KeyShadow = Shadow(radius = 2.dp, offset = DpOffset(0.dp, 1.dp), alpha = 0.3f)
+private val AmbientShadow = Shadow(radius = 6.dp, spread = 2.dp, offset = DpOffset(0.dp, 2.dp), alpha = 0.15f)
 
 /** The reason for an error, beside the bubble: one line, on the inverse surface like a snackbar. */
 @Composable
@@ -357,37 +361,6 @@ private fun ErrorKind.icon(): ImageVector = when (this) {
     ErrorKind.REJECTED -> Icons.Rounded.Block
     ErrorKind.NETWORK -> Icons.Rounded.CloudOff
     ErrorKind.OTHER -> Icons.Rounded.ErrorOutline
-}
-
-/**
- * The convex hull of [polygon]'s control points, in its unit square scaled to the size: it holds
- * the whole shape, and a convex outline keeps Skia's shadow on its fast path.
- */
-internal fun convexHull(polygon: RoundedPolygon): Shape {
-    // Rounded, so float noise doesn't leave near-duplicates that bend the hull inwards.
-    fun round(v: Float) = kotlin.math.round(v * 10_000f) / 10_000f
-    val points = polygon.cubics.flatMap {
-        listOf(it.anchor0X to it.anchor0Y, it.control0X to it.control0Y,
-            it.control1X to it.control1Y, it.anchor1X to it.anchor1Y)
-    }.map { (x, y) -> round(x) to round(y) }.distinct().sortedWith(compareBy({ it.first }, { it.second }))
-    fun cross(o: Pair<Float, Float>, a: Pair<Float, Float>, b: Pair<Float, Float>) =
-        (a.first - o.first) * (b.second - o.second) - (a.second - o.second) * (b.first - o.first)
-    // Andrew's monotone chain.
-    val hull = mutableListOf<Pair<Float, Float>>()
-    for (pass in listOf(points, points.reversed())) {
-        val start = hull.size
-        for (p in pass) {
-            while (hull.size >= start + 2 && cross(hull[hull.size - 2], hull.last(), p) <= 1e-6f) hull.removeAt(hull.lastIndex)
-            hull.add(p)
-        }
-        hull.removeAt(hull.lastIndex)
-    }
-    return GenericShape { size, _ ->
-        hull.forEachIndexed { i, (x, y) ->
-            if (i == 0) moveTo(x * size.width, y * size.height) else lineTo(x * size.width, y * size.height)
-        }
-        close()
-    }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

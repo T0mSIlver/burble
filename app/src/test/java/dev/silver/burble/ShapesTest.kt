@@ -2,15 +2,7 @@ package dev.silver.burble
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.asAndroidPath
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
 import dev.silver.burble.overlay.Look
-import dev.silver.burble.overlay.convexHull
-import dev.silver.burble.overlay.polygon
-import org.junit.Assert.assertTrue
 import dev.silver.burble.overlay.OverlayContent
 import dev.silver.burble.overlay.Wave
 import dev.silver.burble.ui.Access
@@ -47,13 +39,6 @@ class ShapesTest(private val shape: BubbleShape) {
             }
         }
         compose.waitForIdle()
-    }
-
-    /** Skia's shadow for a concave path hung the render thread on SoftBurst; the hull is convex. */
-    @Test fun shadowIsConvex() {
-        val outline = convexHull(shape.polygon()).createOutline(Size(160f, 160f), LayoutDirection.Ltr, Density(1f))
-        val path = (outline as Outline.Generic).path.asAndroidPath()
-        assertTrue("$shape shadow outline is convex", path.isConvex)
     }
 
     @Test fun bubble() {
