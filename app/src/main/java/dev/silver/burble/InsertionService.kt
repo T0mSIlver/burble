@@ -237,8 +237,8 @@ class InsertionService : AccessibilityService() {
      * [target]'s field as it is now. Apps that redraw their input bar when the keyboard hides
      * (chat apps in Compose do) replace the node a dictation started with, so a stale one is
      * looked for again in the same window: the field with input focus, else the one with the
-     * same id, else the only field, else the one at the same left and right edges (the bar
-     * moves down as the keyboard goes).
+     * same id, else the only field, else the nearest one at the same left and right edges at or
+     * below where it was (the bar moves down as the keyboard goes).
      */
     private fun current(target: Target): AccessibilityNodeInfo? {
         val node = target.node
@@ -258,8 +258,8 @@ class InsertionService : AccessibilityService() {
         val found = fields.firstOrNull { it.isFocused }
             ?: target.viewId?.let { id -> fields.firstOrNull { it.viewIdResourceName == id } }
             ?: fields.singleOrNull()
-            ?: fields.filter { bounds(it).let { b -> b.left == target.bounds.left && b.right == target.bounds.right } }
-                .minByOrNull { kotlin.math.abs(bounds(it).centerY() - target.bounds.centerY()) }
+            ?: fields.filter { bounds(it).let { b -> b.left == target.bounds.left && b.right == target.bounds.right && b.top >= target.bounds.top } }
+                .minByOrNull { bounds(it).top }
         Log.d(TAG, if (found == null) "insert fell back: the start field is gone (${fields.size} fields in ${target.packageName})"
             else "the start field was redrawn; found it again")
         return found
