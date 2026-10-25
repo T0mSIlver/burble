@@ -225,6 +225,7 @@ object Dictation {
         if (into != null && InsertionService.instance?.insert(into, text) == true) {
             return State.Done(text, Output.INSERT, delivered = true)
         }
+        if (into == null) Log.d(TAG, "insert fell back: no field had input focus at the start")
         copy(context, text)
         return State.Ready(text)
     }

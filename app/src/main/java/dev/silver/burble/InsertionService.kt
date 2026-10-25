@@ -6,9 +6,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Rect
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -188,7 +190,8 @@ class InsertionService : AccessibilityService() {
     fun captureTarget(): Target? {
         val root = rootInActiveWindow ?: return null
         val node = focusedField() ?: return null
-        return Target(node, root.packageName?.toString())
+        return Target(node, root.packageName?.toString(), node.windowId, node.viewIdResourceName,
+            Rect().also(node::getBoundsInScreen))
     }
 
     /**
@@ -197,13 +200,13 @@ class InsertionService : AccessibilityService() {
      * the background.
      */
     fun insert(target: Target, text: String): Boolean {
-        val node = target.node
-        if (!node.refresh() || !node.isEditable) return false
+        val node = current(target) ?: return false
+        val focused = node.isFocused
         // An empty field reports its hint as its text.
         val existing = if (node.isShowingHintText) "" else node.text?.toString() ?: ""
         var start = node.textSelectionStart
         var end = node.textSelectionEnd
-        if (!node.isFocused || start !in 0..existing.length || end !in start..existing.length) {
+        if (!focused || start !in 0..existing.length || end !in start..existing.length) {
             start = existing.length
             end = existing.length
         }
@@ -214,7 +217,13 @@ class InsertionService : AccessibilityService() {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
                 before + spaced + existing.substring(end))
         }
-        if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+        // Some apps drop the field's focus when the keyboard hides; some fields only take text
+        // with it. Focus also leaves the cursor where the words went.
+        if (!focused) node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+            Log.d(TAG, "insert fell back: ${node.className} in ${target.packageName} refused the text")
+            return false
+        }
         // Park the cursor after the inserted text when the field reports selections.
         val at = start + spaced.length
         node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
@@ -224,11 +233,50 @@ class InsertionService : AccessibilityService() {
         return true
     }
 
-    /** A text field and the app it belongs to. */
-    class Target(val node: AccessibilityNodeInfo, val packageName: String?)
+    /**
+     * [target]'s field as it is now. Apps that redraw their input bar when the keyboard hides
+     * (chat apps in Compose do) replace the node a dictation started with, so a stale one is
+     * looked for again in the same window: the field with input focus, else the one with the
+     * same id, else the only field, else the one at the same left and right edges (the bar
+     * moves down as the keyboard goes).
+     */
+    private fun current(target: Target): AccessibilityNodeInfo? {
+        val node = target.node
+        if (node.refresh() && node.isEditable) return node
+        val root = rootInActiveWindow
+        if (root == null || root.windowId != target.windowId) {
+            Log.d(TAG, "insert fell back: ${target.packageName}'s window is no longer in front")
+            return null
+        }
+        val fields = mutableListOf<AccessibilityNodeInfo>()
+        fun walk(n: AccessibilityNodeInfo, depth: Int) {
+            if (n.isEditable) fields += n
+            if (depth < 64) for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
+        }
+        walk(root, 0)
+        val bounds = { n: AccessibilityNodeInfo -> Rect().also(n::getBoundsInScreen) }
+        val found = fields.firstOrNull { it.isFocused }
+            ?: target.viewId?.let { id -> fields.firstOrNull { it.viewIdResourceName == id } }
+            ?: fields.singleOrNull()
+            ?: fields.filter { bounds(it).let { b -> b.left == target.bounds.left && b.right == target.bounds.right } }
+                .minByOrNull { kotlin.math.abs(bounds(it).centerY() - target.bounds.centerY()) }
+        Log.d(TAG, if (found == null) "insert fell back: the start field is gone (${fields.size} fields in ${target.packageName})"
+            else "the start field was redrawn; found it again")
+        return found
+    }
+
+    /** A text field and the app it belongs to, with what finds it again once redrawn. */
+    class Target(
+        val node: AccessibilityNodeInfo,
+        val packageName: String?,
+        val windowId: Int,
+        val viewId: String?,
+        val bounds: Rect,
+    )
 
     companion object {
         private const val AWAY_MS = 400L
+        private const val TAG = "Insert"
         private val _connected = MutableStateFlow(false)
         /** True while Android has this service bound, which every background trigger needs. */
         val connected: StateFlow<Boolean> = _connected.asStateFlow()
