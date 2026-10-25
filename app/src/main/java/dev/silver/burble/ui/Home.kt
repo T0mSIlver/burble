@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -49,8 +50,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.runtime.Composable
@@ -66,10 +70,12 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.silver.burble.BubbleShape
+import dev.silver.burble.BubbleShow
 import dev.silver.burble.BubbleSize
 import dev.silver.burble.R
 import dev.silver.burble.Settings
@@ -147,6 +153,9 @@ fun Home(
             item {
                 Group(listOfNotNull(
                     if (!settings.bubbleOn) hiddenRow { set { it.copy(bubbleOn = true) } } else null,
+                    contentRow(Icons.Outlined.Visibility, stringResource(R.string.bubble_when)) {
+                        ShowPicker(settings.bubbleShow) { w -> set { it.copy(bubbleShow = w) } }
+                    },
                     contentRow(Icons.Outlined.Interests, stringResource(R.string.bubble_shape)) {
                         ShapePicker(settings.shape) { s -> set { it.copy(shape = s) } }
                     },
@@ -357,6 +366,24 @@ private fun ShapePicker(selected: BubbleShape, onPick: (BubbleShape) -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ShowPicker(selected: BubbleShow, onPick: (BubbleShow) -> Unit) {
+    val choices = listOf(BubbleShow.ALWAYS to R.string.bubble_when_always, BubbleShow.TYPING to R.string.bubble_when_typing)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+        choices.forEachIndexed { i, (show, label) ->
+            ToggleButton(
+                checked = show == selected,
+                onCheckedChange = { onPick(show) },
+                shapes = if (i == 0) ButtonGroupDefaults.connectedLeadingButtonShapes() else ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                // The default unchecked colour is the card's own.
+                colors = ToggleButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                modifier = Modifier.weight(1f).semantics { role = Role.RadioButton },
+            ) { Text(stringResource(label), maxLines = 1) }
         }
     }
 }

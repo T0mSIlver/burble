@@ -67,6 +67,12 @@ class Overlay(
         set(value) { hidden.value = value }
     private val hidden = mutableStateOf(false)
 
+    /** While true (no field has focus, in "only while typing") the bubble fades out. */
+    var away: Boolean
+        get() = awayState.value
+        set(value) { awayState.value = value }
+    private val awayState = mutableStateOf(false)
+
     private val density = context.resources.displayMetrics.density
     private var target: ComposeView? = null
     private val armed = mutableStateOf(false)
@@ -120,7 +126,7 @@ class Overlay(
         frame.setViewTreeSavedStateRegistryOwner(o)
         frame.setViewTreeViewModelStoreOwner(o)
         frame.addView(ComposeView(context).apply {
-            setContent { AppTheme { LiveOverlay(alignEnd, hidden) } }
+            setContent { AppTheme { LiveOverlay(alignEnd, hidden, awayState) } }
         })
         frame.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
             // The error label resized the window: keep it on screen.

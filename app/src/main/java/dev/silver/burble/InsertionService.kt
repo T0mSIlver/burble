@@ -25,7 +25,8 @@ import kotlinx.coroutines.launch
 /**
  * The accessibility service: hosts the bubble, remembers the field a dictation started in,
  * types the text into it (or, when it's gone, into the next field the user focuses), and hides
- * the keyboard while dictating.
+ * the keyboard while dictating. In "only while typing", it shows the bubble while a field has
+ * input focus.
  */
 class InsertionService : AccessibilityService() {
 
@@ -51,6 +52,9 @@ class InsertionService : AccessibilityService() {
             Prefs.settings.map { it.bubbleOn }.distinctUntilChanged().collect(::setOverlay)
         }
         scope.launch { Dictation.state.collect(::followDictation) }
+        scope.launch {
+            Prefs.settings.map { it.bubbleShow }.distinctUntilChanged().collect { updateAway() }
+        }
         updateLock()
     }
 
@@ -86,6 +90,7 @@ class InsertionService : AccessibilityService() {
             overlay = Overlay(this, getSystemService(WindowManager::class.java),
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY).also {
                 it.locked = locked
+                it.away = away
                 it.show()
             }
         } else if (!on) {
@@ -101,17 +106,37 @@ class InsertionService : AccessibilityService() {
         locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
     }
 
+    private var away = false
+        set(value) { field = value; overlay?.away = value }
+
+    /**
+     * Keyed on input focus, not on the keyboard, which a dictation hides. A dictation, its result
+     * and text waiting for a field keep the bubble up; it goes [AWAY_MS] after focus leaves, so
+     * moving between fields doesn't flicker it.
+     */
+    private fun updateAway() {
+        main.removeCallbacks(goAway)
+        val show = Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS ||
+            Dictation.state.value != Dictation.State.Idle || focusedField() != null
+        if (show) away = false else main.postDelayed(goAway, AWAY_MS)
+    }
+
+    private val goAway = Runnable { away = true }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // Not every unlock sends ACTION_USER_PRESENT, but a window always changes when the lock
         // screen goes.
         if (locked) updateLock()
-        if (Dictation.state.value !is Dictation.State.Ready) return
+        if (Dictation.state.value !is Dictation.State.Ready && Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS) return
         // Focus moves in bursts (a window opens, then a field takes focus): look once it settles.
         main.removeCallbacks(focusCheck)
         main.postDelayed(focusCheck, 120)
     }
 
-    private val focusCheck = Runnable { deliverReady() }
+    private val focusCheck = Runnable {
+        deliverReady()
+        updateAway()
+    }
 
     /** Text is ready and a field has focus: that's where the user wants it. */
     private fun deliverReady() {
@@ -139,6 +164,7 @@ class InsertionService : AccessibilityService() {
             }
             else -> showKeyboard()
         }
+        updateAway()
     }
 
     private fun hideKeyboard() {
@@ -198,6 +224,7 @@ class InsertionService : AccessibilityService() {
     class Target(val node: AccessibilityNodeInfo, val packageName: String?)
 
     companion object {
+        private const val AWAY_MS = 400L
         private val _connected = MutableStateFlow(false)
         /** True while Android has this service bound, which every background trigger needs. */
         val connected: StateFlow<Boolean> = _connected.asStateFlow()

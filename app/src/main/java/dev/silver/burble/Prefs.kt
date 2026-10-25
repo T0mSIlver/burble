@@ -24,6 +24,13 @@ enum class BubbleShape { COOKIE_9, SUNNY, CLOVER_4, CIRCLE, PILL, SOFT_BURST }
 
 enum class BubbleSize { SMALL, MEDIUM, LARGE }
 
+/** When the bubble shows. */
+enum class BubbleShow {
+    ALWAYS,
+    /** While an editable field has input focus, and through a dictation and its waiting text. */
+    TYPING,
+}
+
 data class Settings(
     val output: Output = Output.INSERT,
     val triggers: Set<Trigger> = setOf(Trigger.BUBBLE),
@@ -40,6 +47,7 @@ data class Settings(
     val bubbleOn: Boolean = true,
     /** The one-time line under the ✕ on how to bring a closed bubble back has been shown. */
     val hiddenHintShown: Boolean = false,
+    val bubbleShow: BubbleShow = BubbleShow.ALWAYS,
 )
 
 /** App settings in SharedPreferences, mirrored in a StateFlow every screen and service reads. */
@@ -70,6 +78,7 @@ object Prefs {
             .putString("languages", next.languages.joinToString(","))
             .putBoolean("bubbleOn", next.bubbleOn)
             .putBoolean("hiddenHintShown", next.hiddenHintShown)
+            .putString("bubbleShow", next.bubbleShow.name)
             .apply()
         _settings.value = next
     }
@@ -92,6 +101,7 @@ object Prefs {
                 ?: listOf(language),
             bubbleOn = sp.getBoolean("bubbleOn", d.bubbleOn),
             hiddenHintShown = sp.getBoolean("hiddenHintShown", d.hiddenHintShown),
+            bubbleShow = enumOr(sp.getString("bubbleShow", null), d.bubbleShow),
         )
     }
 

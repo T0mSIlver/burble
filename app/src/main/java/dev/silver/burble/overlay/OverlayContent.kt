@@ -115,7 +115,7 @@ internal fun BubbleSize.dp(): Dp = when (this) {
 
 /** The bubble wired to [Dictation] and [Prefs]: results time out, haptics mark changes. */
 @Composable
-internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>) {
+internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>, away: State<Boolean>) {
     val context = LocalContext.current
     val state by Dictation.state.collectAsState()
     val settings by Prefs.settings.collectAsState()
@@ -138,14 +138,16 @@ internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>) {
         Dictation.acknowledge()
     }
     if (locked.value) return
-    OverlayContent(look, settings.shape, settings.bubbleSize, alignEnd.value, labelled, onTap = {
-        when (look) {
-            // Ready: the waiting text stays on the clipboard. Failed: retries the kept audio,
-            // or starts over when there is none.
-            Look.Idle, Look.Ready, Look.Listening, is Look.Failed -> Dictation.toggle(context)
-            Look.Finishing, Look.Done -> Unit
-        }
-    }) { color, modifier -> LiveWave(Dictation.level, color, modifier) }
+    AnimatedVisibility(!away.value, enter = fadeIn() + scaleIn(initialScale = 0.8f), exit = fadeOut() + scaleOut(targetScale = 0.8f)) {
+        OverlayContent(look, settings.shape, settings.bubbleSize, alignEnd.value, labelled, onTap = {
+            when (look) {
+                // Ready: the waiting text stays on the clipboard. Failed: retries the kept audio,
+                // or starts over when there is none.
+                Look.Idle, Look.Ready, Look.Listening, is Look.Failed -> Dictation.toggle(context)
+                Look.Finishing, Look.Done -> Unit
+            }
+        }) { color, modifier -> LiveWave(Dictation.level, color, modifier) }
+    }
 }
 
 private fun haptic(view: View, look: Look) {
