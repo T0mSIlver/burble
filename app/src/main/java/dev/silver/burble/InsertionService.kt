@@ -85,6 +85,9 @@ class InsertionService : AccessibilityService() {
      */
     private fun setOverlay(on: Boolean) {
         if (on && overlay == null) {
+            // Starts hidden when it should, rather than showing until the delayed hide.
+            main.removeCallbacks(goAway)
+            away = !shouldShow()
             // This service's own WindowManager: the accessibility overlay type is only granted
             // to its token.
             overlay = Overlay(this, getSystemService(WindowManager::class.java),
@@ -116,10 +119,11 @@ class InsertionService : AccessibilityService() {
      */
     private fun updateAway() {
         main.removeCallbacks(goAway)
-        val show = Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS ||
-            Dictation.state.value != Dictation.State.Idle || focusedField() != null
-        if (show) away = false else main.postDelayed(goAway, AWAY_MS)
+        if (shouldShow()) away = false else if (!away) main.postDelayed(goAway, AWAY_MS)
     }
+
+    private fun shouldShow() = Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS ||
+        Dictation.state.value != Dictation.State.Idle || focusedField() != null
 
     private val goAway = Runnable { away = true }
 
