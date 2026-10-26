@@ -177,6 +177,8 @@ class InsertionService : AccessibilityService() {
         // Not every unlock sends ACTION_USER_PRESENT, but a window always changes when the lock
         // screen goes.
         if (locked) updateLock()
+        if (Dictation.state.value is Dictation.State.Ready && event?.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED &&
+            event.source?.isEditable == true) readyTapped = true
         if (Dictation.state.value !is Dictation.State.Ready && Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS && !snoozed) return
         // Focus moves in bursts (a window opens, then a field takes focus): look once it settles.
         main.removeCallbacks(focusCheck)
@@ -188,12 +190,39 @@ class InsertionService : AccessibilityService() {
         updateAway()
     }
 
-    /** Text is ready and a field has focus: that's where the user wants it. */
+    /**
+     * The field that had focus when text became ready, if any. It isn't where the user asked for
+     * the text: that field was the start field's stand-in, or is the start field refusing it. It
+     * gets the text once focus has left it and come back, or when the user taps it.
+     */
+    private var readyHeld: FieldKey? = null
+    private var readyFocusLeft = false
+    private var readyTapped = false
+
+    private fun holdReady() {
+        readyHeld = focusedField()?.key()
+        readyFocusLeft = readyHeld == null
+        readyTapped = false
+    }
+
+    /** Text is ready and the user focused a field since: that's where they want it. */
     private fun deliverReady() {
         val ready = Dictation.state.value as? Dictation.State.Ready ?: return
+        val field = focusedField()
+        if (field == null) {
+            readyFocusLeft = true
+            return
+        }
+        val held = readyHeld
+        if (held != null && !readyFocusLeft && !readyTapped && field.key().sameField(held)) return
+        readyTapped = false
         val target = captureTarget() ?: return
         if (insert(target, ready.text)) Dictation.readyInserted()
     }
+
+    /** Ignores the field's top and bottom, which move as the keyboard comes and goes. */
+    private fun FieldKey.sameField(other: FieldKey) =
+        window == other.window && id == other.id && bounds.left == other.bounds.left && bounds.right == other.bounds.right
 
     private fun focusedField(): AccessibilityNodeInfo? =
         rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }
@@ -210,7 +239,7 @@ class InsertionService : AccessibilityService() {
                 if (Prefs.settings.value.hideKeyboard) hideKeyboard()
             is Dictation.State.Ready -> {
                 if (Prefs.settings.value.hideKeyboard) hideKeyboard()
-                deliverReady()
+                holdReady()
             }
             else -> showKeyboard()
         }
@@ -230,21 +259,25 @@ class InsertionService : AccessibilityService() {
 
     // ---- insertion ----
 
-    /** The field a dictation would go into now, with its app. */
+    /** The field a dictation would go into now, with its app; never a password field. */
     fun captureTarget(): Target? {
         val root = rootInActiveWindow ?: return null
-        val node = focusedField() ?: return null
+        val node = focusedField()?.takeUnless { it.isPassword } ?: return null
         return Target(node, root.packageName?.toString(), node.windowId, node.viewIdResourceName,
             Rect().also(node::getBoundsInScreen))
     }
 
     /**
      * Types [text] into [target] at its cursor, replacing any selection, or at its end when it
-     * no longer has focus. False when the field is gone: its window closed, or its app went to
-     * the background.
+     * no longer has focus. False when the field is gone (its window closed, or its app went to
+     * the background), can't be told apart from another, or takes a password.
      */
     fun insert(target: Target, text: String): Boolean {
         val node = current(target) ?: return false
+        if (node.isPassword) {
+            Log.d(TAG, "insert fell back: a password field")
+            return false
+        }
         val focused = node.isFocused
         // An empty field reports its hint as its text.
         val existing = if (node.isShowingHintText) "" else node.text?.toString() ?: ""
@@ -280,31 +313,28 @@ class InsertionService : AccessibilityService() {
     /**
      * [target]'s field as it is now. Apps that redraw their input bar when the keyboard hides
      * (chat apps in Compose do) replace the node a dictation started with, so a stale one is
-     * looked for again in the same window: the field with input focus, else the one with the
-     * same id, else the only field, else the nearest one at the same left and right edges at or
-     * below where it was (the bar moves down as the keyboard goes).
+     * looked for again in the same window of the same app: the one field with the same id, else
+     * the one field at the same left and right edges at or below where it was (the bar moves down
+     * as the keyboard goes). Two candidates, or none, and the text waits for the user instead: it
+     * never goes into a field that merely has focus now.
      */
     private fun current(target: Target): AccessibilityNodeInfo? {
         val node = target.node
-        if (node.refresh() && node.isEditable) return node
+        if (node.refresh() && node.isEditable && node.windowId == target.windowId) return node
         val root = rootInActiveWindow
-        if (root == null || root.windowId != target.windowId) {
+        if (root == null || root.windowId != target.windowId || root.packageName?.toString() != target.packageName) {
             Log.d(TAG, "insert fell back: ${target.packageName}'s window is no longer in front")
             return null
         }
         val fields = mutableListOf<AccessibilityNodeInfo>()
         fun walk(n: AccessibilityNodeInfo, depth: Int) {
-            if (n.isEditable) fields += n
+            if (n.isEditable && !n.isPassword) fields += n
             if (depth < 64) for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
         }
         walk(root, 0)
-        val bounds = { n: AccessibilityNodeInfo -> Rect().also(n::getBoundsInScreen) }
-        val found = fields.firstOrNull { it.isFocused }
-            ?: target.viewId?.let { id -> fields.firstOrNull { it.viewIdResourceName == id } }
-            ?: fields.singleOrNull()
-            ?: fields.filter { bounds(it).let { b -> b.left == target.bounds.left && b.right == target.bounds.right && b.top >= target.bounds.top } }
-                .minByOrNull { bounds(it).top }
-        Log.d(TAG, if (found == null) "insert fell back: the start field is gone (${fields.size} fields in ${target.packageName})"
+        val found = findAgain(target.viewId, target.bounds, fields.map { it.viewIdResourceName to Rect().also(it::getBoundsInScreen) })
+            ?.let(fields::get)
+        Log.d(TAG, if (found == null) "insert fell back: the start field is gone or ambiguous (${fields.size} fields in ${target.packageName})"
             else "the start field was redrawn; found it again")
         return found
     }
@@ -319,6 +349,22 @@ class InsertionService : AccessibilityService() {
     )
 
     companion object {
+        /**
+         * Which of [fields] (each its view id and bounds) is the start field, by its [viewId] or
+         * else its [bounds]; null unless exactly one matches.
+         */
+        internal fun findAgain(viewId: String?, bounds: Rect, fields: List<Pair<String?, Rect>>): Int? {
+            if (viewId != null) {
+                val same = fields.indices.filter { fields[it].first == viewId }
+                if (same.isNotEmpty()) return same.singleOrNull()
+            }
+            val below = fields.indices.filter {
+                val b = fields[it].second
+                b.left == bounds.left && b.right == bounds.right && b.top >= bounds.top
+            }
+            return below.singleOrNull()
+        }
+
         private const val AWAY_MS = 400L
         private const val TAG = "Insert"
         private val _connected = MutableStateFlow(false)
