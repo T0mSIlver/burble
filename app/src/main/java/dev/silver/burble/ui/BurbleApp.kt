@@ -65,6 +65,7 @@ fun BurbleApp() {
     report?.let { draft ->
         ReportScreen(
             draft,
+            test,
             onCopy = { body ->
                 context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("report", body))
             },
@@ -79,16 +80,15 @@ fun BurbleApp() {
         Home(
             settings = settings,
             access = access,
-            test = test,
             update = update,
             actions = HomeActions(
                 access = actions,
-                sendTestAudio = { TestAudio.send(context) },
                 update = Prefs::update,
                 checkForUpdate = { Updater.check(context) },
                 installUpdate = { Updater.install(context, it) },
                 openUrl = { open(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
                 reportProblem = {
+                    TestAudio.send(context)
                     val version = Updater.installedVersion(context)
                     val languages = if (settings.languagesFromKeyboard) KeyboardLanguages.read(context) else settings.languages
                     // Reading logcat spawns a process: keep it off the main thread.

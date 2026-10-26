@@ -57,7 +57,6 @@ import dev.silver.burble.updater.Updater
 
 class HomeActions(
     val access: AccessActions,
-    val sendTestAudio: () -> Unit,
     val update: ((Settings) -> Settings) -> Unit,
     val checkForUpdate: () -> Unit,
     val installUpdate: (Release) -> Unit,
@@ -65,7 +64,7 @@ class HomeActions(
     val reportProblem: () -> Unit,
 ) {
     companion object {
-        val None = HomeActions(AccessActions.None, {}, {}, {}, {}, {}, {})
+        val None = HomeActions(AccessActions.None, {}, {}, {}, {}, {})
     }
 }
 
@@ -73,29 +72,30 @@ internal const val SOURCE = "https://github.com/T0mSIlver/burble"
 
 /**
  * One screen, laid out as Android's own settings: what's missing first, then the main switch,
- * the bubble, a row to [Advanced] and About. [keyboard] is the keyboard's languages, which
- * dictation follows by default. The last parameters open states for screenshots.
+ * when the bubble shows, a row to its look, a row to [Advanced], and About. [keyboard] is the
+ * keyboard's languages, which dictation follows by default. The last parameters open pages for
+ * screenshots.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun Home(
     settings: Settings,
     access: Access,
-    test: TestAudio.State,
     update: Updater.State,
     actions: HomeActions,
     version: String,
     keyboard: List<String> = emptyList(),
     advancedOpen: Boolean = false,
     languagesOpen: Boolean = false,
-    testOpen: Boolean = false,
     licencesOpen: Boolean = false,
+    lookOpen: Boolean = false,
 ) {
     var advanced by rememberSaveable { mutableStateOf(advancedOpen) }
     var licences by rememberSaveable { mutableStateOf(licencesOpen) }
+    var look by rememberSaveable { mutableStateOf(lookOpen) }
+    val set = actions.update
     @Composable fun HomeMain() {
         val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-        val set = actions.update
         Scaffold(
             modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
             topBar = {
@@ -106,30 +106,8 @@ fun Home(
                 )
             },
         ) { padding ->
-            val looks = listOf(
-                contentRow(null, stringResource(R.string.bubble_shape)) {
-                    ShapePicker(settings.shape) { s -> set { it.copy(shape = s) } }
-                },
-                contentRow(null, stringResource(R.string.bubble_size)) {
-                    // No value: the preview shows the size.
-                    Stepped(settings.bubbleSize, MIN_SIZE..MAX_SIZE, 8, null) { s ->
-                        set { it.copy(bubbleSize = s) }
-                    }
-                },
-                contentRow(null, stringResource(R.string.when_idle)) {
-                    Choices(listOf(WhenIdle.FULL to R.string.when_idle_full, WhenIdle.SHRINK to R.string.when_idle_shrink,
-                        WhenIdle.DOT to R.string.when_idle_dot), settings.whenIdle) { w -> set { it.copy(whenIdle = w) } }
-                },
-                contentRow(null, stringResource(R.string.idle_opacity)) {
-                    Stepped(settings.idleOpacity, 20..100, 10, stringResource(R.string.percent, settings.idleOpacity)) { o ->
-                        set { it.copy(idleOpacity = o) }
-                    }
-                },
-            )
             LazyColumn(
-                // Below the app bar rather than under it, so the pinned preview sticks beneath it.
-                Modifier.padding(top = padding.calculateTopPadding()),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = padding.calculateBottomPadding() + 24.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp),
             ) {
                 // Until setup is done the switch would switch nothing.
                 if (!access.ready) item { Setup(access, actions.access) }
@@ -148,20 +126,9 @@ fun Home(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         },
+                        lookRow(settings) { look = true },
                     ))
                 }
-
-                // The look, in one card: the preview stays pinned above its controls while they
-                // scroll, so every change shows as it's made.
-                item { SectionHeader(stringResource(R.string.section_appearance)) }
-                stickyHeader(key = "preview") {
-                    // Opaque round the card, so the controls scrolling under it don't show through.
-                    GroupRow(contentRow(null, null) { BubblePreview(settings) }, 0, looks.size + 1,
-                        Modifier.background(MaterialTheme.colorScheme.surface))
-                }
-                looks.forEachIndexed { i, row -> item { GroupRow(row, i + 1, looks.size + 1) } }
-                // Ends the preview's pin with the card.
-                stickyHeader(key = "preview-end") {}
 
                 item { Spacer(Modifier.size(24.dp)) }
                 item {
@@ -172,7 +139,8 @@ fun Home(
 
                 item { SectionHeader(stringResource(R.string.section_about)) }
                 item {
-                    Group(updateRows(settings.checkUpdates, update, version, actions) + listOf(
+                    Group(listOfNotNull(
+                        releaseRow(update, actions),
                         linkRow(Icons.Outlined.BugReport, stringResource(R.string.report_problem), stringResource(R.string.report_problem_hint)) {
                             actions.reportProblem()
                         },
@@ -192,11 +160,12 @@ fun Home(
         }
     }
     // Pages under home slide in from the end, on the motion scheme's springs, and back.
-    val page = when { advanced -> 1; licences -> 2; else -> 0 }
+    val page = when { advanced -> 1; licences -> 2; look -> 3; else -> 0 }
     AnimatedContent(page, transitionSpec = { pageTransition(forward = targetState > initialState) }, label = "page") { p ->
         when (p) {
-            1 -> Advanced(settings, keyboard, test, actions, onBack = { advanced = false }, languagesOpen, testOpen)
+            1 -> Advanced(settings, keyboard, update, version, actions, onBack = { advanced = false }, languagesOpen)
             2 -> Licences(onBack = { licences = false })
+            3 -> BubbleLook(settings, set, onBack = { look = false })
             else -> HomeMain()
         }
     }

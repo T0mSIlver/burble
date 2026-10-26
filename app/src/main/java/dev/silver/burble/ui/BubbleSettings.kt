@@ -9,6 +9,11 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.material.icons.outlined.Interests
+import androidx.compose.material3.SegmentedListItem
+import androidx.compose.ui.platform.LocalDensity
+import dev.silver.burble.overlay.BubbleBody
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -66,6 +71,65 @@ import kotlin.math.roundToInt
 
 const val MIN_SIZE = 40
 const val MAX_SIZE = 96
+
+/**
+ * The bubble's look, one tap from home: the preview pinned above its controls while they scroll,
+ * so every change shows as it's made.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun BubbleLook(settings: Settings, set: ((Settings) -> Settings) -> Unit, onBack: () -> Unit) {
+    val looks = listOf(
+        contentRow(null, stringResource(R.string.bubble_shape)) {
+            ShapePicker(settings.shape) { s -> set { it.copy(shape = s) } }
+        },
+        contentRow(null, stringResource(R.string.bubble_size)) {
+            // No value: the preview shows the size.
+            Stepped(settings.bubbleSize, MIN_SIZE..MAX_SIZE, 8, null) { s -> set { it.copy(bubbleSize = s) } }
+        },
+        contentRow(null, stringResource(R.string.when_idle)) {
+            Choices(listOf(WhenIdle.FULL to R.string.when_idle_full, WhenIdle.SHRINK to R.string.when_idle_shrink,
+                WhenIdle.DOT to R.string.when_idle_dot), settings.whenIdle) { w -> set { it.copy(whenIdle = w) } }
+        },
+        contentRow(null, stringResource(R.string.idle_opacity)) {
+            Stepped(settings.idleOpacity, 20..100, 10, stringResource(R.string.percent, settings.idleOpacity)) { o ->
+                set { it.copy(idleOpacity = o) }
+            }
+        },
+    )
+    val surface = MaterialTheme.colorScheme.surface
+    SubScreen(stringResource(R.string.bubble_look), onBack) {
+        stickyHeader(key = "preview") {
+            // Opaque round the card, so the controls scrolling under it don't show through.
+            GroupRow(contentRow(null, null) { BubblePreview(settings) }, 0, looks.size + 1,
+                Modifier.background(surface).padding(top = 8.dp))
+        }
+        looks.forEachIndexed { i, row -> item { GroupRow(row, i + 1, looks.size + 1) } }
+    }
+}
+
+/** The row on home that opens [BubbleLook]: what it looks like now, and the bubble itself. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+fun lookRow(settings: Settings, onClick: () -> Unit): SettingRow = { shapes ->
+    val inactive = stringResource(when (settings.whenIdle) {
+        WhenIdle.FULL -> R.string.look_full
+        WhenIdle.SHRINK -> R.string.look_smaller
+        WhenIdle.DOT -> R.string.look_dot
+    })
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = shapes,
+        colors = listColors(),
+        leadingContent = { Icon(Icons.Outlined.Interests, contentDescription = null) },
+        trailingContent = {
+            Box(Modifier.size(40.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
+                val half = with(LocalDensity.current) { 20.dp.toPx() }
+                BubbleBody(Look.Idle, settings.shape, 32.dp, Offset(half, half)) { _, _ -> }
+            }
+        },
+        supportingContent = { Text(stringResource(R.string.look_summary, stringResource(settings.shape.label), inactive)) },
+    ) { Text(stringResource(R.string.bubble_look)) }
+}
 
 /**
  * The bubble as it will look, drawn by the overlay's own code against the edge of a sketched

@@ -1,11 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Burble</string>
-    <string name="empty_result">Didn\'t hear anything</string>
     <string name="a11y_desc">Lets Burble show its bubble and type your dictated words into the text field you\'re in. It looks only at text fields, keeps nothing it reads, and sends Google only the app\'s name, with your audio.</string>
-    <string name="send_test_audio">Run test</string>
-    <string name="sending">Running…</string>
-    <string name="test_result">%1$s</string>
     <string name="mic_channel">Dictation</string>
     <string name="mic_listening">Listening</string>
     <string name="mic_finishing">Transcribing…</string>
@@ -49,8 +45,6 @@
     <!-- Home -->
     <string name="status_setup">Finish setup</string>
     <string name="status_restricted">Installed from a file? Try once, then in app info open ⋮ More options and Allow restricted settings.</string>
-    <string name="test_hint">Sends a sample English recording to Google.</string>
-    <string name="test_failed">Test failed. Try again.</string>
     <string name="shape_cookie">Cookie</string>
     <string name="shape_sunny">Sun</string>
     <string name="shape_clover">Clover</string>
@@ -82,7 +76,6 @@
     <string name="hide_keyboard_hint">The keyboard returns after your text is inserted</string>
     <string name="languages">Languages</string>
     <string name="languages_hint">Choose the languages you speak. Burble expects the primary one first.</string>
-    <string name="test_connection">Test connection</string>
     <string name="privacy">Privacy</string>
     <string name="privacy_hint">Google receives your audio, languages, phone model and the app you dictate in</string>
     <string name="licence">Licences</string>
@@ -120,18 +113,23 @@
     <string name="preview_active">In use</string>
     <string name="preview_idle">After 3 seconds</string>
     <string name="updates_auto">Check for updates automatically</string>
-    <string name="updates_whats_new">What\'s new</string>
     <string name="status_insert_hint">Turn on Burble in Accessibility settings</string>
     <string name="advanced">Advanced</string>
     <string name="advanced_hint">Languages, keyboard, updates</string>
     <string name="back">Back</string>
     <string name="languages_keyboard">Use keyboard languages</string>
     <string name="languages_custom">Choose languages</string>
-    <string name="section_troubleshooting">Troubleshooting</string>
     <string name="preview_active_description">The bubble in use</string>
     <string name="preview_idle_description">The bubble after 3 seconds: %1$s, at %2$d %% opacity</string>
     <string name="onb_disclosure">Not affiliated with Google. Audio goes to Google.</string>
-    <string name="section_appearance">Appearance</string>
     <string name="thanks">Thanks to PixelBoard</string>
     <string name="thanks_hint">By Akshay Kadam, which showed Rambler works on any phone</string>
+    <string name="report_test_sending">Asking Google…</string>
+    <string name="report_test_heard">Google answered: %1$s</string>
+    <string name="report_test_failed">Google didn\'t answer: %1$s</string>
+    <string name="bubble_look">Bubble look</string>
+    <string name="look_summary">%1$s · %2$s</string>
+    <string name="look_full">same size when inactive</string>
+    <string name="look_smaller">smaller when inactive</string>
+    <string name="look_dot">a dot when inactive</string>
 </resources>

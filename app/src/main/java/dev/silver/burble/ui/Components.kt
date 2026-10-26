@@ -148,7 +148,9 @@ fun SubScreen(title: String, onBack: () -> Unit, content: LazyListScope.() -> Un
         },
     ) { padding ->
         LazyColumn(
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp),
+            // Below the app bar rather than under it, so a pinned header sticks beneath it.
+            Modifier.padding(top = padding.calculateTopPadding()),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = padding.calculateBottomPadding() + 24.dp),
             content = content,
         )
     }

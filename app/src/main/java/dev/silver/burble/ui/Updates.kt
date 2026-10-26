@@ -22,12 +22,9 @@ import dev.silver.burble.updater.Release
 import dev.silver.burble.updater.Updater
 import dev.silver.burble.updater.Updater.State
 
-/**
- * The daily check's switch, with the version and how its check went under it; turning it on
- * checks at once. A row with what's new and the install follows only while an update exists.
- */
+/** The daily check's switch, with the version and how its check went under it; on checks at once. */
 @Composable
-fun updateRows(auto: Boolean, state: State, version: String, actions: HomeActions): List<SettingRow> {
+fun updateSwitch(auto: Boolean, state: State, version: String, actions: HomeActions): SettingRow {
     val release = state.release
     val status = when (state) {
         State.Idle -> null
@@ -41,17 +38,18 @@ fun updateRows(auto: Boolean, state: State, version: String, actions: HomeAction
         status != null -> stringResource(R.string.version_status, version, stringResource(status))
         else -> stringResource(R.string.version, version)
     }
-    return listOfNotNull(
-        switchRow(Icons.Outlined.Update, stringResource(R.string.updates_auto), summary, auto) { on ->
-            actions.update { it.copy(checkUpdates = on) }
-            if (on) actions.checkForUpdate()
-        },
-        release?.let { release ->
-            contentRow(Icons.Outlined.SystemUpdate, stringResource(R.string.updates_whats_new)) {
-                UpdateBody(state, release, actions)
-            }
-        },
-    )
+    return switchRow(Icons.Outlined.Update, stringResource(R.string.updates_auto), summary, auto) { on ->
+        actions.update { it.copy(checkUpdates = on) }
+        if (on) actions.checkForUpdate()
+    }
+}
+
+/** What's new and the install, only while an update exists. */
+@Composable
+fun releaseRow(state: State, actions: HomeActions): SettingRow? = state.release?.let { release ->
+    contentRow(Icons.Outlined.SystemUpdate, stringResource(R.string.updates_available, release.version)) {
+        UpdateBody(state, release, actions)
+    }
 }
 
 private val State.release get() = when (this) {

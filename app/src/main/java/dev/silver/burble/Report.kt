@@ -14,9 +14,11 @@ object Report {
     private const val MAX_LOG = 4000
 
     class Draft(val phone: String, val log: String) {
-        fun body(keepAppNames: Boolean) = buildString {
+        /** [connection]: how the connection test went, when it has. */
+        fun body(keepAppNames: Boolean, connection: String? = null) = buildString {
             append("**What happened**\n\n\n\n**What you expected**\n\n\n\n")
             append("**Phone**\n").append(phone).append('\n')
+            if (connection != null) append("**Connection test**\n").append(connection).append("\n\n")
             append("**Log**\n```\n").append(if (keepAppNames) log else redact(log)).append("\n```\n")
         }
     }

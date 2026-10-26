@@ -37,7 +37,7 @@ class ShapesTest(private val shape: BubbleShape) {
     @Test fun picked() {
         compose.setContent {
             AppTheme(dynamic = false) {
-                Home(Settings(shape = shape), Access.All, TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0")
+                Home(Settings(shape = shape), Access.All, Updater.State.Idle, HomeActions.None, "0.1.0")
             }
         }
         compose.waitForIdle()

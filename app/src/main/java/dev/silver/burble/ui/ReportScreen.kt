@@ -2,6 +2,9 @@ package dev.silver.burble.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,6 +12,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material3.Button
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
@@ -29,15 +33,39 @@ import dev.silver.burble.R
 import dev.silver.burble.Report
 
 /**
- * What a bug report holds, shown before it leaves the phone: the user reads it, keeps app names
- * or not, and copies it or opens the GitHub issue with it.
+ * What a bug report holds, shown before it leaves the phone: first the connection test, run as
+ * the report opens, then the rest. The user reads it, keeps app names or not, and copies it or
+ * opens the GitHub issue with it.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ReportScreen(draft: Report.Draft, onCopy: (String) -> Unit, onOpen: (String) -> Unit, onBack: () -> Unit) {
+fun ReportScreen(draft: Report.Draft, test: TestAudio.State, onCopy: (String) -> Unit, onOpen: (String) -> Unit, onBack: () -> Unit) {
     var keepApps by rememberSaveable { mutableStateOf(false) }
-    val body = draft.body(keepApps)
+    val connection = when (test) {
+        TestAudio.State.Idle, TestAudio.State.Sending -> null
+        is TestAudio.State.Heard -> stringResource(R.string.report_test_heard, test.text)
+        is TestAudio.State.Failed -> stringResource(R.string.report_test_failed, test.detail.orEmpty())
+    }
+    val body = draft.body(keepApps, connection)
+    val colors = MaterialTheme.colorScheme
     SubScreen(stringResource(R.string.report_problem), onBack) {
+        item {
+            // The connection test, so a report says whether Google answered.
+            Surface(
+                color = if (test is TestAudio.State.Failed) colors.errorContainer else colors.surfaceContainerHigh,
+                contentColor = if (test is TestAudio.State.Failed) colors.onErrorContainer else colors.onSurface,
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (connection == null) {
+                        LoadingIndicator(Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Text(connection ?: stringResource(R.string.report_test_sending), style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
         item {
             Text(
                 stringResource(R.string.report_intro),
