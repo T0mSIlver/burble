@@ -44,7 +44,7 @@ class ShapesTest(private val shape: BubbleShape) {
     }
 
     @Test fun bubble() {
-        val looks = listOf(Look.Idle, Look.Listening, Look.Finishing, Look.Done, Look.Ready, Look.Failed(Dictation.ErrorKind.NETWORK, true))
+        val looks = listOf(Look.Idle, Look.Listening, Look.Finishing, Look.Done, Look.Copied, Look.Failed(Dictation.ErrorKind.NETWORK, true))
         compose.setContent {
             AppTheme(dynamic = false) {
                 Column {

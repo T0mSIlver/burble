@@ -74,7 +74,7 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             "Listening" to { Bubble(Look.Listening, level = 0.6f, alignEnd = true) },
             "Finishing" to { Bubble(Look.Finishing, alignEnd = true) },
             "Inserted" to { Bubble(Look.Done, alignEnd = true) },
-            "Text ready" to { Bubble(Look.Ready, alignEnd = true) },
+            "Copied" to { Bubble(Look.Copied, alignEnd = true) },
             "Error" to { Bubble(Look.Failed(ErrorKind.QUOTA), alignEnd = true) },
         )
         Column(Modifier.width(412.dp).background(c.surface)) {
@@ -104,10 +104,10 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             Labelled("listening: silence, 0.6, 0.9") {
                 for (level in listOf(0f, 0.6f, 0.9f)) Bubble(Look.Listening, level = level)
             }
-            Labelled("finishing, done, ready") {
+            Labelled("finishing, inserted, copied") {
                 Bubble(Look.Finishing)
                 Bubble(Look.Done)
-                Bubble(Look.Ready)
+                Bubble(Look.Copied)
             }
             Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), alignEnd = true)
             for (kind in ErrorKind.entries) Bubble(Look.Failed(kind, waits = kind != ErrorKind.NOTHING_HEARD && kind != ErrorKind.NO_MIC))

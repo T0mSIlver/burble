@@ -10,6 +10,7 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -26,9 +27,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * The accessibility service: hosts the bubble, remembers the field a dictation started in,
- * types the text into it (or, when it's gone, into the next field the user focuses), and hides
- * the keyboard while dictating. In "only while typing", it shows the bubble while a field has
+ * The accessibility service: hosts the bubble, remembers the field a dictation started in and
+ * the last one the user taps during it, types the text into one of them while it's on screen,
+ * and hides the keyboard while dictating. In "only while typing", it shows the bubble while a field has
  * input focus.
  */
 class InsertionService : AccessibilityService() {
@@ -56,7 +57,6 @@ class InsertionService : AccessibilityService() {
                 // Switched off mid-dictation: the words so far still land. Text waiting for a
                 // field stays on the clipboard, and the keyboard comes back.
                 if (!on && Dictation.state.value == Dictation.State.Listening) Dictation.stop()
-                if (!on && Dictation.state.value is Dictation.State.Ready) Dictation.discard()
             }
         }
         // The bubble stays until a dictation ends, so the microphone never runs without it.
@@ -162,8 +162,8 @@ class InsertionService : AccessibilityService() {
         set(value) { field = value; overlay?.away = value }
 
     /**
-     * Keyed on input focus, not on the keyboard, which a dictation hides. A dictation, its result
-     * and text waiting for a field keep the bubble up; it goes [AWAY_MS] after focus leaves, so
+     * Keyed on input focus, not on the keyboard, which a dictation hides. A dictation and its result
+     * keep the bubble up; it goes [AWAY_MS] after focus leaves, so
      * moving between fields doesn't flicker it.
      */
     private fun updateAway() {
@@ -186,52 +186,47 @@ class InsertionService : AccessibilityService() {
         if (locked) updateLock()
         // Switched off, Burble doesn't follow focus at all.
         if (!Prefs.settings.value.bubbleOn) return
-        if (Dictation.state.value is Dictation.State.Ready && event?.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED &&
-            event.source?.isEditable == true) readyTapped = true
-        if (Dictation.state.value !is Dictation.State.Ready && Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS && !visibility.snoozed) return
+        if (event != null && Dictation.state.value.recording && tappedField(event)) noteTap(event)
+        if (Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS && !visibility.snoozed) return
         // Focus moves in bursts (a window opens, then a field takes focus): look once it settles.
         main.removeCallbacks(focusCheck)
         main.postDelayed(focusCheck, 120)
     }
 
-    private val focusCheck = Runnable {
-        deliverReady()
-        updateAway()
-    }
+    private val focusCheck = Runnable { updateAway() }
+
+    // ---- the field tapped while dictating ----
 
     /**
-     * The field that had focus when text became ready, if any. It isn't where the user asked for
-     * the text: that field was the start field's stand-in, or is the start field refusing it. It
-     * gets the text once focus has left it and come back, or when the user taps it.
+     * The last text field the user tapped while dictating: where they want the words. A tap, not
+     * a focus change an app makes on its own; never a password field. The bubble has no text
+     * field, so it never counts.
      */
-    private var readyHeld: FieldKey? = null
-    private var readyFocusLeft = false
-    private var readyTapped = false
+    private var tapped: Target? = null
 
-    private fun holdReady() {
-        readyHeld = focusedField()?.key()
-        readyFocusLeft = readyHeld == null
-        readyTapped = false
+    /**
+     * A tap on a field that hasn't focus only focuses it: Android sends no click. So a focus
+     * change counts when a finger went down outside the bubble just before; a click always does.
+     */
+    private fun tappedField(event: AccessibilityEvent) = when (event.eventType) {
+        AccessibilityEvent.TYPE_VIEW_CLICKED -> true
+        AccessibilityEvent.TYPE_VIEW_FOCUSED ->
+            SystemClock.uptimeMillis() - (overlay?.touchedOutsideAt ?: 0L) < TAP_MS
+        else -> false
     }
 
-    /** Text is ready and the user focused a field since: that's where they want it. */
-    private fun deliverReady() {
-        val ready = Dictation.state.value as? Dictation.State.Ready ?: return
-        val field = focusedField()
-        if (field == null) {
-            readyFocusLeft = true
-            return
-        }
-        val held = readyHeld
-        if (held != null && !readyFocusLeft && !readyTapped && field.key().sameField(held)) return
-        readyTapped = false
-        val target = captureTarget() ?: return
-        if (insert(target, ready.text)) Dictation.readyInserted()
+    private fun noteTap(event: AccessibilityEvent) {
+        val node = event.source ?: return
+        if (!node.isEditable || node.isPassword) return
+        tapped = Target(node, event.packageName?.toString(), node.windowId, node.viewIdResourceName,
+            Rect().also(node::getBoundsInScreen))
     }
 
-    /** Ignores the field's top and bottom, which move as the keyboard comes and goes. */
-    private fun FieldKey.sameField(other: FieldKey) =
-        window == other.window && id == other.id && bounds.left == other.bounds.left && bounds.right == other.bounds.right
+    fun tappedTarget(): Target? = tapped
+
+    fun forgetTapped() {
+        tapped = null
+    }
 
     /** The text field with input focus. Never a password field: no words go there, spoken aloud. */
     private fun focusedField(): AccessibilityNodeInfo? =
@@ -241,17 +236,13 @@ class InsertionService : AccessibilityService() {
 
     // ---- keyboard ----
 
-    // Hidden from the start of a dictation until its text is in a field, so the keyboard never
-    // flashes up in between.
+    // Hidden while listening and finishing only: back the moment the words land, or go to the
+    // clipboard, or fail.
     private fun followDictation(state: Dictation.State) {
-        when (state) {
-            Dictation.State.Listening, Dictation.State.Finishing ->
-                if (Prefs.settings.value.hideKeyboard) hideKeyboard()
-            is Dictation.State.Ready -> {
-                if (Prefs.settings.value.hideKeyboard) hideKeyboard()
-                holdReady()
-            }
-            else -> showKeyboard()
+        if (state.recording) {
+            if (Prefs.settings.value.hideKeyboard) hideKeyboard()
+        } else {
+            showKeyboard()
         }
         updateAway()
     }
@@ -261,10 +252,15 @@ class InsertionService : AccessibilityService() {
         keyboardHidden = softKeyboardController.setShowMode(SHOW_MODE_HIDDEN)
     }
 
+    /**
+     * The show mode alone doesn't bring the keyboard back: Android waits for the app to ask for
+     * it again, which takes a tap. A click on the field with focus is that tap.
+     */
     private fun showKeyboard() {
         if (!keyboardHidden) return
         softKeyboardController.setShowMode(SHOW_MODE_AUTO)
         keyboardHidden = false
+        focusedField()?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
 
     // ---- insertion ----
@@ -329,13 +325,15 @@ class InsertionService : AccessibilityService() {
      * never goes into a field that merely has focus now.
      */
     private fun current(target: Target): AccessibilityNodeInfo? {
-        val node = target.node
-        if (node.refresh() && node.isEditable && node.windowId == target.windowId) return node
+        // Only into the window on screen now: a field in an app the user left gets nothing, now
+        // or later; the words go to the clipboard.
         val root = rootInActiveWindow
         if (root == null || root.windowId != target.windowId || root.packageName?.toString() != target.packageName) {
             Log.d(TAG, "insert fell back: ${target.packageName}'s window is no longer in front")
             return null
         }
+        val node = target.node
+        if (node.refresh() && node.isEditable && node.windowId == target.windowId) return node
         val fields = mutableListOf<AccessibilityNodeInfo>()
         fun walk(n: AccessibilityNodeInfo, depth: Int) {
             if (n.isEditable && !n.isPassword) fields += n
@@ -377,6 +375,8 @@ class InsertionService : AccessibilityService() {
 
         private const val AWAY_MS = 400L
         private const val TAG = "Insert"
+        /** How long after a finger goes down its tap may still move focus. */
+        private const val TAP_MS = 1500L
         private val _connected = MutableStateFlow(false)
         /** True while Android has this service bound, which every background trigger needs. */
         val connected: StateFlow<Boolean> = _connected.asStateFlow()

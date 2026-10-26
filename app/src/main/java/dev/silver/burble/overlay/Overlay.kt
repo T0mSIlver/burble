@@ -35,6 +35,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import android.os.Build
+import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import dev.silver.burble.Dictation
 import dev.silver.burble.Prefs
@@ -55,7 +56,7 @@ import kotlin.math.roundToInt
  * The bubble: Compose windows outside any activity that render [Dictation]. Drag it anywhere;
  * on release it springs to the nearest side edge and remembers where it sits. While dragging, a
  * ✕ target shows at the bottom: dropping the bubble there cancels a dictation, drops the audio
- * of an error waiting for retry or text waiting for a field, or else hides the bubble until
+ * of an error waiting for retry, or else hides the bubble until
  * [onSnooze]'s owner shows it again. [windowType] is the host's, TYPE_ACCESSIBILITY_OVERLAY from
  * the accessibility service.
  *
@@ -126,7 +127,8 @@ class Overlay(
 
     /** The bubble's window: the bubble's size, never touched. Its x and y place all three. */
     private val params = overlayParams("Burble", WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
-    private val touchParams = overlayParams("Burble touch", 0)
+    /** Watches touches elsewhere: Android says when one happens, not where, nor in which app. */
+    private val touchParams = overlayParams("Burble touch", WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
     private val pillParams = overlayParams("Burble label", 0)
 
     init {
@@ -135,6 +137,10 @@ class Overlay(
     }
 
     val isShown get() = bubble != null
+
+    /** When a finger last went down outside the bubble, in [SystemClock.uptimeMillis]. */
+    var touchedOutsideAt = 0L
+        private set
 
     fun show() {
         if (bubble != null) return
@@ -373,7 +379,6 @@ class Overlay(
             val st = Dictation.state.value
             when {
                 st.recording || (st as? Dictation.State.Error)?.waits == true -> Dictation.cancel()
-                st is Dictation.State.Ready -> Dictation.discard()
                 // A check mark or an error that doesn't wait goes with the bubble, or its state
                 // would show it again until it times out.
                 else -> {
@@ -419,6 +424,10 @@ class Overlay(
 
         override fun onTouchEvent(e: MotionEvent): Boolean {
             when (e.actionMasked) {
+                MotionEvent.ACTION_OUTSIDE -> {
+                    touchedOutsideAt = SystemClock.uptimeMillis()
+                    return false
+                }
                 MotionEvent.ACTION_DOWN -> {
                     ui.touching.value = true
                     ui.pressed.value = true

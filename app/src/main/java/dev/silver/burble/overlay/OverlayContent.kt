@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassEmpty
@@ -96,6 +95,7 @@ import dev.silver.burble.BubbleShape
 import dev.silver.burble.WhenIdle
 import dev.silver.burble.Dictation
 import dev.silver.burble.MainActivity
+import dev.silver.burble.Output
 import dev.silver.burble.Dictation.ErrorKind
 import dev.silver.burble.Prefs
 import dev.silver.burble.R
@@ -108,7 +108,8 @@ internal sealed interface Look {
     data object Listening : Look
     data object Finishing : Look
     data object Done : Look
-    data object Ready : Look
+    /** No field took the words: they're on the clipboard. */
+    data object Copied : Look
     /** [waits]: the audio is kept; a tap retries it. */
     data class Failed(val kind: ErrorKind, val waits: Boolean = false) : Look
 }
@@ -117,8 +118,7 @@ internal fun Dictation.State.look(): Look = when (this) {
     Dictation.State.Idle -> Look.Idle
     Dictation.State.Listening -> Look.Listening
     Dictation.State.Finishing -> Look.Finishing
-    is Dictation.State.Done -> Look.Done
-    is Dictation.State.Ready -> Look.Ready
+    is Dictation.State.Done -> if (output == Output.CLIPBOARD) Look.Copied else Look.Done
     is Dictation.State.Error -> Look.Failed(kind, waits)
 }
 
@@ -157,23 +157,40 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
     val look = state.look()
     val view = LocalView.current
     var last by remember { mutableStateOf(look) }
+    // Results are brief: the check 0.7 s, Copied 1 s. An error shows its colour 1.5 s, then the
+    // bubble's own look (with a retry badge while its audio waits); its label stays 4 s.
+    var quiet by remember { mutableStateOf(false) }
+    val inserted = stringResource(R.string.overlay_inserted)
+    val copied = stringResource(R.string.overlay_copied)
     LaunchedEffect(look) {
         if (look::class != last::class) haptic(view, look)
         last = look
+        quiet = false
         ui.labelled.value = look is Look.Failed
-        val hold = when (look) {
-            Look.Done -> 700L
-            is Look.Failed -> 4000L
-            else -> return@LaunchedEffect
+        when (look) {
+            Look.Done, Look.Copied -> {
+                @Suppress("DEPRECATION") view.announceForAccessibility(if (look == Look.Done) inserted else copied)
+                delay(if (look == Look.Done) 700L else 1000L)
+                Dictation.acknowledge()
+            }
+            is Look.Failed -> {
+                delay(1500L)
+                quiet = true
+                delay(2500L)
+                ui.labelled.value = false
+                // A waiting error stays, as the bubble's own look with a retry badge, until a tap
+                // or ✕.
+                Dictation.acknowledge()
+            }
+            else -> Unit
         }
-        delay(hold)
-        ui.labelled.value = false
-        // A waiting error stays: error colour and retry glyph, until a tap or ✕.
-        Dictation.acknowledge()
     }
+    // A quiet error looks, and rests, like Idle.
+    val shown = if (look is Look.Failed && quiet) Look.Idle else look
+    val badge = look is Look.Failed && quiet && look.waits
     // 3 s untouched in Idle, counted again after every touch and every dictation.
     var rest by remember { mutableStateOf(false) }
-    val idle = look is Look.Idle && !ui.touching.value
+    val idle = shown is Look.Idle && !ui.touching.value
     LaunchedEffect(idle) {
         rest = false
         if (idle) {
@@ -185,10 +202,10 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
     val progress by animateFloatAsState(if (atRest) 1f else 0f, RestSpec)
     val docked = atRest && progress == 1f && settings.whenIdle != WhenIdle.FULL
     LaunchedEffect(docked) { ui.docked.value = docked }
-    val shown = remember { MutableTransitionState(false) }
-    shown.targetState = !(ui.locked.value || ui.away.value || ui.closing.value)
-    LaunchedEffect(shown.isIdle, shown.currentState, ui.closing.value) {
-        if (ui.closing.value && shown.isIdle && !shown.currentState) onGone()
+    val visible = remember { MutableTransitionState(false) }
+    visible.targetState = !(ui.locked.value || ui.away.value || ui.closing.value)
+    LaunchedEffect(visible.isIdle, visible.currentState, ui.closing.value) {
+        if (ui.closing.value && visible.isIdle && !visible.currentState) onGone()
     }
     val l = Geometry.layout(ui.screen.value, ui.anchor.value, settings.bubbleSize, settings.whenIdle, progress,
         settings.idleOpacity / 100f, ui.drag.value)
@@ -200,12 +217,13 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
     val origin = TransformOrigin(centre.x / side, centre.y / side)
     Box(Modifier.size(with(density) { side.toDp() })) {
         AnimatedVisibility(
-            shown,
+            visible,
             enter = fadeIn(motion.defaultEffectsSpec()) + scaleIn(motion.defaultSpatialSpec(), initialScale = 0.6f, transformOrigin = origin),
             exit = fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec(), targetScale = 0.6f, transformOrigin = origin),
         ) {
             BubbleBody(
-                look, settings.shape, settings.bubbleSize.dp, centre,
+                shown, settings.shape, settings.bubbleSize.dp, centre,
+                badge = badge,
                 scale = l.bubble.width / with(density) { settings.bubbleSize.dp.toPx() },
                 alpha = l.alpha,
                 pressed = ui.pressed.value,
@@ -251,10 +269,9 @@ internal fun LiveTarget(shown: androidx.compose.runtime.State<Boolean>, armed: a
 /** A tap on the bubble, whatever it shows. */
 internal fun tapBubble(context: Context) {
     when (Dictation.state.value.look()) {
-        // Ready: the waiting text stays on the clipboard. Failed: retries the kept audio, or
-        // starts over when there is none.
-        Look.Idle, Look.Ready, Look.Listening, is Look.Failed -> Dictation.toggle(context)
-        Look.Finishing, Look.Done -> Unit
+        // Failed: retries the kept audio, or starts over when there is none.
+        Look.Idle, Look.Listening, is Look.Failed -> Dictation.toggle(context)
+        Look.Finishing, Look.Done, Look.Copied -> Unit
     }
 }
 
@@ -262,7 +279,7 @@ private fun haptic(view: View, look: Look) {
     val effect = when (look) {
         Look.Listening -> HapticFeedbackConstants.GESTURE_START
         Look.Finishing -> HapticFeedbackConstants.GESTURE_END
-        Look.Done, Look.Ready -> HapticFeedbackConstants.CONFIRM
+        Look.Done, Look.Copied -> HapticFeedbackConstants.CONFIRM
         is Look.Failed -> HapticFeedbackConstants.REJECT
         Look.Idle -> return
     }
@@ -308,14 +325,14 @@ internal fun BubbleBody(
     pressed: Boolean = false,
     /** The glyph's opacity: a 12 dp dot has no room for it. */
     glyphs: Float = 1f,
+    /** A failed dictation's audio waits: a small retry badge on the bubble's own look. */
+    badge: Boolean = false,
     wave: WaveSlot,
 ) {
     val colors = MaterialTheme.colorScheme
     val (container, content) = when (look) {
-        Look.Done -> colors.primary to colors.onPrimary
+        Look.Done, Look.Copied -> colors.primary to colors.onPrimary
         // Tertiary is the wallpaper's accent; the Google blue fallback's is an accidental green.
-        Look.Ready -> if (LocalWallpaperColors.current) colors.tertiaryContainer to colors.onTertiaryContainer
-            else colors.secondaryContainer to colors.onSecondaryContainer
         is Look.Failed -> colors.errorContainer to colors.onErrorContainer
         // Gboard's bar: the glow on the plain surface.
         Look.Listening -> colors.surfaceContainerLowest to colors.onSurface
@@ -332,6 +349,7 @@ internal fun BubbleBody(
     val ambientShadow = remember(outline) { DropShadowPainter(outline, AmbientShadow) }
     val density = LocalDensity.current
     val half = with(density) { side.toPx() } / 2
+    // The bubble's place, size and opacity; the shape's mask is inside, so the badge isn't cut.
     Box(
         Modifier
             .testTag(BUBBLE_TAG)
@@ -344,7 +362,11 @@ internal fun BubbleBody(
                 this.alpha = alpha
                 // Offscreen, the fade would crop the shadow to the bubble's square.
                 compositingStrategy = CompositingStrategy.ModulateAlpha
-            }
+            },
+    ) {
+    Box(
+        Modifier
+            .fillMaxSize()
                 // M3's level-2 elevation, two layers, following the real outline. A blurred copy
                 // of the shape, not shadowElevation: Skia's shadow for a concave path hung the
                 // render thread on SoftBurst at every launch. Only outside the shape, so a faded
@@ -395,12 +417,26 @@ internal fun BubbleBody(
                     Look.Listening -> wave(colors.waveColor(LocalWallpaperColors.current), Modifier.fillMaxSize())
                     Look.Finishing -> LoadingIndicator(Modifier.size(side * 0.72f), color = colors.primary)
                     Look.Done -> Icon(Icons.Rounded.Check, stringResource(R.string.overlay_inserted), glyph, fg)
-                    Look.Ready -> Icon(Icons.Rounded.ContentPaste, stringResource(R.string.overlay_ready), glyph, fg)
+                    Look.Copied -> Icon(Icons.Rounded.Check, stringResource(R.string.overlay_copied), glyph, fg)
                     is Look.Failed -> Icon(if (s.waits) Icons.Rounded.Refresh else s.kind.icon(),
                         stringResource(s.kind.message()), glyph, fg)
                 } }
             }
         }
+        AnimatedVisibility(
+            badge,
+            Modifier.align(Alignment.TopEnd),
+            enter = scaleIn(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeIn(fadeInSpec),
+            exit = scaleOut(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(fadeOutSpec),
+        ) {
+            Box(
+                Modifier.size(side * 0.38f).background(colors.errorContainer, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.onErrorContainer, modifier = Modifier.size(side * 0.26f))
+            }
+        }
+    }
 }
 
 /**
@@ -514,7 +550,6 @@ internal fun DismissTarget(armed: Boolean) {
 
 internal fun Look.action() = when (this) {
     Look.Listening -> R.string.overlay_stop
-    Look.Ready -> R.string.overlay_start
     is Look.Failed -> R.string.overlay_retry
     else -> R.string.overlay_start
 }

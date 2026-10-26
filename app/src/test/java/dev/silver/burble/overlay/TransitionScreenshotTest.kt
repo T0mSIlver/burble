@@ -32,7 +32,7 @@ class TransitionScreenshotTest {
 
     @Test fun transitions() {
         val from = listOf(Look.Idle, Look.Listening, Look.Finishing, Look.Listening, Look.Listening)
-        val to = listOf(Look.Listening, Look.Finishing, Look.Done, Look.Ready, Look.Failed(ErrorKind.NETWORK, waits = true))
+        val to = listOf(Look.Listening, Look.Finishing, Look.Done, Look.Copied, Look.Failed(ErrorKind.NETWORK, waits = true))
         val looks = mutableStateOf(from)
         compose.mainClock.autoAdvance = false
         compose.setContent {

@@ -14,7 +14,6 @@
     <string name="overlay_retry">Retry</string>
     <string name="overlay_close">Hide bubble</string>
     <string name="overlay_inserted">Inserted</string>
-    <string name="overlay_ready">Tap a text field to insert your words</string>
     <string name="overlay_error_no_mic">Allow microphone access</string>
     <string name="overlay_error_nothing_heard">Didn\'t hear anything</string>
     <string name="overlay_error_quota">Dictation limit reached. Try again later.</string>
@@ -139,4 +138,5 @@
     <string name="look_dot">a dot when inactive</string>
     <string name="updates_install_short">Install</string>
     <string name="about_disclaimer">Burble is not affiliated with Google. Your dictation audio goes to Google\'s servers, through a service Google has not opened to other apps, and it may stop working at any time.</string>
+    <string name="overlay_copied">Copied</string>
 </resources>

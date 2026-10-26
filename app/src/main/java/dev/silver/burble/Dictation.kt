@@ -28,11 +28,6 @@ object Dictation {
         data object Finishing : State
         /** [output] says where the text went: the field, or only the clipboard. */
         data class Done(val text: String, val output: Output, val delivered: Boolean) : State
-        /**
-         * No field to type into yet: [text] is on the clipboard and goes into the next field the
-         * user focuses. Until then the keyboard stays hidden.
-         */
-        data class Ready(val text: String) : State
         /** [canRetry]: the audio is kept, and [retry] sends it again. */
         data class Error(
             val kind: ErrorKind,
@@ -87,10 +82,10 @@ object Dictation {
             return
         }
         this.app = app
-        // Starting over from text waiting for a field drops its audio; the text stays on the
-        // clipboard. A failed dictation never gets here: a tap retries it.
+        // A failed dictation never gets here: a tap retries it.
         session?.cancel()
         _state.value = State.Listening
+        InsertionService.instance?.forgetTapped()
         target = InsertionService.instance?.captureTarget()
         levelOverride = null
         debug = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
@@ -146,6 +141,7 @@ object Dictation {
         val st = _state.value as? State.Error ?: return false
         val s = session ?: return false
         if (!st.canRetry || !s.retry()) return false
+        InsertionService.instance?.forgetTapped()
         _state.value = State.Finishing
         return true
     }
@@ -196,21 +192,6 @@ object Dictation {
     fun acknowledge() {
         val st = _state.value
         if (st is State.Done || (st is State.Error && !st.waits)) _state.value = State.Idle
-    }
-
-    /** Drops text waiting in [State.Ready], and its audio; the text stays on the clipboard. */
-    fun discard() {
-        if (_state.value !is State.Ready) return
-        dropSession()
-        _state.value = State.Idle
-        app?.let(::recover)
-    }
-
-    /** [State.Ready]'s text went into a field the user focused. */
-    internal fun readyInserted() {
-        val ready = _state.value as? State.Ready ?: return
-        dropSession()
-        _state.value = State.Done(ready.text, Output.INSERT, delivered = true)
     }
 
     private fun dropSession() {
@@ -278,26 +259,28 @@ object Dictation {
                 State.Error(kindOf(e), e.message?.take(120), canRetry = retryable)
             },
         )
-        // The audio goes once the text is in a field or the user drops it. Text waiting for a
-        // field keeps it: until then the text is only on the clipboard.
-        if (next is State.Ready) target = null
-        else if (!retryable) dropSession()
+        // The audio goes once the words are in a field or on the clipboard; a failure keeps it.
+        if (!retryable) dropSession()
         _state.value = next
     }
 
     /**
-     * Into the field the dictation started in while it still exists. Otherwise onto the
-     * clipboard, where Android's own preview offers paste and edit, and [State.Ready] until the
-     * user focuses a field. Every result goes the same way, whatever Rambler's intent: a
+     * Into the last text field the user tapped while dictating, else the field the dictation
+     * started in; when neither takes them, onto the clipboard, where Android's own preview
+     * offers paste and edit. Every result goes the same way, whatever Rambler's intent: a
      * command brings the user's own words ([S3Stream]).
      */
     private fun deliver(context: Context, text: String, into: InsertionService.Target?): State {
-        if (into != null && InsertionService.instance?.insert(into, text) == true) {
-                return State.Done(text, Output.INSERT, delivered = true)
+        val service = InsertionService.instance
+        val tapped = service?.tappedTarget()
+        if (service != null && pickTarget(tapped, into) { service.insert(it, text) } != null) {
+            Log.d(TAG, "delivered: inserted")
+            return State.Done(text, Output.INSERT, delivered = true)
         }
-        if (into == null) Log.d(TAG, "insert fell back: no field had input focus at the start")
+        if (tapped == null && into == null) Log.d(TAG, "insert fell back: no field tapped or focused at the start")
         copy(context, text)
-        return State.Ready(text)
+        Log.d(TAG, "delivered: clipboard")
+        return State.Done(text, Output.CLIPBOARD, delivered = true)
     }
 
     internal fun kindOf(e: Throwable): ErrorKind = when (e) {

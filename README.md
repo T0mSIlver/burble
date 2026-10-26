@@ -14,9 +14,9 @@ The bubble's behaviour takes ideas from Wispr Flow's Android app.
 ## How it works
 
 1. Tap the bubble and talk. The keyboard hides, and scrolling or rotating the phone doesn't stop you.
-2. Tap again. Your words land in the field you started in.
+2. Tap again. Your words land in the last field you tapped while talking, else the one you started in; otherwise they go to the clipboard.
 
-<!-- Screenshots: the bubble listening over an agent's answer; the bubble with text ready to paste. -->
+<!-- Screenshots: the bubble listening over an agent's answer; the check as the words land. -->
 
 ## Install
 
