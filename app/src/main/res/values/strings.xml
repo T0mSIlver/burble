@@ -5,7 +5,7 @@
     <string name="empty_result">Nothing was heard</string>
     <string name="quota">Dictation quota used up for now; try again later</string>
     <string name="failed">Dictation failed: %1$s</string>
-    <string name="a11y_desc">Burble needs this to type your dictated words into the text field you are using. Android offers no other way to insert text into another app. After you dictate, it finds the focused text field and puts the words at the cursor. It does not read your screen, record what you type or watch other apps, and it sends nothing anywhere.</string>
+    <string name="a11y_desc">Burble needs this to type your dictated words into the text field you are using: Android offers no other way to insert text into another app. It follows which field has focus and which window is in front, to show the bubble while you type and to know where your words go. It reads a field\'s text only to insert your words at the cursor. It doesn\'t record what you type or keep anything it reads. Of it, only the name of the app you dictate into goes to Google with your audio, as Gboard sends it.</string>
     <string name="send_test_audio">Run test</string>
     <string name="sending">Running…</string>
     <string name="test_result">Test transcript: %1$s</string>
@@ -91,7 +91,7 @@
     <string name="languages_hint">Burble listens for the languages you tick, and expects the primary one first.</string>
     <string name="test_connection">Test dictation</string>
     <string name="privacy">Privacy</string>
-    <string name="privacy_hint">Dictation audio is sent to Google</string>
+    <string name="privacy_hint">Audio, languages, phone model and the app\'s name go to Google</string>
     <string name="licence">Licences</string>
     <string name="licence_hint">GNU GPL 3, and the licences of what Burble uses</string>
     <string name="source">Source code</string>

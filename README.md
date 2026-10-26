@@ -48,13 +48,13 @@ Every release is signed with this certificate. Check its SHA-256 with `apksigner
 
 ## What leaves your phone
 
-Google's speech service, the one Gboard uses, receives the audio you dictate, your dictation languages, your phone's model and Android build, and the name of the app you're dictating into. There is no Burble server, account, analytics or tracking, and you don't need a Google account.
+Google's speech service, the one Gboard uses, receives the audio you dictate, your dictation languages, your phone's model and Android build number, and the package name of the app you're dictating into, which Gboard sends too. There is no Burble server, account, analytics or tracking, and you don't need a Google account.
 
-Burble also talks to GitHub. It checks for a new release once a day when you open it, unless you turn off **Check for updates**. **Report a problem** opens a GitHub issue with your phone model and Burble's recent log, which you read and edit before sending. The log names the app when an insert falls back to the clipboard, and holds no dictated text.
+Burble also talks to GitHub. It checks for a new release once a day when you open it, unless you turn off **Check for updates**. **Report a problem** first shows the whole report on your phone: your phone model, Android version, languages and Burble's recent log, which holds no dictated text. App names in the log are replaced unless you keep them. Nothing goes to GitHub until you tap **Open GitHub issue**, and you can still edit it there.
 
-The microphone records only while you dictate. The audio stays on the phone until your text is delivered, then Burble deletes it. A failed dictation keeps its audio for a retry until you drop it or start the next one. Burble keeps no history.
+The microphone records only while you dictate. The audio stays on the phone until your text is in a field, then Burble deletes it. Until then it is kept: for a dictation that failed to send, one cut short when Android stopped Burble, and text waiting for a field. You drop it by dragging the bubble to ✕. Text Burble puts on the clipboard is marked sensitive, so Android and keyboards mask it in their previews. Burble keeps no history.
 
-The accessibility service shows the bubble, hides the keyboard while you dictate, and writes your words into the field you started in. It keeps nothing it reads once the dictation ends.
+The accessibility service shows the bubble, hides the keyboard while you dictate, and writes your words into the field you started in. To do that it follows which field has focus and which window is in front, which **While typing** and text waiting for a field need, and it reads a field's text only to insert yours into it. Switched off, it follows nothing. It keeps nothing it reads.
 
 ## Disclaimer
 
@@ -75,4 +75,4 @@ Gradle 9.8, AGP 9.4 with built-in Kotlin, Java 21.
 
 ## Licence
 
-Copyright 2026 Tom Vaucourt. [GPL-3.0](LICENSE). The app is set in Google Sans Flex, under the [SIL Open Font License](licenses/GoogleSansFlex-OFL.txt).
+Copyright 2026 Tom Vaucourt. [GPL-3.0](LICENSE). The app is set in Google Sans Flex, under the [SIL Open Font License](licenses/GoogleSansFlex-OFL.txt), and bundles libraries under the [Apache License 2.0](licenses/Apache-2.0.txt). The app shows each text under **Licences**.
