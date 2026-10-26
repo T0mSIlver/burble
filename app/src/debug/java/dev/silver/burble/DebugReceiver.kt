@@ -11,13 +11,13 @@ import android.content.Intent
  *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --ef level 0.8
  *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --es do start|stop|retry
  *
- * `text` delivers a finished dictation, tagged with `--ei intent N` (a [UserIntent]) if given;
+ * `text` delivers a finished dictation;
  * `level` replaces the mic level for the current dictation; `do` acts as the bubble would.
  */
 class DebugReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         intent.getStringExtra("text")?.let {
-            Dictation.fakeResult(context, it, intent.getIntExtra("intent", UserIntent.DICTATION))
+            Dictation.fakeResult(context, it)
         }
         when (intent.getStringExtra("do")) {
             "start" -> Dictation.start(context)

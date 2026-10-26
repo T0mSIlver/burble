@@ -30,7 +30,7 @@ object TestAudio {
                 S3Request(),
                 onDone = { r ->
                     _state.value = r.fold(
-                        onSuccess = { State.Heard(it.text.trim()) },
+                        onSuccess = { State.Heard(it.trim()) },
                         onFailure = { State.Failed(it.message?.take(120)) },
                     )
                 },

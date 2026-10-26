@@ -12,7 +12,7 @@ import java.io.FileOutputStream
  * One dictation: AudioRecord (16 kHz mono PCM16) -> [AudioEncoder] -> [Recognizer], one encoder
  * and one server session per segment. The server ends a session at 300 s, so a long dictation is
  * a chain of segments: near the cap the next one opens and the audio goes on there with no gap,
- * and the segments' texts are joined ([combine]).
+ * and the segments' texts are joined.
  *
  * Each segment's Ogg bytes are written to [dir] as they are made. A segment whose server session
  * fails is sent again from its file, once by itself when its audio ends and then on [retry], so
@@ -23,8 +23,8 @@ import java.io.FileOutputStream
  */
 class DictationSession(
     private val dir: File,
-    private val newRecognizer: (onDone: (Result<Heard>) -> Unit) -> Recognizer,
-    private val onResult: (Result<Heard>) -> Unit,
+    private val newRecognizer: (onDone: (Result<String>) -> Unit) -> Recognizer,
+    private val onResult: (Result<String>) -> Unit,
     /** The wave's level every 32 ms, 0..1: the voice against the room ([VoiceLevel]). */
     private val onLevel: (Float) -> Unit = {},
     /** The recording ended, by [stop], silence or a broken microphone; on the recording thread. */
@@ -52,7 +52,7 @@ class DictationSession(
         var recognizer: Recognizer? = null
         var attempt = 0
         var recording = encoder != null
-        var result: Result<Heard>? = null
+        var result: Result<String>? = null
     }
 
     private val lock = Any()
@@ -261,7 +261,7 @@ class DictationSession(
         r.finish()
     }
 
-    private fun done(seg: Segment, attempt: Int, r: Result<Heard>) = synchronized(lock) {
+    private fun done(seg: Segment, attempt: Int, r: Result<String>) = synchronized(lock) {
         if (cancelled || attempt != seg.attempt) return
         if (r.isFailure && seg.recording) {
             // The rest of this segment's audio goes to its file only, and is sent when it ends.
@@ -278,7 +278,7 @@ class DictationSession(
         reported = true
         val failure = segments.firstNotNullOfOrNull { it.result?.exceptionOrNull() }
         onResult(if (failure != null) Result.failure(failure)
-            else Result.success(combine(segments.map { it.result!!.getOrThrow() })))
+            else Result.success(joinTexts(segments.map { it.result!!.getOrThrow() })))
     }
 
     /** Takes [files] as segments whose sending failed, ready for [retry]. */
@@ -299,8 +299,8 @@ class DictationSession(
          */
         fun recover(
             dir: File,
-            newRecognizer: (onDone: (Result<Heard>) -> Unit) -> Recognizer,
-            onResult: (Result<Heard>) -> Unit,
+            newRecognizer: (onDone: (Result<String>) -> Unit) -> Recognizer,
+            onResult: (Result<String>) -> Unit,
         ): DictationSession? {
             val files = dir.listFiles().orEmpty()
                 .mapNotNull { f -> f.name.removeSuffix(".ogg").toIntOrNull()?.takeIf { f.name.endsWith(".ogg") && f.length() > 0 }?.let { it to f } }
@@ -332,21 +332,6 @@ class DictationSession(
             return ((db + 55) / 30).coerceIn(0.0, 1.0).toFloat()
         }
     }
-}
-
-/**
- * One result for a chain of segments, each read by the server on its own. The words go as
- * dictation unless every segment that heard any was a command: a command heard in one segment
- * never takes the others' words to the clipboard, and gives its own words, not the server's
- * answer, to the text.
- */
-internal fun combine(parts: List<Heard>): Heard {
-    val said = parts.filter { it.words.isNotBlank() }
-    if (said.isNotEmpty() && said.all { it.isCommand }) {
-        val words = joinTexts(said.map { it.words })
-        return Heard(words, said.first().intent, words)
-    }
-    return Heard(joinTexts(parts.map { it.words }))
 }
 
 /**

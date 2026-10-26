@@ -7,6 +7,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.Response
+import android.util.Log
 import okio.BufferedSink
 import java.io.IOException
 import java.util.concurrent.LinkedBlockingQueue
@@ -22,20 +23,6 @@ data class S3Request(
     val triggerApp: String? = null,
     val maskOffensiveWords: Boolean = false,
 )
-
-/** One server session's final result: [text], and how the server read it. */
-data class Heard(
-    val text: String,
-    /** [UserIntent.DICTATION] unless the server heard a command. */
-    val intent: Int = UserIntent.DICTATION,
-    /** What the user said, word for word, when [intent] is a command. */
-    val verbatim: String? = null,
-) {
-    val isCommand get() = !UserIntent.isDictation(intent)
-
-    /** The user's own words: for a command, what they said rather than what the server made of it. */
-    val words get() = if (isCommand) verbatim?.takeIf { it.isNotBlank() } ?: text else text
-}
 
 /** One server session's audio sink, as [DictationSession] drives it. */
 interface Recognizer {
@@ -55,7 +42,7 @@ interface Recognizer {
  */
 class S3Stream(
     private val request: S3Request,
-    private val onDone: (Result<Heard>) -> Unit,
+    private val onDone: (Result<String>) -> Unit,
     client: OkHttpClient = S3.client(),
 ) : Recognizer {
     private val http = client
@@ -65,7 +52,6 @@ class S3Stream(
     @Volatile private var finished = false
     private var finalText: String? = null
     private var intent = UserIntent.DICTATION
-    private var verbatim: String? = null
 
     override fun feed(chunk: ByteArray) {
         if (chunk.isNotEmpty()) queue.put(chunk)
@@ -188,7 +174,8 @@ class S3Stream(
             }
             val text = finalText
             // A clean end with no transcript (silence) is an empty result, not a failure.
-            complete(Result.success(Heard(text ?: "", intent, verbatim)))
+            Log.d(TAG, "final result, intent $intent")
+            complete(Result.success(text ?: ""))
         } catch (e: Exception) {
             complete(Result.failure(e))
         }
@@ -214,12 +201,16 @@ class S3Stream(
         val spanHolder = Pb.first(endOfUtterance, 3) ?: return
         val span = Pb.first(spanHolder, 3) ?: return
         val text = Pb.first(span, 1)?.toString(Charsets.UTF_8) ?: return
-        finalText = text
-        // aasi extension 74956224 (aatt): f4 intent enum (aats), f1 the verbatim transcript.
-        Pb.first(span, 74956224)?.let { voiceAction ->
-            intent = (Pb.firstVarint(voiceAction, 4) ?: 0L).toInt()
-            verbatim = Pb.first(voiceAction, 1)?.toString(Charsets.UTF_8)
-        }
+        // aasi extension 74956224 (aatt): f4 the intent (aats), f1 the transcript (Gboard's
+        // aarx.d). A span tagged with any intent but dictation inserts f1 when it has one, so a
+        // compose, rewrite or answer puts the user's own words in the field, never the AI's
+        // answer; for an edit f1 equals the span text. The idea is PixelBoard's
+        // (GboardRamblerDictationRuntime.filterVoiceText, by Akshay Kadam).
+        val voiceAction = Pb.first(span, 74956224)
+        intent = voiceAction?.let { (Pb.firstVarint(it, 4) ?: 0L).toInt() } ?: UserIntent.DICTATION
+        val transcript = voiceAction?.let { Pb.first(it, 1)?.toString(Charsets.UTF_8) }
+            ?.takeIf { intent != UserIntent.DICTATION && it.isNotEmpty() }
+        finalText = transcript ?: text
     }
 
     private fun readFully(src: java.io.InputStream, buf: ByteArray): Int {
@@ -232,7 +223,7 @@ class S3Stream(
         return off
     }
 
-    private fun complete(r: Result<Heard>) {
+    private fun complete(r: Result<String>) {
         if (finished) return
         finished = true
         queue.put(END) // wakes the writer, which stops
@@ -240,6 +231,7 @@ class S3Stream(
     }
 
     companion object {
+        private const val TAG = "S3Stream"
         private val END = ByteArray(0)
     }
 }
@@ -313,7 +305,7 @@ internal class Chunker(private val size: Int) {
         buf.toByteArray().also { buf.reset() }.let { if (it.isEmpty()) emptyList() else listOf(it) }
 }
 
-/** Rambler's user intents (aats). Only [DICTATION] and the ramble ones are text to type. */
+/** Rambler's user intents (aats): how the server read the speech. Every one goes into the field. */
 object UserIntent {
     const val DICTATION = 0
     const val EDIT = 1
@@ -322,8 +314,6 @@ object UserIntent {
     const val COMPOSE = 4
     const val RAMBLE = 5
     const val RAMBLE_HISTORY = 6
-
-    fun isDictation(intent: Int) = intent == DICTATION || intent == RAMBLE || intent == RAMBLE_HISTORY
 }
 
 /** [grpcStatus] is the gRPC status code, -1 when the response broke the protocol. */

@@ -236,24 +236,24 @@ object Dictation {
     }
 
     /** Delivers [text] as if the server had sent it; for the debug build's test hook. */
-    internal fun fakeResult(context: Context, text: String, intent: Int = UserIntent.DICTATION) {
+    internal fun fakeResult(context: Context, text: String) {
         if (_state.value != State.Listening) target = InsertionService.instance?.captureTarget()
         session?.cancel()
         session = null
         _state.value = State.Finishing
-        finish(context.applicationContext, null, Result.success(Heard(text, intent, text)))
+        finish(context.applicationContext, null, Result.success(text))
     }
 
-    private fun finish(context: Context, from: DictationSession?, r: Result<Heard>) {
+    private fun finish(context: Context, from: DictationSession?, r: Result<String>) {
         if (_state.value == State.Idle || from !== session) return // cancelled or replaced
         _level.value = 0f
         // A failed dictation keeps its session, and with it the audio and the field, for retry.
         val retryable = r.isFailure && kindOf(r.exceptionOrNull()!!) != ErrorKind.NO_MIC
         val into = target
         val next = r.fold(
-            onSuccess = { heard ->
-                if (heard.words.isBlank()) State.Error(ErrorKind.NOTHING_HEARD)
-                else deliver(context, heard, into)
+            onSuccess = { text ->
+                if (text.isBlank()) State.Error(ErrorKind.NOTHING_HEARD)
+                else deliver(context, text, into)
             },
             onFailure = { e ->
                 android.util.Log.e(TAG, "dictation failed", e)
@@ -270,15 +270,10 @@ object Dictation {
     /**
      * Into the field the dictation started in while it still exists. Otherwise onto the
      * clipboard, where Android's own preview offers paste and edit, and [State.Ready] until the
-     * user focuses a field. A result the server read as a command (edit, rewrite, compose) is
-     * never typed as if dictated: the user's own words go to the clipboard only.
+     * user focuses a field. Every result goes the same way, whatever Rambler's intent: a
+     * command brings the user's own words ([S3Stream]).
      */
-    private fun deliver(context: Context, heard: Heard, into: InsertionService.Target?): State {
-        if (heard.isCommand) {
-            copy(context, heard.words)
-            return State.Done(heard.words, Output.CLIPBOARD, delivered = true)
-        }
-        val text = heard.text
+    private fun deliver(context: Context, text: String, into: InsertionService.Target?): State {
         if (into != null && InsertionService.instance?.insert(into, text) == true) {
             inserted()
             return State.Done(text, Output.INSERT, delivered = true)

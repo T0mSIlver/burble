@@ -9,7 +9,7 @@ Google's Rambler dictation on any Android phone, under any keyboard, from a floa
 > [!IMPORTANT]
 > **Burble exists because of [PixelBoard](https://github.com/Akshayykadam/PixelBoard) by Akshay Kadam.**
 > PixelBoard proved that Rambler, the Gemini dictation in Gboard on Pixel phones, works on any Android phone.
-> Burble's protocol work began by reading it. PixelBoard 1.3.0, Gboard 18.5.3 with Akshay's patches, showed the class where Rambler's results arrive, and Burble traced them from there back to Google's speech server.
+> Burble's protocol work began by reading it, and Burble uses its fix that keeps Rambler from pasting AI answers. PixelBoard 1.3.0, Gboard 18.5.3 with Akshay's patches, showed the class where Rambler's results arrive, and Burble traced them from there back to Google's speech server.
 > PixelBoard in turn builds on JasonWu's original Gboard patch project and its reverse engineering.
 > If you want Rambler inside a full Gboard keyboard, use PixelBoard.
 

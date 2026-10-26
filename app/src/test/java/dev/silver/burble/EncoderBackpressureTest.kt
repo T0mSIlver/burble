@@ -89,7 +89,7 @@ class EncoderBackpressureTest {
             newRecognizer = { done -> object : Recognizer {
                 override fun start() {}
                 override fun feed(chunk: ByteArray) {}
-                override fun finish() = done(Result.success(Heard("x")))
+                override fun finish() = done(Result.success("x"))
                 override fun cancel() {}
             } },
             onResult = {},
