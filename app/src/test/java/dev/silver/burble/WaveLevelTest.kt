@@ -36,6 +36,17 @@ class WaveLevelTest {
         assertTrue("voice $voice", voice > 0.9f)
     }
 
+    @Test fun openingFlashOutlastsSilence() {
+        val host = WaveHost(0.0)
+        for (ms in 4..160 step 4) {
+            if (ms % 32 == 0) host.feed(0.17f, ms.toDouble())
+            host.step(ms.toDouble())
+        }
+        assertEquals(1.5f, host.frame(160.0).dots, 0.001f)
+        for (ms in 164..520 step 4) host.step(ms.toDouble())
+        assertEquals(0f, host.frame(520.0).dots, 0.001f)
+    }
+
     @Test fun glowRisesIn200msAndIgnoresQuiet() {
         val host = WaveHost(0.0)
         host.feed(0.45f, 0.0)

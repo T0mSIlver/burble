@@ -91,9 +91,12 @@ internal class WaveHost(now: Double) {
     /** A new level, 0..1. */
     fun feed(level: Float, now: Double) {
         val l = gate(level)
-        dotsFadeAt = -1.0
         bands.set(l, now, 200.0)
-        dots.set(if (l > 0f) DOTS_ON else 0f, now, 200.0)
+        // Silence leaves the opening flash to finish; the voice takes over the diamonds.
+        if (l > 0f || dotsFadeAt < 0) {
+            dotsFadeAt = -1.0
+            dots.set(if (l > 0f) DOTS_ON else 0f, now, 200.0)
+        }
         target = l
     }
 
