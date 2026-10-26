@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -273,8 +274,9 @@ object Dictation {
     private fun deliver(context: Context, text: String, into: InsertionService.Target?): State {
         val service = InsertionService.instance
         val tapped = service?.tappedTarget()
-        if (service != null && pickTarget(tapped, into) { service.insert(it, text) } != null) {
-            service.showKeyboard()
+        var field: AccessibilityNodeInfo? = null
+        if (service != null && pickTarget(tapped, into) { t -> service.insert(t, text)?.also { field = it } != null } != null) {
+            service.showKeyboard(field)
             Log.d(TAG, "delivered: inserted")
             return State.Done(text, Output.INSERT, delivered = true)
         }

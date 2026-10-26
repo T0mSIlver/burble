@@ -6,15 +6,18 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import dev.silver.burble.overlay.Overlay
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -249,19 +252,103 @@ class InsertionService : AccessibilityService() {
 
     private fun hideKeyboard() {
         if (keyboardHidden) return
+        keyboardWasUp = keyboardShown()
+        keyboardWindow = focusedField()?.windowId
         keyboardHidden = softKeyboardController.setShowMode(SHOW_MODE_HIDDEN)
     }
 
+    /** Whether the keyboard was up when the dictation hid it, and in which window. */
+    private var keyboardWasUp = false
+    private var keyboardWindow: Int? = null
+
     /**
      * The show mode alone doesn't bring the keyboard back: Android waits for the app to ask for
-     * it again, which takes a tap. A click on the field with focus is that tap.
+     * it again. A click on [field], the one the words went into, else the field with focus, asks
+     * again; never a password field, never one off screen. A field that asked while the
+     * keyboard was hidden (tapped during the dictation, or its app came back to the front) is
+     * worse: its app takes the keyboard for shown and drops every new request. Taking the
+     * window's focus for a frame makes Android tell the app it's hidden, and then the click
+     * works. [Dictation] calls this the moment the words land, a few frames before its state
+     * changes.
      */
-    /** Also called by [Dictation] the moment the words land, a few frames before its state does. */
-    fun showKeyboard() {
+    fun showKeyboard(field: AccessibilityNodeInfo? = null) {
         if (!keyboardHidden) return
-        softKeyboardController.setShowMode(SHOW_MODE_AUTO)
         keyboardHidden = false
-        focusedField()?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        val node = (field ?: focusedField())?.takeIf(::canTakeKeyboard)
+        if (node == null) {
+            Log.d(TAG, "keyboard: no field on screen to bring it back to")
+            softKeyboardController.setShowMode(SHOW_MODE_AUTO)
+            return
+        }
+        val show = {
+            if (!keyboardHidden) {
+                softKeyboardController.setShowMode(SHOW_MODE_AUTO)
+                askForKeyboard(node)
+                watchKeyboard(node)
+            }
+        }
+        val askedWhileHidden = !keyboardWasUp || tapped != null || node.windowId != keyboardWindow
+        if (askedWhileHidden) blipFocus(node, show) else show()
+    }
+
+    /**
+     * No keyboard [KEYBOARD_WAIT_MS] after the click (none came, or one came and went): takes
+     * focus for a frame, once, and clicks again.
+     */
+    private fun watchKeyboard(node: AccessibilityNodeInfo) {
+        main.postDelayed({
+            if (keyboardHidden || keyboardShown() || !canTakeKeyboard(node)) return@postDelayed
+            Log.d(TAG, "keyboard didn't come back from a click: taking focus for a frame")
+            blipFocus(node) { if (!keyboardHidden) askForKeyboard(node) }
+        }, KEYBOARD_WAIT_MS)
+    }
+
+    /**
+     * A click on [node]: its app asks for the keyboard. A web page (Chrome, a WebView) ignores a
+     * click on the field it has focused, so its field loses focus and takes it again first.
+     */
+    private fun askForKeyboard(node: AccessibilityNodeInfo) {
+        val web = node.extras.containsKey(CHROME_ROLE)
+        if (web) node.performAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS)
+        if (web || !node.isFocused) node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    private fun canTakeKeyboard(node: AccessibilityNodeInfo) =
+        node.refresh() && node.isEditable && !node.isPassword && node.isVisibleToUser
+
+    private fun keyboardShown() = windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+
+    /**
+     * Takes input focus from [node]'s window for a frame, then runs [then] once the window has
+     * it back: before that, its app can't ask for the keyboard.
+     */
+    private fun blipFocus(node: AccessibilityNodeInfo, then: () -> Unit) {
+        val wm = getSystemService(WindowManager::class.java)
+        val view = View(this)
+        var removed = false
+        val start = SystemClock.uptimeMillis()
+        val back = object : Runnable {
+            override fun run() {
+                val focused = windows.any { it.id == node.windowId && it.isFocused }
+                // A web page reconnects to the keyboard a few frames after its window has focus.
+                if (focused) main.postDelayed(then, if (node.extras.containsKey(CHROME_ROLE)) WEB_SETTLE_MS else 0)
+                else if (SystemClock.uptimeMillis() - start > BLIP_TIMEOUT_MS) then()
+                else main.postDelayed(this, 16)
+            }
+        }
+        val end = Runnable {
+            if (removed) return@Runnable
+            removed = true
+            runCatching { wm.removeView(view) }
+            main.post(back)
+        }
+        view.viewTreeObserver.addOnWindowFocusChangeListener { if (it) main.post(end) }
+        runCatching {
+            wm.addView(view, WindowManager.LayoutParams(1, 1, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, PixelFormat.TRANSPARENT))
+        }.onFailure { removed = true; then(); return }
+        main.postDelayed(end, BLIP_TIMEOUT_MS)
     }
 
     // ---- insertion ----
@@ -276,14 +363,14 @@ class InsertionService : AccessibilityService() {
 
     /**
      * Types [text] into [target] at its cursor, replacing any selection, or at its end when it
-     * no longer has focus. False when the field is gone (its window closed, or its app went to
-     * the background), can't be told apart from another, or takes a password.
+     * no longer has focus. Returns the field, or null when it's gone (its window closed, or its
+     * app went to the background), can't be told apart from another, or takes a password.
      */
-    fun insert(target: Target, text: String): Boolean {
-        val node = current(target) ?: return false
+    fun insert(target: Target, text: String): AccessibilityNodeInfo? {
+        val node = current(target) ?: return null
         if (node.isPassword) {
             Log.d(TAG, "insert fell back: a password field")
-            return false
+            return null
         }
         val focused = node.isFocused
         // An empty field reports its hint as its text.
@@ -306,7 +393,7 @@ class InsertionService : AccessibilityService() {
         if (!focused) node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
             Log.d(TAG, "insert fell back: ${node.className} in ${target.packageName} refused the text")
-            return false
+            return null
         }
         // Park the cursor after the inserted text when the field reports selections.
         val at = start + spaced.length
@@ -314,7 +401,7 @@ class InsertionService : AccessibilityService() {
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, at)
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, at)
         })
-        return true
+        return node
     }
 
     /**
@@ -378,6 +465,13 @@ class InsertionService : AccessibilityService() {
         private const val TAG = "Insert"
         /** How long after a finger goes down its tap may still move focus. */
         private const val TAP_MS = 1500L
+        /** Set on every node of a page in Chrome or a WebView. */
+        private const val CHROME_ROLE = "AccessibilityNodeInfo.chromeRole"
+        /** A keyboard asked for has its window within about 350 ms on an emulator. */
+        private const val KEYBOARD_WAIT_MS = 700L
+        /** Long enough for a window to get focus, or get it back. */
+        private const val BLIP_TIMEOUT_MS = 400L
+        private const val WEB_SETTLE_MS = 100L
         private val _connected = MutableStateFlow(false)
         /** True while Android has this service bound, which every background trigger needs. */
         val connected: StateFlow<Boolean> = _connected.asStateFlow()

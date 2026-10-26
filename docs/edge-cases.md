@@ -13,7 +13,8 @@ Status: ✅ covered and passing, 👤 needs the phone.
 |---|---|---|
 | Tap → Listening → tap or silence → Finishing → Inserted (check 0.7 s) | Unit `DictationSessionTest.stopsAfterSilence`; emulator recording `motion-r1` | ✅ |
 | No field, or not on screen → clipboard, Copied (check 1 s, TalkBack says it), nothing inserted later | Unit `TargetsTest`; emulator `tools/emulator/where-text-goes.sh switch` | ✅ |
-| Keyboard hidden only in Listening and Finishing; back as the words land | Code (`followDictation`, `showKeyboard` clicks the field); emulator recording (keyboard returns in the frame the text lands) | ✅ |
+| Keyboard hidden only in Listening and Finishing; back as the words land | Code (`followDictation`, `showKeyboard`); emulator `tools/emulator/keyboard-back.sh` | ✅ |
+| Keyboard back in an EditText, a Compose field, Chrome's address bar, a Chrome page's textarea and Messages: started in the field, a field tapped mid-dictation (its app takes the keyboard for shown: focus taken for a frame), clipboard with a field focused; none without one | Emulator `tools/emulator/keyboard-back.sh` (0.4 to 0.7 s, the keyboard's own animation included) | ✅ |
 | Error: its look 1.5 s, label 4 s; with audio kept, a retry badge until tap, ✕ or the next dictation | Code (`LiveBubble`); screenshot `OverlayScreenshotTest.looks` | ✅ |
 | Failed with audio kept → retry sends the same audio, only the failed segment | Unit `DictationSessionTest.retrySendsTheSameBytes`, `retryResendsOnlyTheFailedSegment` | ✅ |
 | Nothing heard, no microphone → label, back to Idle after 4 s | Screenshot `OverlayScreenshotTest.looks`; emulator recording | ✅ |
