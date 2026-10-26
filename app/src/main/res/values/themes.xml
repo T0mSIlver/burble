@@ -4,5 +4,13 @@
     <style name="Theme.Rambler" parent="android:Theme.DeviceDefault.DayNight">
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/window_surface</item>
+    </style>
+
+    <!-- The launch window: the launcher icon on the surface Compose then draws, so nothing flashes. -->
+    <style name="Theme.Rambler.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/window_surface</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.Rambler</item>
     </style>
 </resources>

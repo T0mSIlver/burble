@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window behind the splash and the first frame: the dynamic scheme's surface. Android 12
+         and 13 have no surface token; the nearest neutral tone stands in. -->
+    <color name="window_surface">@android:color/system_neutral1_10</color>
+</resources>
