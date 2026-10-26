@@ -14,7 +14,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Quick Settings tile for "Use Burble", the same switch as the one on home. The bubble lives in
- * [InsertionService], so without it the tile opens the app to set it up.
+ * [InsertionService], so without it the tile opens the app to set it up. While a dictation
+ * records, the tile says so; switching off there ends the recording and delivers its words.
  */
 class DictationTile : TileService() {
 
@@ -25,7 +26,7 @@ class DictationTile : TileService() {
         super.onStartListening()
         watch?.cancel()
         watch = scope.launch {
-            combine(Prefs.settings, InsertionService.connected) { s, on -> tileLook(s.bubbleOn, on) }
+            combine(Prefs.settings, InsertionService.connected, Dictation.state) { s, on, st -> tileLook(s.bubbleOn, on, st) }
                 .collect(::render)
         }
     }
@@ -73,8 +74,10 @@ class DictationTile : TileService() {
 
 internal data class TileLook(val state: Int, val subtitle: Int?)
 
-internal fun tileLook(bubbleOn: Boolean, serviceOn: Boolean): TileLook = when {
+internal fun tileLook(bubbleOn: Boolean, serviceOn: Boolean, state: Dictation.State = Dictation.State.Idle): TileLook = when {
     !serviceOn -> TileLook(Tile.STATE_INACTIVE, R.string.tile_needs_service)
+    state == Dictation.State.Listening -> TileLook(Tile.STATE_ACTIVE, R.string.mic_listening)
+    state == Dictation.State.Finishing -> TileLook(Tile.STATE_ACTIVE, R.string.mic_finishing)
     bubbleOn -> TileLook(Tile.STATE_ACTIVE, null)
     else -> TileLook(Tile.STATE_INACTIVE, null)
 }

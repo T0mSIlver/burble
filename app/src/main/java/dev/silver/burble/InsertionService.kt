@@ -20,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -51,7 +52,15 @@ class InsertionService : AccessibilityService() {
             addAction(Intent.ACTION_USER_PRESENT)
         }, RECEIVER_NOT_EXPORTED)
         scope.launch {
-            Prefs.settings.map { it.bubbleOn }.distinctUntilChanged().collect(::setOverlay)
+            Prefs.settings.map { it.bubbleOn }.distinctUntilChanged().collect { on ->
+                // Switched off mid-dictation: the words so far still land.
+                if (!on && Dictation.state.value == Dictation.State.Listening) Dictation.stop()
+            }
+        }
+        // The bubble stays until a dictation ends, so the microphone never runs without it.
+        scope.launch {
+            combine(Prefs.settings.map { it.bubbleOn }, Dictation.state.map { it.recording }) { on, recording -> on || recording }
+                .distinctUntilChanged().collect(::setOverlay)
         }
         scope.launch { Dictation.state.collect(::followDictation) }
         scope.launch {
@@ -61,12 +70,19 @@ class InsertionService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        stopListening()
         _connected.value = false
         if (instance === this) instance = null
         return super.onUnbind(intent)
     }
 
+    /** The bubble is going: end the recording there, and deliver what it heard. */
+    private fun stopListening() {
+        if (Dictation.state.value == Dictation.State.Listening) Dictation.stop()
+    }
+
     override fun onDestroy() {
+        stopListening()
         _connected.value = false
         if (instance === this) instance = null
         scope.cancel()
@@ -177,6 +193,8 @@ class InsertionService : AccessibilityService() {
         // Not every unlock sends ACTION_USER_PRESENT, but a window always changes when the lock
         // screen goes.
         if (locked) updateLock()
+        // Switched off, Burble doesn't follow focus at all.
+        if (!Prefs.settings.value.bubbleOn) return
         if (Dictation.state.value is Dictation.State.Ready && event?.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED &&
             event.source?.isEditable == true) readyTapped = true
         if (Dictation.state.value !is Dictation.State.Ready && Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS && !snoozed) return
