@@ -37,7 +37,7 @@ object Motion {
 
     /**
      * A level that follows the voice, such as the wave's glow: critically damped, so it rises and
-     * falls without overshoot, 10 to 90 % in [LEVEL_RISE_MS] like Gboard's 200 ms ramps.
+     * falls without overshoot, 10 to 90 % in [LEVEL_RISE_MS], as Gboard's straight 200 ms ramps do.
      */
     val level: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = omega(LEVEL_RISE_MS).let { it * it }, visibilityThreshold = 0.001f)
 
@@ -60,7 +60,8 @@ object Motion {
     /** Something leaving with a fixed duration: emphasized accelerate, shorter. */
     fun <T> exit(ms: Int = SHORT_4): FiniteAnimationSpec<T> = tween(ms, easing = emphasizedAccelerate)
 
-    const val LEVEL_RISE_MS = 190.0
+    /** A straight 200 ms ramp's 10 to 90 %; at 190 ms the glow lagged, at 83 % where Gboard's was full. */
+    const val LEVEL_RISE_MS = 160.0
 
     /** The natural frequency, in rad/s, of a critically damped spring rising 10 to 90 % in [riseMs]. */
     fun omega(riseMs: Double): Float = (3.357 / (riseMs / 1000)).toFloat()
@@ -70,10 +71,15 @@ object Motion {
  * A value following a target on a critically damped spring, stepped by the caller's frame clock
  * where no Compose animation runs (the wave's host). A new target keeps the value and its speed:
  * an interrupted rise turns smoothly, never restarting from zero. [riseMs] is the 10 to 90 % time
- * of a step from rest.
+ * of a step from rest; changing it keeps the value and its speed too.
  */
 class Follow(value: Float, riseMs: Double = Motion.LEVEL_RISE_MS) {
-    private val w = Motion.omega(riseMs).toDouble()
+    var riseMs = riseMs
+        set(ms) {
+            field = ms
+            w = Motion.omega(ms).toDouble()
+        }
+    private var w = Motion.omega(riseMs).toDouble()
     var value = value
         private set
     private var speed = 0.0

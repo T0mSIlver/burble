@@ -1,5 +1,12 @@
 package dev.silver.burble.ui
 
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.AnimatedContent
+import dev.silver.burble.ui.theme.Motion
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,18 +58,31 @@ fun ReportScreen(draft: Report.Draft, test: TestAudio.State, onCopy: (String) ->
     SubScreen(stringResource(R.string.report_problem), onBack) {
         item {
             // The connection test, so a report says whether Google answered.
+            val failed = test is TestAudio.State.Failed
+            val container by animateColorAsState(if (failed) colors.errorContainer else colors.surfaceContainerHigh, Motion.effects())
+            val content by animateColorAsState(if (failed) colors.onErrorContainer else colors.onSurface, Motion.effects())
             Surface(
-                color = if (test is TestAudio.State.Failed) colors.errorContainer else colors.surfaceContainerHigh,
-                contentColor = if (test is TestAudio.State.Failed) colors.onErrorContainer else colors.onSurface,
+                color = container,
+                contentColor = content,
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (connection == null) {
-                        LoadingIndicator(Modifier.size(24.dp))
-                        Spacer(Modifier.width(12.dp))
+                // The result fades in over the spinner as the card grows to fit it.
+                AnimatedContent(
+                    connection,
+                    transitionSpec = {
+                        fadeIn(Motion.effects()) togetherWith fadeOut(Motion.fastEffects()) using
+                            SizeTransform(clip = false) { _, _ -> Motion.spatial() }
+                    },
+                    label = "test",
+                ) { shown ->
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (shown == null) {
+                            LoadingIndicator(Modifier.size(24.dp))
+                            Spacer(Modifier.width(12.dp))
+                        }
+                        Text(shown ?: stringResource(R.string.report_test_sending), style = MaterialTheme.typography.bodyLarge)
                     }
-                    Text(connection ?: stringResource(R.string.report_test_sending), style = MaterialTheme.typography.bodyLarge)
                 }
             }
         }

@@ -15,7 +15,7 @@ class MotionTest {
         return ms
     }
 
-    @Test fun risesTenToNinetyInAbout190ms() {
+    @Test fun risesTenToNinetyLikeAStraight200msRamp() {
         val f = Follow(0f).apply { target = 1f }
         timeTo(f, 0.1f)
         // Counted on from 10 %.

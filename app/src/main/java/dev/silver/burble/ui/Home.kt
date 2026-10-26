@@ -1,5 +1,12 @@
 package dev.silver.burble.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.AnimatedContent
+import dev.silver.burble.ui.theme.Motion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -135,23 +142,32 @@ fun Home(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp),
             ) {
                 // Until setup is done the switch would switch nothing.
-                if (!access.ready) item { Setup(access, actions.access) }
-                else item { MainSwitch(settings.bubbleOn) { on -> set { it.copy(bubbleOn = on) } } }
+                if (!access.ready) item("setup") { Box(listItemMotion()) { Setup(access, actions.access) } }
+                else item("switch") { Box(listItemMotion()) { MainSwitch(settings.bubbleOn) { on -> set { it.copy(bubbleOn = on) } } } }
                 // An update shows here too, so it isn't hidden behind About.
-                if (update.hasRelease) item { UpdateCard(update, actions) }
+                if (update.hasRelease) item("update") { Box(listItemMotion()) { UpdateCard(update, actions) } }
 
-                item { SectionHeader(stringResource(R.string.section_bubble)) }
-                item {
+                item("bubble header") { SectionHeader(stringResource(R.string.section_bubble), listItemMotion()) }
+                item("bubble") {
                     Group(listOf(
                         contentRow(null, stringResource(R.string.bubble_when)) {
                             Choices(listOf(BubbleShow.ALWAYS to R.string.bubble_when_always, BubbleShow.TYPING to R.string.bubble_when_typing),
                                 settings.bubbleShow) { w -> set { it.copy(bubbleShow = w) } }
-                            Text(
-                                stringResource(if (settings.bubbleShow == BubbleShow.ALWAYS) R.string.snooze_always else R.string.snooze_typing),
-                                Modifier.padding(top = 12.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            AnimatedContent(
+                                settings.bubbleShow,
+                                transitionSpec = {
+                                    fadeIn(Motion.effects()) togetherWith fadeOut(Motion.fastEffects()) using
+                                        SizeTransform(clip = false) { _, _ -> Motion.spatial() }
+                                },
+                                label = "snooze",
+                            ) { show ->
+                                Text(
+                                    stringResource(if (show == BubbleShow.ALWAYS) R.string.snooze_always else R.string.snooze_typing),
+                                    Modifier.padding(top = 12.dp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         },
                         lookRow(settings) { open(Page.LOOK) },
                     ))

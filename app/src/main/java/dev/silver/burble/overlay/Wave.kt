@@ -5,7 +5,6 @@ import android.animation.ValueAnimator
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
-import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +26,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import dev.silver.burble.BuildConfig
+import dev.silver.burble.ui.theme.Follow
 import dev.silver.burble.ui.theme.Motion
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.atan2
@@ -80,18 +80,20 @@ internal data class WaveFrame(
 internal fun gate(level: Float) = if (level < 0.5f) 0f else level.coerceAtMost(1f)
 
 /**
- * Gboard's host side: turns level updates into the shader's inputs. Each update sets the light
- * bands and the diamonds on straight 200 ms ramps from where they are; the glow chases the
- * level at 5 per second both ways (0 to 1 in 200 ms). On opening, the diamonds show for 166 ms
- * and fade over 333 ms. Times in ms.
+ * Gboard's host side: turns level updates into the shader's inputs. Gboard moves the light bands,
+ * the diamonds and the glow on straight 200 ms ramps; here each follows its level on a critically
+ * damped spring with the same 10 to 90 % rise ([Motion.level]), so the glow swells and settles
+ * rather than starting and stopping dead, and a new level turns it from where it is at its speed.
+ * On opening, the diamonds show for 166 ms and fade, and the wave fades in, both over Gboard's
+ * 333 ms. Times in ms.
  */
 internal class WaveHost(now: Double, settled: Boolean = false) {
     private val start = if (settled) now - 333 else now
-    private var glow = 0f
-    private var target = 0f
-    private val bands = Ramp(0f)
+    private val glow = Follow(0f)
+    private val bands = Follow(0f)
     // Settled (a retry, straight into finishing): already open, no opening flash.
-    private val dots = Ramp(if (settled) 0f else DOTS_ON)
+    private val dots = Follow(if (settled) 0f else DOTS_ON)
+    private val opened = Follow(if (settled) 1f else 0f, OPEN_RISE_MS).apply { target = 1f }
     private var dotsFadeAt = if (settled) -1.0 else now + 166
     private var drift = 0f
     private var morph = 0f
@@ -100,24 +102,29 @@ internal class WaveHost(now: Double, settled: Boolean = false) {
     /** A new level, 0..1. */
     fun feed(level: Float, now: Double) {
         val l = gate(level)
-        bands.set(l, now, 200.0)
+        bands.riseMs = Motion.LEVEL_RISE_MS
+        bands.target = l
         // Silence leaves the opening flash to finish; the voice takes over the diamonds.
         if (l > 0f || dotsFadeAt < 0) {
             dotsFadeAt = -1.0
-            dots.set(if (l > 0f) DOTS_ON else 0f, now, 200.0)
+            dots.riseMs = Motion.LEVEL_RISE_MS
+            dots.target = if (l > 0f) DOTS_ON else 0f
         }
-        target = l
+        glow.target = l
     }
 
     /**
-     * Finishing: the diamonds and the light bands leave in 100 ms and the glow chases silence,
-     * at most 200 ms from full voice, settling to its resting light.
+     * Finishing: the diamonds and the light bands leave as a 100 ms ramp would, on a quicker
+     * spring, and the glow follows silence on its own, settling to its resting light.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun settle(now: Double) {
         dotsFadeAt = -1.0
-        dots.set(0f, now, 100.0, Motion.standard)
-        bands.set(0f, now, 100.0, Motion.standard)
-        target = 0f
+        dots.riseMs = SETTLE_RISE_MS
+        dots.target = 0f
+        bands.riseMs = SETTLE_RISE_MS
+        bands.target = 0f
+        glow.target = 0f
     }
 
     /** Once per frame. */
@@ -125,36 +132,29 @@ internal class WaveHost(now: Double, settled: Boolean = false) {
         val dt = (now - last).coerceAtLeast(0.0)
         last = now
         if (dotsFadeAt >= 0 && now >= dotsFadeAt) {
-            dots.set(0f, now, 333.0)
+            dots.riseMs = OPEN_RISE_MS
+            dots.target = 0f
             dotsFadeAt = -1.0
         }
-        val s = (0.005 * dt).toFloat()
-        glow += (target - glow).coerceIn(-s, s)
+        glow.step(dt)
+        bands.step(dt)
+        dots.step(dt)
+        opened.step(dt)
         drift -= DRIFT * (dt / 1000).toFloat()
-        morph += MORPH * (1f + 9f * glow) * (dt / 1000).toFloat()
+        morph += MORPH * (1f + 9f * glow.value) * (dt / 1000).toFloat()
     }
 
     fun frame(now: Double) = WaveFrame(
-        glow, bands.at(now), dots.at(now), drift, morph,
-        ((now - start) / 1000).toFloat(), ((now - start) / 333).toFloat().coerceIn(0f, 1f),
+        glow.value, bands.value, dots.value, drift, morph,
+        ((now - start) / 1000).toFloat(), opened.value,
     )
-
-    /** Gboard's straight ramps; [easing] curves one (the bubble's settle). */
-    private class Ramp(v: Float) {
-        private var from = v
-        private var to = v
-        private var start = 0.0
-        private var ms = 1.0
-        private var easing: Easing? = null
-        fun set(target: Float, now: Double, duration: Double, easing: Easing? = null) {
-            from = at(now); to = target; start = now; ms = duration; this.easing = easing
-        }
-        fun at(now: Double): Float {
-            val k = ((now - start) / ms).coerceIn(0.0, 1.0).toFloat()
-            return from + (to - from) * (easing?.transform(k) ?: k)
-        }
-    }
 }
+
+/** Gboard's 333 ms opening fades, as a spring's 10 to 90 % rise. */
+private const val OPEN_RISE_MS = 266.0
+
+/** Finishing's 100 ms fades, as a spring's 10 to 90 % rise. */
+private const val SETTLE_RISE_MS = 80.0
 
 private const val DOTS_ON = 1.5f
 private const val DRIFT = 0.21f

@@ -1,8 +1,10 @@
 package dev.silver.burble.ui
 
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.lazy.LazyItemScope
+import dev.silver.burble.ui.theme.Motion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -55,18 +57,25 @@ fun ShapeBadge(
     size: Dp = 112.dp,
 ) {
     val colors = MaterialTheme.colorScheme
-    val container by animateColorAsState(if (done) colors.tertiaryContainer else colors.primaryContainer, label = "container")
-    val content by animateColorAsState(if (done) colors.onTertiaryContainer else colors.onPrimaryContainer, label = "content")
+    val container by animateColorAsState(if (done) colors.tertiaryContainer else colors.primaryContainer, Motion.effects(), label = "container")
+    val content by animateColorAsState(if (done) colors.onTertiaryContainer else colors.onPrimaryContainer, Motion.effects(), label = "content")
     Box(modifier.size(size).background(container, shape.toShape()), contentAlignment = Alignment.Center) {
         AnimatedContent(
             targetState = done,
-            transitionSpec = { (scaleIn(spring(dampingRatio = 0.5f, stiffness = 400f)) + fadeIn()) togetherWith fadeOut() },
+            // The check grows in on the fast spatial spring as the icon shrinks away.
+            transitionSpec = {
+                (scaleIn(Motion.fastSpatial(), initialScale = 0.6f) + fadeIn(Motion.effects())) togetherWith
+                    (scaleOut(Motion.fastSpatial(), targetScale = 0.6f) + fadeOut(Motion.fastEffects()))
+            },
             label = "badge",
         ) { granted ->
             Icon(if (granted) Icons.Rounded.Check else icon, contentDescription = null, tint = content, modifier = Modifier.size(size * 0.42f))
         }
     }
 }
+
+/** A list item that comes and goes: it fades on the effects springs, the others slide on the spatial one. */
+fun LazyItemScope.listItemMotion(): Modifier = Modifier.animateItem(Motion.effects(), Motion.spatial(), Motion.fastEffects())
 
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.primary) {

@@ -43,20 +43,28 @@ class WaveLevelTest {
             host.step(ms.toDouble())
         }
         assertEquals(1.5f, host.frame(160.0).dots, 0.001f)
-        for (ms in 164..520 step 4) host.step(ms.toDouble())
-        assertEquals(0f, host.frame(520.0).dots, 0.001f)
+        for (ms in 164..800 step 4) host.step(ms.toDouble())
+        assertEquals(0f, host.frame(800.0).dots, 0.01f)
     }
 
-    @Test fun glowRisesIn200msAndIgnoresQuiet() {
+    // Gboard's 200 ms ramp as a critically damped spring: quiet is ignored, a voice swells the
+    // glow 10 to 90 % in the ramp's 160 ms, never past its level.
+    @Test fun glowRisesLikeGboardsRampAndIgnoresQuiet() {
         val host = WaveHost(0.0)
         host.feed(0.45f, 0.0)
         for (ms in 4..400 step 4) host.step(ms.toDouble())
         assertEquals(0f, host.frame(400.0).glow, 0f)
         host.feed(0.8f, 400.0)
-        for (ms in 404..500 step 4) host.step(ms.toDouble())
-        assertEquals(0.5f, host.frame(500.0).glow, 0.03f)
-        for (ms in 504..600 step 4) host.step(ms.toDouble())
-        assertEquals(0.8f, host.frame(600.0).glow, 0.001f)
-        assertEquals(1.5f, host.frame(600.0).dots, 0.001f)
+        var tenAt = 0; var ninetyAt = 0
+        for (ms in 404..900 step 4) {
+            host.step(ms.toDouble())
+            val g = host.frame(ms.toDouble()).glow
+            assertTrue("no overshoot at $ms: $g", g <= 0.8f + 1e-4f)
+            if (tenAt == 0 && g >= 0.08f) tenAt = ms
+            if (ninetyAt == 0 && g >= 0.72f) ninetyAt = ms
+        }
+        assertEquals(160.0, (ninetyAt - tenAt).toDouble(), 8.0)
+        assertEquals(0.8f, host.frame(900.0).glow, 0.005f)
+        assertEquals(1.5f, host.frame(900.0).dots, 0.01f)
     }
 }
