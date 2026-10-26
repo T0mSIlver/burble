@@ -63,6 +63,9 @@ fun BurbleApp() {
     )
 
     report?.let { draft ->
+        // A report restored after the process was stopped asks Google again: the test's result
+        // doesn't outlive the process the way the draft does.
+        LaunchedEffect(Unit) { if (TestAudio.state.value == TestAudio.State.Idle) TestAudio.send(context) }
         ReportScreen(
             draft,
             test,
