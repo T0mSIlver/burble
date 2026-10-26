@@ -72,8 +72,6 @@ import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -173,15 +171,11 @@ private fun haptic(view: View, look: Look) {
 }
 
 /**
- * The wave's hue, at a light tone: the wallpaper's tertiary, as Gboard's bar uses; under the
- * Google blue fallback, whose tertiary is a green that would look accidental, the primary blue.
- * Light themes' accents are dark (tone 40), so they are lifted towards their container; dark
- * themes' are already light (tone 80).
+ * The wave's hue source: the primary, as Gboard takes its glow from the system accent. [Wave]
+ * turns it into the glow's own lighter, more saturated colour.
  */
-internal fun ColorScheme.waveColor(wallpaper: Boolean): Color {
-    val (accent, container) = if (wallpaper) tertiary to tertiaryContainer else primary to primaryContainer
-    return if (surface.luminance() < 0.5f) accent else lerp(accent, container, 0.6f)
-}
+@Suppress("UNUSED_PARAMETER")
+internal fun ColorScheme.waveColor(wallpaper: Boolean): Color = primary
 
 /** Draws the wave; the live overlay passes the mic's, screenshot tests a frozen one. */
 internal typealias WaveSlot = @Composable (color: Color, modifier: Modifier) -> Unit

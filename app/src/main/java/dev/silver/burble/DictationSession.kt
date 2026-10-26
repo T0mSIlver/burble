@@ -24,7 +24,7 @@ class DictationSession(
     private val dir: File,
     private val newRecognizer: (onDone: (Result<String>) -> Unit) -> Recognizer,
     private val onResult: (Result<String>) -> Unit,
-    /** Microphone RMS level, 0..1, per 100 ms buffer. */
+    /** The wave's level per 100 ms buffer, 0..1: the voice against the room ([VoiceLevel]). */
     private val onLevel: (Float) -> Unit = {},
     /** Stops after this long without voice; 0 never does. */
     private val silenceMs: Long = 30_000,
@@ -57,6 +57,7 @@ class DictationSession(
     private var reported = false
     private var cancelled = false
     private var lastVoiceMs = 0L
+    private val voice = VoiceLevel()
 
     val isActive get() = thread?.isAlive == true && !stopping
 
@@ -149,8 +150,8 @@ class DictationSession(
     /** Takes one PCM buffer; false when silence has lasted [silenceMs]. */
     internal fun audio(pcm: ByteArray, nowMs: Long): Boolean = synchronized(lock) {
         if (cancelled) return false
+        onLevel(voice.feed(pcm, pcm.size))
         val level = levelOf(pcm, pcm.size)
-        onLevel(level)
         val quiet = level < QUIET
         if (!quiet) lastVoiceMs = nowMs
         var seg = segments.last()
@@ -240,8 +241,8 @@ class DictationSession(
         /**
          * Loudness of 16-bit little-endian PCM, 0..1: -55 dBFS (a quiet room) to -25 dBFS (normal
          * speech close to the phone), linear in decibels. VOICE_RECOGNITION audio has no gain
-         * control, so speech at arm's length sits near -40 dBFS; a linear amplitude scale left it
-         * near 0, and -60..-20 still moved the wave too little.
+         * control, so speech at arm's length sits near -40 dBFS. Tells voice from silence for
+         * segment switches and the silence stop; the wave uses [VoiceLevel].
          */
         internal fun levelOf(pcm: ByteArray, n: Int): Float {
             var sum = 0.0

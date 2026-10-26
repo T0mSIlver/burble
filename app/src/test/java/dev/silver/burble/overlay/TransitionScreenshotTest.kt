@@ -43,7 +43,7 @@ class TransitionScreenshotTest {
                             Box {
                                 OverlayContent(look, BubbleShape.COOKIE_9, 64.dp, alignEnd = false,
                                     labelled = false, onTap = {}) { color, modifier ->
-                                    Wave({ 0.7f }, { 0.4f }, color, modifier, shader = shader)
+                                    Wave({ WaveFrame.steady(0.7f, 0.4f) }, color, modifier, shader = shader)
                                 }
                             }
                         }

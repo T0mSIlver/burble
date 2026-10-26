@@ -51,7 +51,10 @@ object Dictation {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
-    /** Microphone level, 0..1, about ten updates a second while listening. Drives the wave. */
+    /**
+     * The voice against the room ([VoiceLevel]), 0..1, ten updates a second while listening.
+     * Drives the wave, which treats anything under 0.5 as silence.
+     */
     private val _level = MutableStateFlow(0f)
     val level: StateFlow<Float> = _level.asStateFlow()
 

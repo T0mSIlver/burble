@@ -6,6 +6,7 @@ import androidx.compose.ui.unit.dp
 import dev.silver.burble.overlay.Look
 import dev.silver.burble.overlay.OverlayContent
 import dev.silver.burble.overlay.Wave
+import dev.silver.burble.overlay.WaveFrame
 import dev.silver.burble.ui.Access
 import dev.silver.burble.ui.Home
 import dev.silver.burble.ui.HomeActions
@@ -49,7 +50,7 @@ class ShapesTest(private val shape: BubbleShape) {
                 Column {
                     for (look in looks) for (size in listOf(40, 64, 96)) {
                         OverlayContent(look, shape, size.dp, alignEnd = false, labelled = true, onTap = {}) { color, modifier ->
-                            Wave({ 0.6f }, { 0.3f }, color, modifier)
+                            Wave({ WaveFrame.steady(0.6f, 0.3f) }, color, modifier)
                         }
                     }
                 }

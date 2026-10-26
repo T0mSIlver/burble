@@ -5,11 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,7 +20,6 @@ import dev.silver.burble.WhenIdle
 import dev.silver.burble.Dictation.ErrorKind
 import dev.silver.burble.Wallpaper
 import dev.silver.burble.ui.theme.AppTheme
-import dev.silver.burble.ui.theme.LocalWallpaperColors
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -74,8 +69,8 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             for (row in BubbleShape.entries.chunked(3)) Labelled("shapes") {
                 for (shape in row) Bubble(Look.Idle, shape = shape)
             }
-            Labelled("listening 0, 0.4, 0.9") {
-                for (level in listOf(0f, 0.4f, 0.9f)) Bubble(Look.Listening, level = level)
+            Labelled("listening: silence, 0.6, 0.9") {
+                for (level in listOf(0f, 0.6f, 0.9f)) Bubble(Look.Listening, level = level)
             }
             Labelled("finishing, done, ready") {
                 Bubble(Look.Finishing)
@@ -101,8 +96,8 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
     }
 
     /**
-     * The wave over 1.2 s at 10 fps, speaking then pausing, as in the Gboard study's motion
-     * strip: each row a bar of Gboard's proportions, then the bubble at the same moment.
+     * The wave over 1.2 s at 10 fps, as the live overlay runs it: silence, a word's onset,
+     * speech, then the fall after it stops, as in the Gboard study's motion strip.
      */
     @Test fun waveStudy() = capture("wave-study") { WaveStudy(shader = true) }
 
@@ -117,20 +112,25 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
 
     @Composable
     private fun WaveStudy(shader: Boolean) {
-        // Levels after the attack and release smoothing, sampled every 0.1 s.
-        val levels = listOf(0.85f, 0.9f, 0.75f, 0.55f, 0.35f, 0.2f, 0.1f, 0.05f, 0.02f, 0.3f, 0.7f, 0.85f)
-        val c = MaterialTheme.colorScheme
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            levels.forEachIndexed { i, level ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(width = 300.dp, height = 45.dp).clip(RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp))
-                        .background(c.surfaceContainerLowest)) {
-                        Wave({ level }, { i * 0.1f }, c.waveColor(LocalWallpaperColors.current), Modifier.fillMaxSize(), shader = shader)
-                    }
-                    Bubble(Look.Listening, level = level, time = i * 0.1f, shader = shader)
-                }
+            for (row in studyFrames().chunked(4)) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (f in row) Bubble(Look.Listening, frame = f, shader = shader)
             }
         }
+    }
+
+    /** Frames every 0.1 s: a quiet room until 0.3 s, speech until 0.9 s, then quiet again. */
+    private fun studyFrames(): List<WaveFrame> {
+        val host = WaveHost(0.0)
+        val frames = ArrayList<WaveFrame>()
+        var ms = 0
+        while (ms <= 1200) {
+            if (ms % 100 == 0) host.feed(if (ms in 300 until 900) 0.85f else 0.2f, ms.toDouble())
+            host.step(ms.toDouble())
+            if (ms > 0 && ms % 100 == 0) frames.add(host.frame(ms.toDouble()))
+            ms += 4
+        }
+        return frames
     }
 
     @Composable
@@ -147,6 +147,7 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
         look: Look,
         level: Float = 0f,
         time: Float = 0.7f,
+        frame: WaveFrame? = null,
         shape: BubbleShape = BubbleShape.COOKIE_9,
         size: Int = 64,
         idleOpacity: Float = 1f,
@@ -157,7 +158,7 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
         labelled: Boolean = true,
     ) {
         OverlayContent(look, shape, size.dp, alignEnd, labelled, rest, whenIdle, idleOpacity, onTap = {}) { color, modifier ->
-            Wave({ level }, { time }, color, modifier, shader = shader)
+            Wave({ frame ?: WaveFrame.steady(level, time) }, color, modifier, shader = shader)
         }
     }
 }

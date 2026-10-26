@@ -8,8 +8,8 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-// The wave only moves if speech maps to the middle of 0..1. A linear amplitude scale put
-// speech from the unprocessed VOICE_RECOGNITION source near 0, and the wave sat still.
+// Silence detection needs speech in the middle of 0..1. A linear amplitude scale put speech
+// from the unprocessed VOICE_RECOGNITION source near 0, under the silence threshold.
 class LevelTest {
     /** 100 ms of a 440 Hz sine whose RMS is [dbfs], as 16-bit little-endian PCM. */
     private fun tone(dbfs: Double): ByteArray {

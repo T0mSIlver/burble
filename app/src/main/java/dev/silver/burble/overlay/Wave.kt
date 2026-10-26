@@ -3,225 +3,434 @@ package dev.silver.burble.overlay
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
-import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import kotlinx.coroutines.flow.StateFlow
-import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.cbrt
+import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.hypot
+import kotlin.math.pow
 import kotlin.math.sin
 
-/**
- * The listening wave, after Gboard's voice bar: a soft glow rising from the bottom in drifting
- * humps, a pale haze above it, and a fine tilted lattice of diamonds lighter than the glow,
- * cut out of it where it is strong. In silence only a thin glow line stays along the bottom.
- * One hue, [color] (the theme's tertiary, like Gboard), at varying alpha; the diamonds are white.
+/*
+ * The listening wave: Gboard's Rambler bar, rebuilt for a round bubble. Gboard draws its bar
+ * with AGSL shaders; Burble's design notes' research/gboard-wave-renderer.md describes them, and its
+ * playground's variant G1 is this wave. The bar's bottom edge, where Gboard's glow rises, is the
+ * bubble's centre, and heights above that edge are distances from the centre, dp for dp.
  *
- * [level] and [time] are read at draw time only, so a new frame redraws without recomposing.
+ * Layers, back to front: a glow whose soft edge sits 15 dp from the centre in silence and
+ * 35 dp at full voice, wobbling in broad noise humps; two light bands from the centre, drawn
+ * with Lighten; and a 45° lattice of 3.75 dp cells holding pixel-stepped diamonds, sized and
+ * pushed around by value noise, shown only where the glow is and only while the voice is on.
+ */
+
+/** One frame's inputs: from [WaveHost] while listening, from [steady] in screenshot tests. */
+@Immutable
+internal data class WaveFrame(
+    /** The glow's level, 0..1. */
+    val glow: Float,
+    /** The light bands' level, 0..1. */
+    val bands: Float,
+    /** The diamonds' opacity, 0..1.5. */
+    val dots: Float,
+    /** The glow noise's sideways drift, in bar heights. */
+    val drift: Float,
+    /** The glow noise's morph clock. */
+    val morph: Float,
+    /** Seconds since listening started: the diamonds' clock. */
+    val time: Float,
+    /** The bubble opening from its centre, 0..1. */
+    val opened: Float,
+) {
+    companion object {
+        /** What a steady [level] settles to after [time] s. */
+        fun steady(level: Float, time: Float): WaveFrame {
+            val l = gate(level)
+            return WaveFrame(l, l, if (l > 0f) DOTS_ON else 0f, -DRIFT * time, MORPH * (1f + 9f * l) * time, time, 1f)
+        }
+    }
+}
+
+/** Under 0.5 the voice counts as silence, as on Gboard. */
+internal fun gate(level: Float) = if (level < 0.5f) 0f else level.coerceAtMost(1f)
+
+/**
+ * Gboard's host side: turns level updates into the shader's inputs. Each update sets the light
+ * bands and the diamonds on straight 200 ms ramps from where they are; the glow chases the
+ * level at 5 per second both ways (0 to 1 in 200 ms). On opening, the diamonds show for 166 ms
+ * and fade over 333 ms. Times in ms.
+ */
+internal class WaveHost(now: Double) {
+    private val start = now
+    private var glow = 0f
+    private var target = 0f
+    private val bands = Ramp(0f)
+    private val dots = Ramp(DOTS_ON)
+    private var dotsFadeAt = now + 166
+    private var drift = 0f
+    private var morph = 0f
+    private var last = now
+
+    /** A new level, 0..1. */
+    fun feed(level: Float, now: Double) {
+        val l = gate(level)
+        dotsFadeAt = -1.0
+        bands.set(l, now, 200.0)
+        dots.set(if (l > 0f) DOTS_ON else 0f, now, 200.0)
+        target = l
+    }
+
+    /** Once per frame. */
+    fun step(now: Double) {
+        val dt = (now - last).coerceAtLeast(0.0)
+        last = now
+        if (dotsFadeAt >= 0 && now >= dotsFadeAt) {
+            dots.set(0f, now, 333.0)
+            dotsFadeAt = -1.0
+        }
+        val s = (0.005 * dt).toFloat()
+        glow += (target - glow).coerceIn(-s, s)
+        drift -= DRIFT * (dt / 1000).toFloat()
+        morph += MORPH * (1f + 9f * glow) * (dt / 1000).toFloat()
+    }
+
+    fun frame(now: Double) = WaveFrame(
+        glow, bands.at(now), dots.at(now), drift, morph,
+        ((now - start) / 1000).toFloat(), ((now - start) / 333).toFloat().coerceIn(0f, 1f),
+    )
+
+    private class Ramp(v: Float) {
+        private var from = v
+        private var to = v
+        private var start = 0.0
+        private var ms = 1.0
+        fun set(target: Float, now: Double, duration: Double) {
+            from = at(now); to = target; start = now; ms = duration
+        }
+        fun at(now: Double) = from + (to - from) * ((now - start) / ms).coerceIn(0.0, 1.0).toFloat()
+    }
+}
+
+private const val DOTS_ON = 1.5f
+private const val DRIFT = 0.21f
+private const val MORPH = 0.95f
+
+/**
+ * The wave for [frame]. [accent] sets the hue (Gboard derives its glow from the system accent);
+ * the background is the listening bubble's surface.
  */
 @Composable
-fun Wave(
-    level: () -> Float,
-    time: () -> Float,
-    color: Color,
+internal fun Wave(
+    frame: () -> WaveFrame,
+    accent: Color,
     modifier: Modifier = Modifier,
     shader: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
 ) {
-    val pitch = with(LocalDensity.current) { PITCH_DP.dp.toPx() }
+    val surface = MaterialTheme.colorScheme.surfaceContainerLowest
+    val dark = surface.luminance() < 0.5f
+    val colors = remember(accent, dark) { waveColors(accent, dark) }
+    val dp = LocalDensity.current.density
     if (shader && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ShaderWave(level, time, color, pitch, modifier)
+        ShaderWave(frame, colors, surface, dp, modifier)
     } else {
-        CanvasWave(level, time, color, pitch, modifier)
+        CanvasWave(frame, colors, surface, dp, modifier)
     }
 }
 
-/** [Wave] driven by the live microphone level and the frame clock. */
+/** [Wave] driven by the live level, [Dictation.level]'s scale, and the frame clock. */
 @Composable
-fun LiveWave(level: StateFlow<Float>, color: Color, modifier: Modifier = Modifier) {
-    val time = remember { mutableFloatStateOf(0f) }
-    val smooth = remember { mutableFloatStateOf(0f) }
+fun LiveWave(level: StateFlow<Float>, accent: Color, modifier: Modifier = Modifier) {
+    val state = remember { mutableStateOf(WaveFrame.steady(0f, 0f).copy(dots = DOTS_ON, opened = 0f)) }
     LaunchedEffect(level) {
-        var t0 = -1L
-        var last = 0L
-        while (true) withInfiniteAnimationFrameNanos { now ->
-            if (t0 < 0) { t0 = now; last = now }
-            val dt = (now - last) / 1e9f
-            last = now
-            time.floatValue = (now - t0) / 1e9f
-            // As in Gboard: the humps rise within about 100 ms of the voice and sink over most of
-            // a second.
-            val target = level.value
-            val rate = if (target > smooth.floatValue) ATTACK else RELEASE
-            smooth.floatValue += (target - smooth.floatValue) * (1f - exp(-rate * dt))
+        var host: WaveHost? = null
+        // The flow starts at 0 before the first buffer. It drops repeats, where Gboard would
+        // restart the same ramps, which changes nothing.
+        var fed = 0f
+        while (true) withInfiniteAnimationFrameNanos { nanos ->
+            val now = nanos / 1e6
+            val h = host ?: WaveHost(now).also { host = it }
+            val heard = level.value
+            if (heard != fed) {
+                h.feed(heard, now)
+                fed = heard
+            }
+            h.step(now)
+            state.value = h.frame(now)
         }
     }
-    Wave({ smooth.floatValue }, { time.floatValue }, color, modifier)
+    Wave({ state.value }, accent, modifier)
 }
 
-private const val ATTACK = 30f
-private const val RELEASE = 3f
+/** The wave's colours: the glow, and the diamonds. */
+@Immutable
+internal data class WaveColors(val glow: Color, val dots: Color)
 
 /**
- * Glow height at [x] (0..1 across) as a fraction of the height, from the bottom: a thin line in
- * silence, three drifting humps that grow with [level].
+ * Gboard's glow, measured on its bar under pink and blue palettes: its hue lies halfway between
+ * the accent's and 302° (in OKLCH), and it is more saturated than any M3 role, at lightness 0.78
+ * (0.67 on a dark surface). Diamonds are white on light surfaces, a pale tint of the glow on
+ * dark ones.
  */
-internal fun humps(x: Float, t: Float, level: Float): Float {
-    fun hump(centre: Float, amp: Float): Float {
-        val d = (x - centre) / 0.24f
-        return amp * exp(-d * d)
+internal fun waveColors(accent: Color, dark: Boolean): WaveColors {
+    val h = accentHue(accent)
+    val d = ((302.0 - h + 540.0) % 360.0) - 180.0
+    val hue = h + d / 2
+    return if (dark) WaveColors(oklch(0.67, 0.10, hue), oklch(0.86, 0.07, hue))
+    else WaveColors(oklch(0.78, 0.14, hue), Color.White)
+}
+
+private fun lin(c: Float): Double = if (c <= 0.04045f) c / 12.92 else ((c + 0.055) / 1.055).pow(2.4)
+private fun gam(c: Double): Double = if (c <= 0.0031308) 12.92 * c else 1.055 * c.pow(1 / 2.4) - 0.055
+
+private fun accentHue(c: Color): Double {
+    val r = lin(c.red); val g = lin(c.green); val b = lin(c.blue)
+    val l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+    val m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+    val s = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+    val a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+    val bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    return (Math.toDegrees(atan2(bb, a)) + 360) % 360
+}
+
+/** An OKLCH colour, its chroma reduced until it fits sRGB. */
+private fun oklch(lightness: Double, chroma: Double, hue: Double): Color {
+    var c = chroma
+    while (true) {
+        val a = c * cos(Math.toRadians(hue))
+        val b = c * sin(Math.toRadians(hue))
+        val l = (lightness + 0.3963377774 * a + 0.2158037573 * b).pow(3)
+        val m = (lightness - 0.1055613458 * a - 0.0638541728 * b).pow(3)
+        val s = (lightness - 0.0894841775 * a - 1.2914855480 * b).pow(3)
+        val r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
+        val g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
+        val bl = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+        if ((r in 0.0..1.0 && g in 0.0..1.0 && bl in 0.0..1.0) || c <= 0.0) {
+            return Color(gam(r.coerceIn(0.0, 1.0)).toFloat(), gam(g.coerceIn(0.0, 1.0)).toFloat(), gam(bl.coerceIn(0.0, 1.0)).toFloat())
+        }
+        c -= 0.005
     }
-    val sum = hump(0.3f + 0.22f * sin(0.35f * t), 0.75f + 0.25f * sin(1.3f * t)) +
-        hump(0.72f + 0.2f * sin(0.5f * t + 2f), 0.75f + 0.25f * sin(1.1f * t + 1f)) +
-        hump(0.5f + 0.32f * sin(0.27f * t + 4f), 0.6f + 0.3f * sin(0.9f * t + 2f))
-    return 0.07f + level * 0.95f * sum.coerceAtMost(1.2f)
 }
 
-private fun smoothstep(a: Float, b: Float, v: Float): Float {
-    val k = ((v - a) / (b - a)).coerceIn(0f, 1f)
-    return k * k * (3f - 2f * k)
-}
+/** Gboard's bar height, dp: it sets the light bands, the fade and the diamonds' reach. */
+private const val BAR_DP = 51f
 
-/** The glow's opacity at height [y] under a hump of height [h]: strong low, soft at the top. */
-internal fun glow(y: Float, h: Float) = 0.9f * (1f - smoothstep(0.2f, 1.3f, y / h))
-
-/** The pale haze above the glow. */
-internal fun haze(y: Float, h: Float) = 0.3f * (1f - smoothstep(0.8f, 3f, y / h))
-
-/** Diamond size, 0..1 of its largest, where the glow is strong and the hump has risen. */
-internal fun diamond(y: Float, h: Float) = smoothstep(0.35f, 0.8f, glow(y, h)) * smoothstep(0.16f, 0.4f, h)
-
-/** Diamond pitch: very fine, as in Gboard. */
-private const val PITCH_DP = 3.5f
-private const val DIAMOND = 0.44f
-private const val DIAMOND_ALPHA = 0.85f
-
-// Canvas version for Android 12: the glow as stacked translucent layers under the hump curve,
-// with a vertical fade; the diamonds row by row. Close to the shader at a glance.
+// Android 12: the glow and the white core as radial gradients, without the lattice.
 @Composable
-private fun CanvasWave(level: () -> Float, time: () -> Float, color: Color, pitch: Float, modifier: Modifier) {
-    val dots = remember { Path() }
-    val area = remember { Path() }
+private fun CanvasWave(frame: () -> WaveFrame, colors: WaveColors, surface: Color, dp: Float, modifier: Modifier) {
     Spacer(modifier.drawWithCache {
-        val fade = Brush.verticalGradient(
-            0f to color.copy(alpha = 0f), 0.5f to color.copy(alpha = 0.35f), 1f to color.copy(alpha = 0.9f),
-        )
-        val rows = (size.height / (pitch / 2f)).toInt() + 1
-        val cols = (size.width / pitch).toInt() + 2
+        val c = Offset(size.width / 2, size.height / 2)
+        val r = hypot(size.width, size.height) / 2
+        val n = 16
         onDrawBehind {
-            val l = level()
-            val t = time()
-            val w = size.width
-            val h = size.height
-            for (k in LAYERS) {
-                area.rewind()
-                area.moveTo(0f, h)
-                for (i in 0..SAMPLES) {
-                    val x = i / SAMPLES.toFloat()
-                    area.lineTo(x * w, h - (humps(x, t, l) * k).coerceAtMost(1.5f) * h)
-                }
-                area.lineTo(w, h)
-                area.close()
-                drawPath(area, fade, alpha = 1f / LAYERS.size)
+            val f = frame()
+            // The humps' rise and fall, without their shape round the edge.
+            val edge = 15f + 20f * f.glow + 0.25f * (13f + 25f * f.glow) * sin(1.1f * f.morph)
+            val band = BAR_DP / 6 * (1 + f.bands)
+            val glow = Array(n + 1) { i ->
+                val u = i * r / n / dp
+                i / n.toFloat() to colors.glow.copy(alpha = logistic((edge - u) / 6f) * reveal(u))
             }
-            for (row in 0 until rows) {
-                val cy = h - row * pitch / 2f
-                val y = row * pitch / 2f / h
-                val shift = if (row % 2 == 1) pitch / 2f else 0f
-                dots.rewind()
-                for (col in 0 until cols) {
-                    val cx = col * pitch + shift - pitch / 2f
-                    val r = diamond(y, humps((cx / w).coerceIn(0f, 1f), t, l)) * DIAMOND * pitch
-                    if (r < 0.3f) continue
-                    dots.moveTo(cx, cy - r)
-                    dots.lineTo(cx + r, cy)
-                    dots.lineTo(cx, cy + r)
-                    dots.lineTo(cx - r, cy)
-                    dots.close()
-                }
-                drawPath(dots, Color.White, alpha = DIAMOND_ALPHA)
+            val core = Array(n + 1) { i ->
+                val u = i * r / n / dp
+                val t = ((band - u) / band).coerceIn(0f, 1f)
+                i / n.toFloat() to Color.White.copy(alpha = CORE * t * t * (3 - 2 * t))
             }
+            drawRect(surface)
+            drawRect(Brush.radialGradient(*glow, center = c, radius = r))
+            drawRect(Brush.radialGradient(*core, center = c, radius = r))
         }
     })
 }
 
-private const val SAMPLES = 32
-private val LAYERS = floatArrayOf(2.6f, 1.3f, 1f, 0.7f, 0.45f)
+private fun logistic(x: Float) = 1f / (1f + exp(-x))
+private fun reveal(u: Float) = 1f / (1f + exp(6f * (u - 2f * BAR_DP / 3f) / BAR_DP))
+private const val CORE = 0.2f
 
-// The same humps, glow, haze and diamonds as the Kotlin functions above, per pixel. In lattice
-// coordinates m = (X + Y) / s, n = (X - Y) / s the diamonds are squares, so each pixel only
-// tests its nearest lattice point.
+// The shader. p is in px from the top-left; u is the distance from the centre in dp, the
+// height above Gboard's bar edge.
 private const val AGSL = """
 uniform float2 size;
-uniform float pitch;
+uniform float dp;
+uniform float glowLvl;
+uniform float bandsLvl;
+uniform float dotsAlpha;
+uniform float drift;
+uniform float morph;
 uniform float time;
-uniform float level;
-layout(color) uniform half4 color;
+uniform float opened;
+layout(color) uniform half4 glowColor;
+layout(color) uniform half4 dotColor;
+layout(color) uniform half4 surface;
 
-float hump(float x, float centre, float amp) {
-    float d = (x - centre) / 0.24;
-    return amp * exp(-d * d);
+const float PI = 3.14159265;
+const float BAR = 51.0;     // Gboard's bar height, dp
+const float CELL = 3.75;   // lattice cell, dp
+const float DOT_MAX = 0.37;
+const float DOT_MIN = -0.07;
+const float CORE = 0.2;
+
+// Rotate v by -a, as Gboard's 2D rotation does.
+float2 turn(float2 v, float a) {
+    float c = cos(a);
+    float s = sin(a);
+    return float2(c * v.x + s * v.y, -s * v.x + c * v.y);
 }
 
-float humps(float x) {
-    float t = time;
-    float sum = hump(x, 0.3 + 0.22 * sin(0.35 * t), 0.75 + 0.25 * sin(1.3 * t)) +
-        hump(x, 0.72 + 0.2 * sin(0.5 * t + 2.0), 0.75 + 0.25 * sin(1.1 * t + 1.0)) +
-        hump(x, 0.5 + 0.32 * sin(0.27 * t + 4.0), 0.6 + 0.3 * sin(0.9 * t + 2.0));
-    return 0.07 + level * 0.95 * min(sum, 1.2);
+float vhash(float2 c) { return fract(sin(dot(c, float2(12.9898, 78.233))) * 43758.5453); }
+
+// Value noise and its gradient: x = 0..1, yz = d/dx, d/dy.
+float3 vnoise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    float2 du = 6.0 * f * (1.0 - f);
+    float a = vhash(i);
+    float k1 = vhash(i + float2(1.0, 0.0)) - a;
+    float k2 = vhash(i + float2(0.0, 1.0)) - a;
+    float k3 = vhash(i + float2(1.0, 1.0)) - a - k1 - k2;
+    return float3(a + k1 * u.x + k2 * u.y + k3 * u.x * u.y, du * float2(k1 + k3 * u.y, k2 + k3 * u.x));
 }
 
-float glow(float y, float h) { return 0.9 * (1.0 - smoothstep(0.2, 1.3, y / h)); }
-float haze(float y, float h) { return 0.3 * (1.0 - smoothstep(0.8, 3.0, y / h)); }
-float diamond(float y, float h) { return smoothstep(0.35, 0.8, glow(y, h)) * smoothstep(0.16, 0.4, h); }
+float3 ghash(float3 c) {
+    return fract(sin(float3(dot(c, float3(127.1, 311.7, 74.7)), dot(c, float3(269.5, 183.3, 246.1)),
+        dot(c, float3(113.5, 271.9, 124.6)))) * 43758.5453) * 2.0 - 1.0;
+}
+
+float corner(float3 i, float3 f, float3 o) { return dot(ghash(i + o), f - o); }
+
+// Gradient noise in 3D, about -1..1.
+float gnoise(float3 p) {
+    float3 i = floor(p);
+    float3 f = fract(p);
+    float3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    float x00 = mix(corner(i, f, float3(0.0, 0.0, 0.0)), corner(i, f, float3(1.0, 0.0, 0.0)), u.x);
+    float x10 = mix(corner(i, f, float3(0.0, 1.0, 0.0)), corner(i, f, float3(1.0, 1.0, 0.0)), u.x);
+    float x01 = mix(corner(i, f, float3(0.0, 0.0, 1.0)), corner(i, f, float3(1.0, 0.0, 1.0)), u.x);
+    float x11 = mix(corner(i, f, float3(0.0, 1.0, 1.0)), corner(i, f, float3(1.0, 1.0, 1.0)), u.x);
+    return 1.6 * mix(mix(x00, x10, u.y), mix(x01, x11, u.y), u.z);
+}
+
+// The glow's noise at q (dp), 0..1: cells 1 / 0.27 bar heights across.
+float glowNoise(float2 q) {
+    return clamp(0.5 + 0.5 * gnoise(float3(q / BAR, morph) * 0.27), 0.0, 1.0);
+}
+
+// The glow's opacity at height u: a soft step at 15 + 20 * level dp, moved by the humps (noise
+// taken at hq, round the centre), its softness varying with the noise at q.
+float glowAlpha(float u, float2 q, float2 hq) {
+    float e = 15.0 + 20.0 * glowLvl + (glowNoise(hq) - 0.5) * (13.0 + 25.0 * glowLvl);
+    float x = (e - u) / 6.0;
+    return 1.0 / (1.0 + exp(-x / (0.5 * (1.0 + 2.0 * glowNoise(q)))));
+}
+
+// A light band from the source to height f (px): inner colour at the source, outer at the top,
+// premultiplied. Half strength right at the source, where Gboard's band meets the bar's edge.
+half4 band(float u, float f, half3 inner, half3 outer) {
+    float t = clamp((f + 1.0 - u) / (f + 1.0), 0.0, 1.0);
+    float m = t * t * (3.0 - 2.0 * t);
+    float b = 0.5 * f * clamp(1.0 - u / f, 0.0, 1.0);
+    float sdf = -min(u, f - u);
+    float k = m * (1.0 - smoothstep(-1.0 - b, 1.0 + b, sdf)) * (1.0 - smoothstep(-1.0, 1.0, sdf));
+    return half4(mix(outer, inner, half(m)) * half(k), half(k));
+}
+
+half3 lighten(half3 d, half4 s) { return s.rgb + d - min(s.rgb, d * s.a); }
+
+// The diamonds' noise at a cell centre (dp, lattice axes), swinging round the centre and
+// drifting diagonally.
+float3 field(float2 c) {
+    float2 b = c / 35.0;
+    return vnoise(turn(b, PI * sin(time * 0.1)) + time * float2(0.6, 0.9) + float2(37.2, 11.7));
+}
+
+float2 neighbour(int k) {
+    if (k == 1) return float2(1.0, 0.0);
+    if (k == 2) return float2(-1.0, 0.0);
+    if (k == 3) return float2(0.0, 1.0);
+    if (k == 4) return float2(0.0, -1.0);
+    return float2(0.0);
+}
+
+// 1 where p (px) is inside a diamond: each cell's diamond is sized by the noise and pushed off
+// its site along the noise's gradient, turned by an angle that cycles; the push is capped. A
+// pixel checks its own cell and the four sharing its edges. Hard edges, pixel-stepped.
+float diamonds(float2 p, float2 c) {
+    float2 d = p - c;
+    float2 g = 0.70710678 * float2(d.x - d.y, d.x + d.y) / (CELL * dp);
+    float2 i = floor(g);
+    float2 f = fract(g);
+    float cover = 0.0;
+    for (int k = 0; k < 5; k++) {
+        float2 o = neighbour(k);
+        float3 n = field((i + o + 0.5) * CELL);
+        float2 push = turn(2.0 * n.yz, 2.0 * PI * (n.x + 0.2 * time) * -1.79);
+        push /= 1.0 + (abs(push.x) + abs(push.y)) / 0.35;
+        float2 rel = f - (0.5 + o + push * 2.0);
+        cover = max(cover, step(max(abs(rel.x), abs(rel.y)), mix(DOT_MIN, DOT_MAX, n.x)));
+    }
+    return cover;
+}
 
 half4 main(float2 p) {
-    float Y = size.y - p.y;
-    float y = Y / size.y;
-    float h = humps(clamp(p.x / size.x, 0.0, 1.0));
-    float a = max(glow(y, h), haze(y, h));
-
-    float X = p.x + pitch / 2.0;
-    float m = floor((X + Y) / pitch + 0.5);
-    float n = floor((X - Y) / pitch + 0.5);
-    float cx = (m + n) * pitch / 2.0 - pitch / 2.0;
-    float cY = (m - n) * pitch / 2.0;
-    float d = 0.0;
-    if (cY >= 0.0) {
-        float cy = cY / size.y;
-        float r = diamond(cy, humps(clamp(cx / size.x, 0.0, 1.0))) * 0.44 * pitch;
-        if (r >= 0.3) d = clamp(r - (abs(p.x - cx) + abs(Y - cY)) + 0.5, 0.0, 1.0) * 0.85;
-    }
-    // White diamonds over the tinted glow, premultiplied.
-    half3 rgb = color.rgb * half(a * (1.0 - d)) + half3(d);
-    return half4(rgb, half(a * (1.0 - d) + d));
+    float2 c = size * 0.5;
+    float2 q = (p - c) / dp;
+    float u = length(q);
+    float R = min(size.x, size.y) * 0.5 / dp;
+    // The humps travel round the centre at the bar's sideways speed, on a 25 dp circle.
+    float rw = 25.0;
+    float tw = atan(q.y, q.x) + drift * BAR / rw;
+    float2 hq = rw * float2(cos(tw), sin(tw));
+    float reveal = 1.0 / (1.0 + exp(6.0 * (u - 2.0 * BAR / 3.0) / BAR));
+    float open = 1.0 / (1.0 + exp(6.0 * (u - 2.0 * R * opened - BAR / 3.0) / BAR));
+    float shown = min(reveal, open);
+    float a = glowAlpha(u, q + float2(-drift * BAR, 0.0), hq) * shown;
+    half3 col = mix(surface.rgb, glowColor.rgb, half(a));
+    float f = BAR / 3.0 * (1.0 + bandsLvl) * dp;
+    col = lighten(col, band(u * dp, f, glowColor.rgb, glowColor.rgb) * half(0.9 * shown));
+    col = lighten(col, band(u * dp, 0.5 * f, half3(1.0), glowColor.rgb) * half(CORE * shown));
+    float area = max(0.0, 1.0 - u / BAR) * smoothstep(-1.32 * BAR, 0.0, -min(u, BAR - u));
+    float dots = clamp(dotsAlpha * area * diamonds(p, c) * a, 0.0, 1.0);
+    return half4(mix(col, dotColor.rgb, half(dots)), 1.0);
 }
 """
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
-private fun ShaderWave(level: () -> Float, time: () -> Float, color: Color, pitch: Float, modifier: Modifier) {
+private fun ShaderWave(frame: () -> WaveFrame, colors: WaveColors, surface: Color, dp: Float, modifier: Modifier) {
     val shader = remember { RuntimeShader(AGSL) }
     val brush = remember(shader) { ShaderBrush(shader) }
     Spacer(modifier.drawWithCache {
         shader.setFloatUniform("size", size.width, size.height)
-        shader.setFloatUniform("pitch", pitch)
-        shader.setColorUniform("color", color.toArgb())
+        shader.setFloatUniform("dp", dp)
+        shader.setColorUniform("glowColor", colors.glow.toArgb())
+        shader.setColorUniform("dotColor", colors.dots.toArgb())
+        shader.setColorUniform("surface", surface.toArgb())
         onDrawBehind {
-            shader.setFloatUniform("time", time())
-            shader.setFloatUniform("level", level())
+            val f = frame()
+            shader.setFloatUniform("glowLvl", f.glow)
+            shader.setFloatUniform("bandsLvl", f.bands)
+            shader.setFloatUniform("dotsAlpha", f.dots)
+            shader.setFloatUniform("drift", f.drift)
+            shader.setFloatUniform("morph", f.morph)
+            shader.setFloatUniform("time", f.time)
+            shader.setFloatUniform("opened", f.opened)
             drawRect(brush, Offset.Zero, size)
         }
     })
