@@ -1,5 +1,6 @@
 package dev.silver.burble.overlay
 
+import android.content.Context
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -9,8 +10,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
@@ -19,7 +22,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import dev.silver.burble.BuildConfig
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.atan2
 import kotlin.math.cbrt
@@ -136,6 +141,52 @@ private const val DRIFT = 0.21f
 private const val MORPH = 0.95f
 
 /**
+ * The wave's geometry. The defaults are the shipped radial wave.
+ *
+ * TODO(before v0.1.0): remove the debug "Wave shape (temporary)" row (src/debug,
+ * ui/WaveShapeDebug.kt) and this switchboard; keep only the shape Tom picks, as constants.
+ */
+@Immutable
+internal data class WaveShape(
+    /** Scales the glow's distances: 1.25 lights a quarter more radius. */
+    val cover: Float = 1f,
+    /** 0 a disc; toward 1 a wide horizontal ellipse. */
+    val blend: Float = 0f,
+    /** The glow's source below the centre, share of the radius. */
+    val lift: Float = 0f,
+    /** The glow's edge in silence, dp from the source. */
+    val edgeRest: Float = 15f,
+    /** How far full voice pushes it, dp. */
+    val edgeGain: Float = 20f,
+) {
+    companion object {
+        /** The shape every wave draws. Only debug builds change it. */
+        var current by mutableStateOf(WaveShape())
+
+        private const val PREFS = "debug_wave_shape"
+
+        /** Debug builds: the shape chosen in Advanced, kept across restarts. */
+        fun load(context: Context) {
+            if (!BuildConfig.DEBUG) return
+            val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val d = WaveShape()
+            current = WaveShape(
+                p.getFloat("cover", d.cover), p.getFloat("blend", d.blend), p.getFloat("lift", d.lift),
+                p.getFloat("edgeRest", d.edgeRest), p.getFloat("edgeGain", d.edgeGain),
+            )
+        }
+
+        fun save(context: Context, shape: WaveShape) {
+            if (!BuildConfig.DEBUG) return
+            current = shape
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putFloat("cover", shape.cover).putFloat("blend", shape.blend).putFloat("lift", shape.lift)
+                .putFloat("edgeRest", shape.edgeRest).putFloat("edgeGain", shape.edgeGain).apply()
+        }
+    }
+}
+
+/**
  * The wave for [frame]. [accent] sets the hue (Gboard derives its glow from the system accent);
  * the background is the listening bubble's surface.
  */
@@ -178,6 +229,8 @@ fun LiveWave(level: StateFlow<Float>, accent: Color, modifier: Modifier = Modifi
             state.value = h.frame(now)
         }
     }
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { WaveShape.load(context) }
     Wave({ state.value }, accent, modifier)
 }
 
@@ -244,16 +297,17 @@ private fun CanvasWave(frame: () -> WaveFrame, colors: WaveColors, surface: Colo
         onDrawBehind {
             val f = frame()
             // The humps' rise and fall, without their shape round the edge.
-            val edge = 15f + 20f * f.glow + 0.25f * (13f + 25f * f.glow) * sin(1.1f * f.morph)
-            val e0 = 15f + 20f * f.glow
+            val shape = WaveShape.current // blend and lift are the shader's only
+            val edge = shape.edgeRest + shape.edgeGain * f.glow + 0.25f * (13f + 25f * f.glow) * sin(1.1f * f.morph)
+            val e0 = shape.edgeRest + shape.edgeGain * f.glow
             val band = minOf(BAR_DP / 6 * (1 + f.bands), 0.45f * e0)
             val soft = 6f * (SILENT_SOFT + (1 - SILENT_SOFT) * f.glow)
             val glow = Array(n + 1) { i ->
-                val u = i * r / n / dp
+                val u = i * r / n / dp / shape.cover
                 i / n.toFloat() to colors.glow.copy(alpha = logistic((edge - u) / soft) * reveal(u))
             }
             val core = Array(n + 1) { i ->
-                val u = i * r / n / dp
+                val u = i * r / n / dp / shape.cover
                 val t = ((band - u) / band).coerceIn(0f, 1f)
                 i / n.toFloat() to Color.White.copy(alpha = CORE * t * t * (3 - 2 * t))
             }
@@ -281,6 +335,11 @@ uniform float drift;
 uniform float morph;
 uniform float time;
 uniform float opened;
+uniform float cover;
+uniform float blend;
+uniform float lift;
+uniform float edgeRest;
+uniform float edgeGain;
 layout(color) uniform half4 glowColor;
 layout(color) uniform half4 dotColor;
 layout(color) uniform half4 surface;
@@ -344,7 +403,7 @@ float glowNoise(float2 q) {
 // reads as a glow on its 51 dp bar but as fog across the bubble, so silence draws it at a fifth
 // of that and the voice brings Gboard's softness back.
 float glowAlpha(float u, float2 q, float2 hq) {
-    float e = 15.0 + 20.0 * glowLvl + (glowNoise(hq) - 0.5) * (13.0 + 25.0 * glowLvl);
+    float e = edgeRest + edgeGain * glowLvl + (glowNoise(hq) - 0.5) * (13.0 + 25.0 * glowLvl);
     float x = (e - u) / (6.0 * mix(SILENT_SOFT, 1.0, glowLvl));
     return 1.0 / (1.0 + exp(-x / (0.5 * (1.0 + 2.0 * glowNoise(q)))));
 }
@@ -400,17 +459,20 @@ float diamonds(float2 p, float2 c) {
 half4 main(float2 p) {
     float2 c = size * 0.5;
     float2 q = (p - c) / dp;
-    float u = length(q);
     float R = min(size.x, size.y) * 0.5 / dp;
-    // The humps travel round the centre at the bar's sideways speed, on a 25 dp circle.
+    // The source can sit below the centre (lift) and the disc widen into a horizontal ellipse
+    // (blend); cover scales every distance.
+    float2 qs = float2(q.x * (1.0 - min(blend, 0.95)), q.y - lift * R);
+    float u = length(qs) / cover;
+    // The humps travel round the source at the bar's sideways speed, on a 25 dp circle.
     float rw = 25.0;
-    float tw = atan(q.y, q.x) + drift * BAR / rw;
+    float tw = atan(qs.y, qs.x) + drift * BAR / rw;
     float2 hq = rw * float2(cos(tw), sin(tw));
     float reveal = 1.0 / (1.0 + exp(6.0 * (u - 2.0 * BAR / 3.0) / BAR));
     float open = 1.0 / (1.0 + exp(6.0 * (u - 2.0 * R * opened - BAR / 3.0) / BAR));
     float shown = min(reveal, open);
     float a = glowAlpha(u, q + float2(-drift * BAR, 0.0), hq) * shown;
-    float e0 = 15.0 + 20.0 * glowLvl;
+    float e0 = edgeRest + edgeGain * glowLvl;
     // In silence the disc is saturated mid-way and paler toward its rim, as Gboard's band pales
     // above its saturated part.
     float pale = 0.6 * smoothstep(0.35 * e0, e0, u) * (1.0 - glowLvl);
@@ -446,6 +508,12 @@ private fun ShaderWave(frame: () -> WaveFrame, colors: WaveColors, surface: Colo
             shader.setFloatUniform("morph", f.morph)
             shader.setFloatUniform("time", f.time)
             shader.setFloatUniform("opened", f.opened)
+            val shape = WaveShape.current
+            shader.setFloatUniform("cover", shape.cover)
+            shader.setFloatUniform("blend", shape.blend)
+            shader.setFloatUniform("lift", shape.lift)
+            shader.setFloatUniform("edgeRest", shape.edgeRest)
+            shader.setFloatUniform("edgeGain", shape.edgeGain)
             drawRect(brush, Offset.Zero, size)
         }
     })
