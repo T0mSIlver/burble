@@ -42,7 +42,8 @@ jobs:
           BURBLE_KEYSTORE_PASSWORD: ${{ secrets.BURBLE_KEYSTORE_PASSWORD }}
           BURBLE_KEY_ALIAS: ${{ secrets.BURBLE_KEY_ALIAS }}
           BURBLE_KEY_PASSWORD: ${{ secrets.BURBLE_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon -PversionName="${TAG#v}" assembleRelease
+        # Nothing ships that fails its tests or lint.
+        run: ./gradlew --no-daemon -PversionName="${TAG#v}" testDebugUnitTest lintRelease assembleRelease
 
       - name: Name and fingerprint
         run: |

@@ -68,9 +68,9 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Without the release key's environment (every build but release.yml's) release
-            // builds sign with the debug key.
-            signingConfig = signingConfigs.getByName(if (releaseKeystore() != null) "release" else "debug")
+            // Only with the release key's environment (release.yml's); without it packageRelease
+            // refuses, below, rather than sign with the debug key.
+            signingConfig = if (releaseKeystore() != null) signingConfigs.getByName("release") else null
         }
     }
 
@@ -93,6 +93,15 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+// A release APK signed with any other key couldn't update installed copies, or would pass a debug
+// key off as Burble's. Lint and tests of the release variant still run without the key.
+tasks.matching { it.name == "packageRelease" }.configureEach {
+    val signed = releaseKeystore() != null
+    doFirst {
+        if (!signed) throw GradleException("A release build needs BURBLE_KEYSTORE and its passwords, which only release.yml sets")
     }
 }
 
