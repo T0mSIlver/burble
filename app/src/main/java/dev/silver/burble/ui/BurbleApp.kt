@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -46,7 +47,8 @@ fun BurbleApp() {
 
     val open = { intent: Intent -> context.startActivity(intent) }
     var micAsked by rememberSaveable { mutableStateOf(false) }
-    var report by remember { mutableStateOf<Report.Draft?>(null) }
+    // Survives rotation and the trip to the browser.
+    var report by rememberSaveable(stateSaver = DraftSaver) { mutableStateOf<Report.Draft?>(null) }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { access = Permissions.read(context) }
     val actions = AccessActions(
         requestMicrophone = {
@@ -101,3 +103,8 @@ fun BurbleApp() {
         )
     }
 }
+
+private val DraftSaver = listSaver<Report.Draft?, String>(
+    save = { d -> if (d == null) emptyList() else listOf(d.phone, d.log) },
+    restore = { if (it.size < 2) null else Report.Draft(it[0], it[1]) },
+)
