@@ -6,7 +6,9 @@ import android.view.View
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -196,6 +198,21 @@ internal typealias WaveSlot = @Composable (color: Color, modifier: Modifier) -> 
 
 private const val REST_MS = 3000L
 
+/**
+ * Between full (0) and at rest (1). Critically damped: no overshoot, so size, dock and opacity
+ * each move one way from one look to the other.
+ */
+internal val RestSpec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+
+/** The bubble's scale, outward offset in pixels and alpha at [progress] towards rest. */
+internal data class RestLook(val scale: Float, val offset: Float, val alpha: Float)
+
+internal fun restLook(progress: Float, idleScale: Float, idleOpacity: Float, dock: Float) = RestLook(
+    scale = 1f + (idleScale - 1f) * progress,
+    offset = dock * progress,
+    alpha = 1f + (idleOpacity - 1f) * progress,
+)
+
 /** "Shrink" draws the idle bubble at this share of its size. */
 private const val SHRUNK = 0.6f
 private val Dot = 12.dp
@@ -261,23 +278,25 @@ internal fun OverlayContent(
     val press = remember { MutableInteractionSource() }
     val pressed by press.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.9f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
-    val idle = look == Look.Idle && !touching && !pressed
-    val small = idle && rest && whenIdle != WhenIdle.FULL
-    val dot = small && whenIdle == WhenIdle.DOT
-    val target = if (!small) 1f else if (dot) Dot / side else SHRUNK
-    val shrink by animateFloatAsState(target, MaterialTheme.motionScheme.defaultSpatialSpec())
+    // Two looks only: full, or at rest (3 s untouched in Idle) with the idle size, dock and
+    // opacity together. One progress drives them all, so nothing changes on its own.
+    val atRest = look == Look.Idle && rest && !touching && !pressed
+    val progress by animateFloatAsState(if (atRest) 1f else 0f, RestSpec)
+    val idleScale = when (whenIdle) {
+        WhenIdle.FULL -> 1f
+        WhenIdle.SHRINK -> SHRUNK
+        WhenIdle.DOT -> Dot / side
+    }
     // Docked: the bubble's centre moves out until its edge is DockInset from the screen's.
     val density = LocalDensity.current
     val window = with(density) { (side + Padding * 2).toPx() }
-    val dock = if (small) with(density) { window / 2 - DockInset.toPx() - (side * target).toPx() / 2 } else 0f
-    val out by animateFloatAsState(dock, MaterialTheme.motionScheme.defaultSpatialSpec())
+    val dock = if (whenIdle == WhenIdle.FULL) 0f
+        else with(density) { window / 2 - DockInset.toPx() - (side * idleScale).toPx() / 2 }
     val outward = if (alignEnd) 1f else -1f
-    LaunchedEffect(dock) {
-        onDock(dock.coerceAtMost(window - with(density) { MinTouch.toPx() }).coerceAtLeast(0f))
+    LaunchedEffect(atRest, dock) {
+        onDock(if (atRest) dock.coerceAtMost(window - with(density) { MinTouch.toPx() }).coerceAtLeast(0f) else 0f)
     }
-    val opacity by animateFloatAsState(if (idle) idleOpacity else 1f, fadeInSpec)
-    // A 12 dp dot has no room for the glyph.
-    val glyphs by animateFloatAsState(if (dot) 0f else 1f, fadeInSpec)
+    val rested = restLook(progress, idleScale, idleOpacity, dock)
     val polygon = shape.polygon()
     val outline = polygon.toShape()
     val keyShadow = remember(outline) { DropShadowPainter(outline, KeyShadow) }
@@ -298,10 +317,10 @@ internal fun OverlayContent(
             Modifier
                 .size(side)
                 .graphicsLayer {
-                    scaleX = scale * shrink
-                    scaleY = scale * shrink
-                    translationX = outward * (out - windowShift())
-                    alpha = opacity
+                    scaleX = scale * rested.scale
+                    scaleY = scale * rested.scale
+                    translationX = outward * (rested.offset - windowShift())
+                    alpha = rested.alpha
                     // Offscreen, the fade would crop the shadow to the bubble's square.
                     compositingStrategy = CompositingStrategy.ModulateAlpha
                 }
@@ -340,7 +359,8 @@ internal fun OverlayContent(
         ) {
             AnimatedContent(
                 targetState = look,
-                modifier = Modifier.graphicsLayer { alpha = glyphs },
+                // A 12 dp dot has no room for the glyph.
+                modifier = Modifier.graphicsLayer { alpha = if (whenIdle == WhenIdle.DOT) 1f - progress else 1f },
                 contentKey = { it::class },
                 transitionSpec = {
                     // Every look fills the bubble, so no size transform clips one to a growing box.
