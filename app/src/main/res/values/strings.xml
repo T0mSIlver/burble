@@ -28,8 +28,10 @@
     <string name="overlay_error_rejected">Dictation unavailable</string>
     <string name="overlay_error_network">No connection</string>
     <string name="overlay_error_other">Dictation failed</string>
+    <string name="overlay_error_unsent">Unsent dictation</string>
     <string name="overlay_action_retry">Tap the bubble to try again</string>
     <string name="overlay_action_later">Try again later</string>
+    <string name="overlay_action_retry_unsent">Tap to retry</string>
     <string name="overlay_action_speak">Tap the bubble and speak</string>
     <string name="overlay_action_allow_mic">Tap here to allow it in Burble</string>
     <string name="overlay_action_update">Tap here to check for updates</string>

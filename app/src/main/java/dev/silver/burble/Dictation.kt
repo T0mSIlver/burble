@@ -11,7 +11,9 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 import java.util.Locale
+import java.util.Properties
 
 /**
  * The one dictation in progress, shared by every trigger (bubble, accessibility button,
@@ -38,14 +40,16 @@ object Dictation {
             val canRetry: Boolean = false,
         ) : State {
             /**
-             * The error waits for the user, who taps to retry or drags to ✕ to drop the audio.
-             * Quota and rejection don't: retrying now would fail the same way.
+             * The error waits for the user, who taps to retry or drags to ✕ to drop the audio,
+             * however long that takes: a quota or a rejection may pass, and its words are kept.
+             * Its label still goes after 4 s.
              */
-            val waits get() = canRetry && kind != ErrorKind.QUOTA && kind != ErrorKind.REJECTED
+            val waits get() = canRetry
         }
     }
 
-    enum class ErrorKind { NO_MIC, NOTHING_HEARD, QUOTA, REJECTED, NETWORK, OTHER }
+    /** [UNSENT]: audio a stopped process left behind ([recover]). */
+    enum class ErrorKind { NO_MIC, NOTHING_HEARD, QUOTA, REJECTED, NETWORK, OTHER, UNSENT }
 
     private val main = Handler(Looper.getMainLooper())
     private val _state = MutableStateFlow<State>(State.Idle)
@@ -62,6 +66,7 @@ object Dictation {
     /** The field the dictation started in; the text goes back there even if it lost focus. */
     private var target: InsertionService.Target? = null
     private var debug = false
+    private var app: Context? = null
     @Volatile private var levelOverride: Float? = null
 
     fun toggle(context: Context) {
@@ -81,10 +86,10 @@ object Dictation {
             _state.value = State.Error(ErrorKind.NO_MIC)
             return
         }
-        // Starting over drops the audio of a failed dictation, and anything a crash left behind.
+        this.app = app
+        // Starting over from text waiting for a field drops its audio; the text stays on the
+        // clipboard. A failed dictation never gets here: a tap retries it.
         session?.cancel()
-        val pending = java.io.File(app.noBackupFilesDir, "pending")
-        pending.deleteRecursively()
         _state.value = State.Listening
         target = InsertionService.instance?.captureTarget()
         levelOverride = null
@@ -97,9 +102,11 @@ object Dictation {
             extraLanguages = languages.drop(1),
             triggerApp = InsertionService.focusedApp(),
         )
+        val dir = File(pendingDir(app), System.currentTimeMillis().toString())
+        saveRequest(dir, request)
         lateinit var s: DictationSession
         s = DictationSession(
-            dir = java.io.File(pending, System.currentTimeMillis().toString()),
+            dir = dir,
             newRecognizer = { onDone -> S3Stream(request, onDone) },
             onLevel = { heard ->
                 val l = levelOverride ?: heard
@@ -150,6 +157,36 @@ object Dictation {
         target = null
         _level.value = 0f
         _state.value = State.Idle
+        app?.let(::recover)
+    }
+
+    /**
+     * Brings back a dictation whose process stopped before its text was delivered: its audio
+     * waits as an [ErrorKind.UNSENT] error, which a tap sends and ✕ drops. The app calls it at
+     * start; dropping one brings back the next.
+     */
+    fun recover(context: Context) {
+        val app = context.applicationContext
+        this.app = app
+        if (session != null || _state.value != State.Idle) return
+        val dirs = pendingDir(app).listFiles().orEmpty().filter { it.isDirectory }.sortedBy { it.name }
+        for (dir in dirs) {
+            val request = loadRequest(dir)
+            lateinit var s: DictationSession
+            val found = DictationSession.recover(dir,
+                newRecognizer = { onDone -> S3Stream(request, onDone) },
+                onResult = { r -> main.post { finish(app, s, r) } })
+            if (found == null) {
+                dir.deleteRecursively() // stopped before any audio
+                continue
+            }
+            s = found
+            session = s
+            target = null
+            Log.i(TAG, "recovered an unsent dictation")
+            _state.value = State.Error(ErrorKind.UNSENT, canRetry = true)
+            return
+        }
     }
 
     /**
@@ -161,16 +198,26 @@ object Dictation {
         if (st is State.Done || (st is State.Error && !st.waits)) _state.value = State.Idle
     }
 
-    /** Drops text waiting in [State.Ready]; it stays on the clipboard. */
+    /** Drops text waiting in [State.Ready], and its audio; the text stays on the clipboard. */
     fun discard() {
-        if (_state.value is State.Ready) _state.value = State.Idle
+        if (_state.value !is State.Ready) return
+        dropSession()
+        _state.value = State.Idle
+        app?.let(::recover)
     }
 
     /** [State.Ready]'s text went into a field the user focused. */
     internal fun readyInserted() {
         val ready = _state.value as? State.Ready ?: return
+        dropSession()
         inserted()
         _state.value = State.Done(ready.text, Output.INSERT, delivered = true)
+    }
+
+    private fun dropSession() {
+        session?.discard()
+        session = null
+        target = null
     }
 
     /** Home says how to dictate until this first happens. */
@@ -203,12 +250,7 @@ object Dictation {
         // A failed dictation keeps its session, and with it the audio and the field, for retry.
         val retryable = r.isFailure && kindOf(r.exceptionOrNull()!!) != ErrorKind.NO_MIC
         val into = target
-        if (!retryable) {
-            session?.discard()
-            session = null
-            target = null
-        }
-        _state.value = r.fold(
+        val next = r.fold(
             onSuccess = { heard ->
                 if (heard.words.isBlank()) State.Error(ErrorKind.NOTHING_HEARD)
                 else deliver(context, heard, into)
@@ -218,6 +260,11 @@ object Dictation {
                 State.Error(kindOf(e), e.message?.take(120), canRetry = retryable)
             },
         )
+        // The audio goes once the text is in a field or the user drops it. Text waiting for a
+        // field keeps it: until then the text is only on the clipboard.
+        if (next is State.Ready) target = null
+        else if (!retryable) dropSession()
+        _state.value = next
     }
 
     /**
@@ -242,6 +289,7 @@ object Dictation {
     }
 
     internal fun kindOf(e: Throwable): ErrorKind = when (e) {
+        is Unsent -> ErrorKind.UNSENT
         is MicException, is SecurityException -> ErrorKind.NO_MIC
         is S3Exception -> when (e.grpcStatus) {
             8 -> ErrorKind.QUOTA // RESOURCE_EXHAUSTED
@@ -255,5 +303,31 @@ object Dictation {
         else -> ErrorKind.OTHER
     }
 
+    /** Each dictation's audio and request, in a folder named for its start time. */
+    private fun pendingDir(context: Context) = File(context.noBackupFilesDir, "pending")
+
+    /** What [recover] needs to send the audio again as it was first sent. */
+    private fun saveRequest(dir: File, r: S3Request) {
+        dir.mkdirs()
+        val p = Properties()
+        p["language"] = r.language
+        p["extraLanguages"] = r.extraLanguages.joinToString(",")
+        r.triggerApp?.let { p["triggerApp"] = it }
+        runCatching { File(dir, REQUEST).outputStream().use { p.store(it, null) } }
+            .onFailure { Log.w(TAG, "couldn't save the request", it) }
+    }
+
+    private fun loadRequest(dir: File): S3Request {
+        val p = Properties()
+        runCatching { File(dir, REQUEST).inputStream().use(p::load) }
+        val language = p.getProperty("language") ?: return S3Request(language = Locale.getDefault().toLanguageTag())
+        return S3Request(
+            language = language,
+            extraLanguages = p.getProperty("extraLanguages").orEmpty().split(',').filter { it.isNotBlank() },
+            triggerApp = p.getProperty("triggerApp"),
+        )
+    }
+
+    private const val REQUEST = "request.properties"
     private const val TAG = "Dictation"
 }

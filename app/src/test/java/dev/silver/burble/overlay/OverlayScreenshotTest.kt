@@ -110,7 +110,7 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
                 Bubble(Look.Ready)
             }
             Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), alignEnd = true)
-            for (kind in ErrorKind.entries) Bubble(Look.Failed(kind, waits = kind == ErrorKind.NETWORK || kind == ErrorKind.OTHER))
+            for (kind in ErrorKind.entries) Bubble(Look.Failed(kind, waits = kind != ErrorKind.NOTHING_HEARD && kind != ErrorKind.NO_MIC))
             Labelled("after 4 s: waiting for retry, no label") {
                 Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), labelled = false)
             }

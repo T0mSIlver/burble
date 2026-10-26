@@ -117,6 +117,28 @@ class DictationSessionTest {
         assertEquals(Result.success(Heard("part0 part2")), results.last())
     }
 
+    @Test fun aStoppedProcessLeavesAudioThatSendsAgain() {
+        val dir = tmp.newFolder()
+        val first = DictationSession(dir, newRecognizer = { done -> Fake(done).also { sessions.add(it) } }, onResult = { results.add(it) },
+            silenceMs = 0, newEncoder = ::PassThrough, limits = DictationSession.Limits(switchFromMs = 1000, switchByMs = 1000))
+        first.begin(0)
+        for (t in 0 until 15) first.audio(pcm(), t * 100L)
+        // The process dies here, before the audio ends: no result, the files stay.
+        val recorded = sessions.map { it.bytes.toByteArray() }
+        sessions.clear()
+
+        val again = DictationSession.recover(dir, newRecognizer = { done -> Fake(done).also { sessions.add(it) } }, onResult = { results.add(it) })!!
+        assertTrue(results.isEmpty())
+        assertTrue(again.retry())
+        assertEquals(2, sessions.size)
+        recorded.zip(sessions).forEach { (live, resent) -> assertArrayEquals(live, resent.bytes.toByteArray()) }
+        assertEquals(listOf(Result.success(Heard("part0 part1"))), results)
+    }
+
+    @Test fun nothingToRecoverFromAnEmptyFolder() {
+        assertEquals(null, DictationSession.recover(tmp.newFolder(), newRecognizer = { done -> Fake(done) }, onResult = {}))
+    }
+
     @Test fun stopsAfterSilence() {
         val s = session(silenceMs = 30_000)
         s.begin(0)

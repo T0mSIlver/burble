@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Mic
@@ -366,6 +367,7 @@ private fun Look.Failed.action() = when (kind) {
     ErrorKind.QUOTA -> R.string.overlay_action_later
     ErrorKind.NOTHING_HEARD -> R.string.overlay_action_speak
     ErrorKind.NETWORK, ErrorKind.OTHER -> R.string.overlay_action_retry
+    ErrorKind.UNSENT -> R.string.overlay_action_retry_unsent
 }
 
 /**
@@ -405,6 +407,7 @@ private fun ErrorKind.message() = when (this) {
     ErrorKind.REJECTED -> R.string.overlay_error_rejected
     ErrorKind.NETWORK -> R.string.overlay_error_network
     ErrorKind.OTHER -> R.string.overlay_error_other
+    ErrorKind.UNSENT -> R.string.overlay_error_unsent
 }
 
 private fun ErrorKind.icon(): ImageVector = when (this) {
@@ -414,6 +417,7 @@ private fun ErrorKind.icon(): ImageVector = when (this) {
     ErrorKind.REJECTED -> Icons.Rounded.Block
     ErrorKind.NETWORK -> Icons.Rounded.CloudOff
     ErrorKind.OTHER -> Icons.Rounded.ErrorOutline
+    ErrorKind.UNSENT -> Icons.Rounded.CloudUpload
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

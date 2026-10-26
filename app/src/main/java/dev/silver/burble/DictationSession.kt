@@ -16,7 +16,8 @@ import java.io.FileOutputStream
  *
  * Each segment's Ogg bytes are written to [dir] as they are made. A segment whose server session
  * fails is sent again from its file, once by itself when its audio ends and then on [retry], so
- * no failure loses the words. [discard] deletes the files once the text is delivered.
+ * no failure loses the words. [discard] deletes the files once the text is delivered. Files a
+ * stopped process left behind come back with [recover].
  *
  * [onResult] runs on a network or recording thread, again after each [retry].
  */
@@ -40,14 +41,17 @@ class DictationSession(
      */
     data class Limits(val switchFromMs: Long = 265_000, val switchByMs: Long = 280_000)
 
-    /** Only the recording thread touches [encoder], and never under [lock]: codec calls wait. */
-    private inner class Segment(val index: Int, val startMs: Long, val encoder: AudioEncoder) {
+    /**
+     * Only the recording thread touches [encoder], and never under [lock]: codec calls wait. A
+     * segment recovered from its file has neither encoder nor [out].
+     */
+    private inner class Segment(val index: Int, val startMs: Long, val encoder: AudioEncoder?) {
         val file = File(dir, "$index.ogg")
-        val out = FileOutputStream(file)
+        val out = encoder?.let { FileOutputStream(file) }
         /** Null once its live session has failed: the audio then only goes to [file]. */
         var recognizer: Recognizer? = null
         var attempt = 0
-        var recording = true
+        var recording = encoder != null
         var result: Result<Heard>? = null
     }
 
@@ -146,16 +150,16 @@ class DictationSession(
     fun retry(): Boolean = synchronized(lock) {
         if (cancelled || !reported || segments.none { it.result?.isFailure == true }) return false
         reported = false
-        segments.filter { it.result?.isFailure == true }.forEach {
-            it.result = null
-            resend(it)
-        }
+        // All cleared before any is sent: a quick answer mustn't find the others still failed.
+        val failed = segments.filter { it.result?.isFailure == true }
+        failed.forEach { it.result = null }
+        failed.forEach(::resend)
         true
     }
 
     /** Deletes the recorded audio. */
     fun discard() {
-        synchronized(lock) { segments.forEach { runCatching { it.out.close() } } }
+        synchronized(lock) { segments.forEach { runCatching { it.out?.close() } } }
         dir.deleteRecursively()
     }
 
@@ -196,7 +200,7 @@ class DictationSession(
                 ?: run { release(encoder); return false }
             close(seg)
         }
-        val ogg = into.encoder.encode(pcm)
+        val ogg = into.encoder!!.encode(pcm)
         synchronized(lock) { if (!cancelled) write(into, ogg) }
         return more
     }
@@ -228,18 +232,18 @@ class DictationSession(
 
     private fun write(seg: Segment, ogg: ByteArray) {
         if (ogg.isEmpty()) return
-        seg.out.write(ogg)
+        seg.out!!.write(ogg)
         seg.recognizer?.feed(ogg)
     }
 
     /** Ends a segment's audio; a segment whose live session failed is sent again whole. */
     private fun close(seg: Segment) {
         // A codec that broke loses only its last few frames; the rest is already written.
-        val tail = runCatching { seg.encoder.flush() }.getOrElse { ByteArray(0) }
+        val tail = runCatching { seg.encoder!!.flush() }.getOrElse { ByteArray(0) }
         synchronized(lock) {
             if (cancelled) return
             runCatching { write(seg, tail) }
-            runCatching { seg.out.close() }
+            runCatching { seg.out?.close() }
             seg.recording = false
             val live = seg.recognizer
             if (live != null) live.finish() else resend(seg)
@@ -277,8 +281,33 @@ class DictationSession(
             else Result.success(combine(segments.map { it.result!!.getOrThrow() })))
     }
 
+    /** Takes [files] as segments whose sending failed, ready for [retry]. */
+    private fun restore(files: List<Pair<Int, File>>) = synchronized(lock) {
+        audioEnded = true
+        reported = true
+        for ((index, _) in files) {
+            segments.add(Segment(index, 0, encoder = null).apply { result = Result.failure(Unsent()) })
+        }
+    }
+
     companion object {
         private const val TAG = "DictationSession"
+
+        /**
+         * The audio a stopped process left in [dir], as a session whose segments all failed:
+         * [retry] sends them. Null when [dir] holds no audio.
+         */
+        fun recover(
+            dir: File,
+            newRecognizer: (onDone: (Result<Heard>) -> Unit) -> Recognizer,
+            onResult: (Result<Heard>) -> Unit,
+        ): DictationSession? {
+            val files = dir.listFiles().orEmpty()
+                .mapNotNull { f -> f.name.removeSuffix(".ogg").toIntOrNull()?.takeIf { f.name.endsWith(".ogg") && f.length() > 0 }?.let { it to f } }
+                .sortedBy { it.first }
+            if (files.isEmpty()) return null
+            return DictationSession(dir, newRecognizer, onResult).apply { restore(files) }
+        }
         /** Level under which a buffer counts as silence: -50 dBFS, under speech at arm's length. */
         private const val QUIET = 0.25f
         /** 512 samples, 32 ms: Gboard's level cadence. */
@@ -349,6 +378,9 @@ private fun unspaced(c: Char): Boolean = when (Character.UnicodeScript.of(c.code
     Character.UnicodeScript.TIBETAN -> true
     else -> false
 }
+
+/** The audio of a dictation whose process stopped before its text arrived. */
+class Unsent : Exception("not sent before Burble stopped")
 
 /** The microphone could not be opened: permission revoked, or another app holds it. */
 class MicException(message: String) : Exception(message)
