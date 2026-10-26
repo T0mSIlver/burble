@@ -49,9 +49,13 @@ and shows what the server heard; use it to check connectivity without speaking.
 The audio you dictate and your phone's model go to Google's speech service,
 the one Gboard uses. The update check asks GitHub for the latest release.
 Nothing else: no Burble server, account, analytics or tracking. The
-accessibility service touches only the text field you were typing in, once a
-dictation ends, to insert the words. **Report a problem** opens a GitHub issue
-you read and edit before sending.
+microphone records only while you dictate, and the audio is deleted once the
+words are in; a failed dictation keeps it until you retry or drop it. The
+accessibility service shows the bubble and touches only the text field you
+were typing in, once a dictation ends, to insert the words; it keeps nothing
+it sees. **Report a problem** opens a GitHub issue you read and edit before
+sending. Burble is not affiliated with Google: see the
+[legal disclaimer](#legal-disclaimer).
 
 ## Building
 

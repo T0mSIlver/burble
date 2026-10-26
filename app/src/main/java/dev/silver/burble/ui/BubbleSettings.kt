@@ -36,7 +36,11 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +63,7 @@ const val MAX_SIZE = 96
 @Composable
 fun BubblePreview(settings: Settings, idle: Boolean) {
     val colors = MaterialTheme.colorScheme
+    val description = stringResource(if (idle) R.string.preview_idle_description else R.string.preview_active_description)
     Box(
         Modifier
             .fillMaxWidth()
@@ -66,6 +71,13 @@ fun BubblePreview(settings: Settings, idle: Boolean) {
             .height(MAX_SIZE.dp + 32.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(colors.surfaceContainerLowest)
+            // A picture, not a second bubble: no taps, and one description for TalkBack.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                }
+            }
+            .clearAndSetSemantics { contentDescription = description }
             .drawBehind {
                 // Lines of text, so the idle opacity has something to show through.
                 val line = colors.onSurfaceVariant.copy(alpha = 0.18f)

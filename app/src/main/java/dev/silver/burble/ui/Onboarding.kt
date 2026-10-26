@@ -25,7 +25,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Keyboard
@@ -52,6 +51,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import dev.silver.burble.R
 
@@ -150,6 +155,7 @@ private fun StepPage(
             }
             Spacer(Modifier.height(24.dp))
         }
+        if (step == Step.WELCOME) Disclosure()
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
             Spacer(Modifier.weight(1f))
             val (label, onClick) = when {
@@ -176,24 +182,22 @@ private fun Welcome() {
     ShapeBadge(Icons.Rounded.GraphicEq, MaterialShapes.Cookie9Sided, size = BADGE)
     Title(R.string.onb_welcome_title)
     Text(stringResource(R.string.onb_welcome_body), style = MaterialTheme.typography.bodyLarge)
-    Text(
-        stringResource(R.string.onb_mic_title),
-        style = MaterialTheme.typography.titleLarge,
-        modifier = Modifier.padding(top = 32.dp, bottom = 8.dp).semantics { heading() },
-    )
-    Text(stringResource(R.string.onb_mic_why), style = MaterialTheme.typography.bodyLarge)
-    // The disclosure, last and small: it qualifies everything above.
-    Row(Modifier.padding(top = 32.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-        Text(
-            stringResource(R.string.disclaimer_short),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
 }
 
-/** Small enough that the unlock's three steps fit above the button on a phone. */
+/** The disclosure in one line above the button; the full text is behind Privacy. */
+@Composable
+private fun Disclosure() {
+    val colors = MaterialTheme.colorScheme
+    val text = buildAnnotatedString {
+        append(stringResource(R.string.onb_disclosure))
+        append(" ")
+        withLink(LinkAnnotation.Url("$SOURCE#what-leaves-your-phone", TextLinkStyles(SpanStyle(color = colors.primary, textDecoration = TextDecoration.Underline)))) {
+            append(stringResource(R.string.privacy))
+        }
+    }
+    Text(text, Modifier.padding(horizontal = 24.dp), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+}
+
 private val BADGE = 88.dp
 
 @Composable
@@ -216,29 +220,20 @@ private fun Insertion(stage: Int?, actions: List<() -> Unit>) {
     ShapeBadge(Icons.Rounded.Keyboard, MaterialShapes.SoftBurst, size = if (stage == null) BADGE else 64.dp)
     Title(R.string.onb_insert_title)
     Text(stringResource(R.string.onb_insert_why), style = MaterialTheme.typography.bodyLarge)
-    Text(
-        stringResource(R.string.onb_insert_not),
-        Modifier.padding(top = 12.dp),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
     if (stage == null) return
     Spacer(Modifier.height(24.dp))
     Text(stringResource(R.string.onb_unlock_why), style = MaterialTheme.typography.bodyLarge)
     Spacer(Modifier.height(16.dp))
     val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf(
-            R.string.onb_unlock_1 to R.string.onb_unlock_1_detail,
-            R.string.onb_unlock_2 to R.string.onb_unlock_2_detail,
-            R.string.onb_unlock_3 to R.string.onb_unlock_3_detail,
-        ).forEachIndexed { i, (title, detail) ->
+        listOf(R.string.onb_unlock_1, R.string.onb_unlock_2, R.string.onb_unlock_3).forEachIndexed { i, title ->
             val past = i < stage
             val current = i == stage
             Row(
                 Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
                     .clickable(enabled = i <= stage, onClick = actions[i]).padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Surface(
                     shape = CircleShape,
@@ -254,14 +249,12 @@ private fun Insertion(stage: Int?, actions: List<() -> Unit>) {
                         else Text("${i + 1}", style = MaterialTheme.typography.labelLarge, color = if (current) colors.onPrimary else colors.onSurfaceVariant)
                     }
                 }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stringResource(title),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (current) colors.onSurface else colors.onSurfaceVariant,
-                    )
-                    Text(stringResource(detail), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-                }
+                Text(
+                    stringResource(title),
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (current) colors.onSurface else colors.onSurfaceVariant,
+                )
             }
         }
     }

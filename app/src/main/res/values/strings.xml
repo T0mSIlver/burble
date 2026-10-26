@@ -6,7 +6,6 @@
     <string name="quota">Dictation quota used up for now; try again later</string>
     <string name="failed">Dictation failed: %1$s</string>
     <string name="a11y_desc">Burble needs this to type your dictated words into the text field you are using. Android offers no other way to insert text into another app. After you dictate, it finds the focused text field and puts the words at the cursor. It does not read your screen, record what you type or watch other apps, and it sends nothing anywhere.</string>
-    <string name="disclaimer_short">Burble is not affiliated with Google. Your dictation audio is sent to Google servers, through a service Google has not opened to third-party apps. It may stop working at any time.</string>
     <string name="send_test_audio">Run test</string>
     <string name="sending">Running…</string>
     <string name="test_result">Test transcript: %1$s</string>
@@ -37,19 +36,14 @@
 
     <!-- Onboarding -->
     <string name="onb_welcome_title">Dictate in any app</string>
-    <string name="onb_welcome_body">Tap the bubble and speak, with no keyboard in the way. Tap it again: your words go into the text field you\'re in, or the next one you tap.</string>
+    <string name="onb_welcome_body">Tap the bubble, talk, tap again. Your words land in the field.</string>
     <string name="onb_mic_title">Let Burble hear you</string>
-    <string name="onb_mic_why">Burble records your voice only while you dictate, and keeps no recordings.</string>
-    <string name="onb_unlock_why">Android blocks this for apps installed from a file. Unblock it in three steps:</string>
-    <string name="onb_unlock_1">Open Burble in Accessibility</string>
-    <string name="onb_unlock_2">Allow restricted settings</string>
+    <string name="onb_unlock_why">Android blocks this for apps installed from a file.</string>
+    <string name="onb_unlock_1">Tap Burble, then Close</string>
+    <string name="onb_unlock_2">App info → ⋮ → Allow restricted settings</string>
     <string name="onb_unlock_3">Turn on Burble</string>
-    <string name="onb_unlock_1_detail">Select Burble. If Android blocks access, tap Close, then come back here.</string>
-    <string name="onb_unlock_2_detail">In App info, open ⋮ More options, then Allow restricted settings.</string>
-    <string name="onb_unlock_3_detail">Return to Accessibility and turn on Burble.</string>
     <string name="onb_insert_title">Let Burble type for you</string>
-    <string name="onb_insert_why">Turn on Burble in Accessibility settings. It shows the bubble over other apps and types your words into the field you\'re in.</string>
-    <string name="onb_insert_not">Burble uses this only to show the bubble and type your words. It looks at text fields only, and keeps nothing it sees.</string>
+    <string name="onb_insert_why">Turn on Burble in Accessibility settings.</string>
     <string name="onb_allow_mic">Allow microphone</string>
     <string name="onb_continue">Continue</string>
     <string name="open_settings">Open settings</string>
@@ -138,4 +132,7 @@
     <string name="languages_custom">Choose languages</string>
     <string name="section_keyboard">Keyboard</string>
     <string name="section_troubleshooting">Troubleshooting</string>
+    <string name="preview_active_description">Preview of the bubble while you use it</string>
+    <string name="preview_idle_description">Preview of the bubble when idle</string>
+    <string name="onb_disclosure">Not affiliated with Google. Audio goes to Google.</string>
 </resources>
