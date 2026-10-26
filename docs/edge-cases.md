@@ -11,15 +11,17 @@ Status: ✅ covered and passing, 👤 needs the phone.
 
 | Case | Coverage | Status |
 |---|---|---|
-| Tap → Listening → tap or silence → Finishing → Inserted | Unit `DictationSessionTest.stopsAfterSilence`; emulator recording `motion-r1` | ✅ |
-| No field at the start, or gone → Ready; the next field tapped gets it | Unit `FindAgainTest`; emulator (`DebugFieldsActivity`) | ✅ |
+| Tap → Listening → tap or silence → Finishing → Inserted (check 0.7 s) | Unit `DictationSessionTest.stopsAfterSilence`; emulator recording `motion-r1` | ✅ |
+| No field, or not on screen → clipboard, Copied (check 1 s, TalkBack says it), nothing inserted later | Unit `TargetsTest`; emulator `tools/emulator/where-text-goes.sh switch` | ✅ |
+| Keyboard hidden only in Listening and Finishing; back as the words land | Code (`followDictation`, `showKeyboard` clicks the field); emulator recording (keyboard returns in the frame the text lands) | ✅ |
+| Error: its look 1.5 s, label 4 s; with audio kept, a retry badge until tap, ✕ or the next dictation | Code (`LiveBubble`); screenshot `OverlayScreenshotTest.looks` | ✅ |
 | Failed with audio kept → retry sends the same audio, only the failed segment | Unit `DictationSessionTest.retrySendsTheSameBytes`, `retryResendsOnlyTheFailedSegment` | ✅ |
 | Nothing heard, no microphone → label, back to Idle after 4 s | Screenshot `OverlayScreenshotTest.looks`; emulator recording | ✅ |
 | Process stopped mid-dictation → "Dictation not sent" comes back, sends again | Unit `DictationSessionTest.aStoppedProcessLeavesAudioThatSendsAgain`, `nothingToRecoverFromAnEmptyFolder` | ✅ |
 | Dictation past 5 minutes chains server sessions, no audio lost | Unit `DictationSessionTest.longDictationChainsWithoutLosingAudio`, `switchesAtTheFirstQuietBufferInTheWindow` | ✅ |
 | Encoder busy or hung: no audio lost, no hang | Unit `EncoderBackpressureTest` | ✅ |
 | Tap during Finishing or on the check does nothing | Code (`tapBubble`); emulator | ✅ |
-| ✕ during Listening or Finishing cancels; Ready drops (text stays on the clipboard); Error drops the audio; Inserted ends and snoozes | Code (`Overlay.release`); emulator | ✅ |
+| ✕ during Listening or Finishing cancels; Error drops the audio; Inserted or Copied ends and snoozes | Code (`Overlay.release`); emulator | ✅ |
 | Dictation ends with a finger on the bubble: result at full size, 3 s count from release | Code (`LiveBubble` rest timer keyed on touch); emulator | ✅ |
 | Every state over light and dark apps, every shape, three sizes | Screenshot `OverlayScreenshotTest.overContent`, `looks`; `ShapesTest` | ✅ |
 | Real dictation to Google, end to end | 👤 1 | 👤 |
@@ -50,7 +52,7 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | ✕ snooze: back at the next unlock (Always) | Unit `VisibilityTest.alwaysWakesOnlyAtTheNextUnlock`; emulator (swipe lock) | ✅ |
 | ✕ snooze, While typing: back at another field, or the same after focus left | Unit `VisibilityTest.whileTypingWakesAtAnotherField`, `…AtTheSameFieldAfterFocusLeft`, `snoozedWithNoFieldWakesAtAnyField`; emulator | ✅ |
 | Fields compared across nodes on Android 12 (no `equals` before 13) | Code (`FieldKey`: window, id, bounds) | ✅ |
-| Use Burble off: overlay gone; during Listening it stops so the words land; during Ready it discards to the clipboard | Code (`InsertionService`); emulator (switch on home) | ✅ |
+| Use Burble off: overlay gone; during Listening it stops so the words land | Code (`InsertionService`); emulator (switch on home) | ✅ |
 | Use Burble on clears a snooze | Code (`setOverlay`) | ✅ |
 | Unsent dictation recovered while Use Burble is off: waits, shows once on | Code (`Dictation.recover`, overlay follows the state) | ✅ |
 | Lock screen hides the bubble; keyboard never kept hidden there | Code (`updateLock`); 👤 2 | 👤 |
@@ -61,6 +63,10 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Case | Coverage | Status |
 |---|---|---|
 | EditText, Compose TextField (state and value), Chrome textarea, contenteditable, address bar, Messages | Emulator (`DebugFieldsActivity`, local web page, Messages) | ✅ |
+| The last field tapped during the dictation gets the words, else the start field | Unit `TargetsTest`; emulator `tools/emulator/where-text-goes.sh tap` (EditText start, Compose field tapped) | ✅ |
+| Focus an app moves by itself isn't a tap; a first tap sends only focus, so focus within 1.5 s of a touch outside the bubble counts | Code (`InsertionService.tappedField`); emulator `where-text-goes.sh tap` | ✅ |
+| Started in app A, switched to B, stopped → clipboard; back in A, nothing lands | Emulator `tools/emulator/where-text-goes.sh switch` | ✅ |
+| Tapping a Chrome web field during a dictation | 👤 8 | 👤 |
 | Field rebuilt when the keyboard hides: found again by focus, id, only field, or edges at or below | Unit `FindAgainTest`; emulator | ✅ |
 | Field that drops focus when the keyboard hides | Emulator (`DebugFieldsActivity`) | ✅ |
 | Claude app, Messages with hide-keyboard on, on the phone | 👤 1 | 👤 |
@@ -96,3 +102,4 @@ Status: ✅ covered and passing, 👤 needs the phone.
 5. Enable two keyboard languages in Gboard: Advanced shows both under "From your keyboard"; dictate in the second.
 6. With Dot docked at the edge: a drag that starts on the dot moves it; Android's back gesture doesn't take it.
 7. On a fresh install, finish onboarding to Try it: tap the bubble, say a sentence, tap again; it lands in the field. Rotate the phone mid-sentence once.
+8. Start a dictation in Chrome's address bar, tap a text box on the page, stop: the words land in the text box.
