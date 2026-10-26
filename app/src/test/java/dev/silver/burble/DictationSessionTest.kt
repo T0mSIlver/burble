@@ -22,7 +22,7 @@ class DictationSessionTest {
     }
 
     /** One server session; [answer] decides its result when the audio ends. */
-    private inner class Fake(val onDone: (Result<String>) -> Unit) : Recognizer {
+    private inner class Fake(val onDone: (Result<Heard>) -> Unit) : Recognizer {
         val bytes = ByteArrayOutputStream()
         override fun start() {}
         override fun feed(chunk: ByteArray) = bytes.write(chunk)
@@ -31,8 +31,8 @@ class DictationSessionTest {
     }
 
     private val sessions = ArrayList<Fake>()
-    private var answer: (Int, ByteArray) -> Result<String> = { i, _ -> Result.success("part$i") }
-    private val results = ArrayList<Result<String>>()
+    private var answer: (Int, ByteArray) -> Result<Heard> = { i, _ -> Result.success(Heard("part$i")) }
+    private val results = ArrayList<Result<Heard>>()
 
     private fun session(limits: DictationSession.Limits = DictationSession.Limits(), silenceMs: Long = 0) =
         DictationSession(
@@ -66,7 +66,7 @@ class DictationSessionTest {
         s.endAudio()
 
         assertEquals(4, sessions.size) // 0–2 s, 2–4 s, 4–6 s, 6–7 s
-        assertEquals(listOf(Result.success("part0 part1 part2 part3")), results)
+        assertEquals(listOf(Result.success(Heard("part0 part1 part2 part3"))), results)
         val sent = sessions.map { it.bytes.toByteArray() }
         sent.forEach { assertEquals(-1, it.last().toInt()) }
         assertArrayEquals(fed.toByteArray(), sent.fold(ByteArray(0)) { a, b -> a + b.copyOf(b.size - 1) })
@@ -84,7 +84,7 @@ class DictationSessionTest {
     @Test fun retrySendsTheSameBytes() {
         val s = session()
         // The first session drops while recording; it and the automatic resend fail.
-        answer = { i, _ -> if (i < 2) Result.failure(java.io.IOException("offline")) else Result.success("hello") }
+        answer = { i, _ -> if (i < 2) Result.failure(java.io.IOException("offline")) else Result.success(Heard("hello")) }
         s.begin(0)
         for (t in 0 until 10) {
             s.audio(pcm(), t * 100L)
@@ -94,7 +94,7 @@ class DictationSessionTest {
 
         assertTrue(results.single().isFailure)
         assertTrue(s.retry())
-        assertEquals(Result.success("hello"), results.last())
+        assertEquals(Result.success(Heard("hello")), results.last())
         assertEquals(3, sessions.size)
         assertArrayEquals(sessions[1].bytes.toByteArray(), sessions[2].bytes.toByteArray())
         assertEquals(10 * 3200 + 1, sessions[2].bytes.size())
@@ -104,7 +104,7 @@ class DictationSessionTest {
     @Test fun retryResendsOnlyTheFailedSegment() {
         val s = session(DictationSession.Limits(switchFromMs = 1000, switchByMs = 1000))
         var failSecond = true
-        answer = { i, _ -> if (i == 1 && failSecond) Result.failure(S3Exception(14, "unavailable")) else Result.success("part$i") }
+        answer = { i, _ -> if (i == 1 && failSecond) Result.failure(S3Exception(14, "unavailable")) else Result.success(Heard("part$i")) }
         s.begin(0)
         for (t in 0 until 15) s.audio(pcm(), t * 100L)
         s.endAudio()
@@ -114,7 +114,7 @@ class DictationSessionTest {
         assertTrue(s.retry())
         assertEquals(3, sessions.size)
         assertArrayEquals(sessions[1].bytes.toByteArray(), sessions[2].bytes.toByteArray())
-        assertEquals(Result.success("part0 part2"), results.last())
+        assertEquals(Result.success(Heard("part0 part2")), results.last())
     }
 
     @Test fun stopsAfterSilence() {
@@ -123,6 +123,12 @@ class DictationSessionTest {
         assertTrue(s.audio(pcm(), 0))
         assertTrue(s.audio(pcm(loud = false), 29_900))
         assertFalse(s.audio(pcm(loud = false), 30_000))
+    }
+
+    @Test fun aCommandInOneSegmentKeepsTheOthersAsDictation() {
+        val edit = Heard("Dear Sam, thanks.", UserIntent.REWRITE, "make it polite")
+        assertEquals(Heard("first part make it polite"), combine(listOf(Heard("first part"), edit)))
+        assertEquals(Heard("make it polite", UserIntent.REWRITE, "make it polite"), combine(listOf(edit, Heard(""))))
     }
 
     @Test fun joinsWithSpacesWhereTheLanguageUsesThem() {

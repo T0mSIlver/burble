@@ -23,6 +23,20 @@ data class S3Request(
     val maskOffensiveWords: Boolean = false,
 )
 
+/** One server session's final result: [text], and how the server read it. */
+data class Heard(
+    val text: String,
+    /** [UserIntent.DICTATION] unless the server heard a command. */
+    val intent: Int = UserIntent.DICTATION,
+    /** What the user said, word for word, when [intent] is a command. */
+    val verbatim: String? = null,
+) {
+    val isCommand get() = !UserIntent.isDictation(intent)
+
+    /** The user's own words: for a command, what they said rather than what the server made of it. */
+    val words get() = if (isCommand) verbatim?.takeIf { it.isNotBlank() } ?: text else text
+}
+
 /** One server session's audio sink, as [DictationSession] drives it. */
 interface Recognizer {
     fun start()
@@ -41,7 +55,7 @@ interface Recognizer {
  */
 class S3Stream(
     private val request: S3Request,
-    private val onDone: (Result<String>) -> Unit,
+    private val onDone: (Result<Heard>) -> Unit,
     client: OkHttpClient = S3.client(),
 ) : Recognizer {
     private val http = client
@@ -50,14 +64,8 @@ class S3Stream(
     private var call: Call? = null
     @Volatile private var finished = false
     private var finalText: String? = null
-
-    /** The server's reading of the final result: [UserIntent.DICTATION] unless it heard a command. */
-    @Volatile var intent: Int = UserIntent.DICTATION
-        private set
-
-    /** What the user said, word for word, when [intent] is a command; null for dictation. */
-    @Volatile var transcript: String? = null
-        private set
+    private var intent = UserIntent.DICTATION
+    private var verbatim: String? = null
 
     override fun feed(chunk: ByteArray) {
         if (chunk.isNotEmpty()) queue.put(chunk)
@@ -155,7 +163,7 @@ class S3Stream(
             }
             val text = finalText
             // A clean end with no transcript (silence) is an empty result, not a failure.
-            complete(Result.success(text ?: ""))
+            complete(Result.success(Heard(text ?: "", intent, verbatim)))
         } catch (e: Exception) {
             complete(Result.failure(e))
         }
@@ -185,7 +193,7 @@ class S3Stream(
         // aasi extension 74956224 (aatt): f4 intent enum (aats), f1 the verbatim transcript.
         Pb.first(span, 74956224)?.let { voiceAction ->
             intent = (Pb.firstVarint(voiceAction, 4) ?: 0L).toInt()
-            transcript = Pb.first(voiceAction, 1)?.toString(Charsets.UTF_8)
+            verbatim = Pb.first(voiceAction, 1)?.toString(Charsets.UTF_8)
         }
     }
 
@@ -199,7 +207,7 @@ class S3Stream(
         return off
     }
 
-    private fun complete(r: Result<String>) {
+    private fun complete(r: Result<Heard>) {
         if (finished) return
         finished = true
         onDone(r)

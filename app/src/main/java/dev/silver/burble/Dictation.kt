@@ -61,7 +61,6 @@ object Dictation {
     private var session: DictationSession? = null
     /** The field the dictation started in; the text goes back there even if it lost focus. */
     private var target: InsertionService.Target? = null
-    @Volatile private var lastStream: S3Stream? = null
     private var debug = false
     @Volatile private var levelOverride: Float? = null
 
@@ -88,7 +87,6 @@ object Dictation {
         pending.deleteRecursively()
         _state.value = State.Listening
         target = InsertionService.instance?.captureTarget()
-        lastStream = null
         levelOverride = null
         debug = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val settings = Prefs.settings.value
@@ -102,8 +100,7 @@ object Dictation {
         lateinit var s: DictationSession
         s = DictationSession(
             dir = java.io.File(pending, System.currentTimeMillis().toString()),
-            // The last stream holds the final result's intent: later segments and retries make new ones.
-            newRecognizer = { onDone -> S3Stream(request, onDone).also { lastStream = it } },
+            newRecognizer = { onDone -> S3Stream(request, onDone) },
             onLevel = { heard ->
                 val l = levelOverride ?: heard
                 _level.value = l
@@ -188,15 +185,10 @@ object Dictation {
         session?.cancel()
         session = null
         _state.value = State.Finishing
-        finish(context.applicationContext, null, Result.success(text), intent, text)
+        finish(context.applicationContext, null, Result.success(Heard(text, intent, text)))
     }
 
-    private fun finish(context: Context, from: DictationSession?, r: Result<String>) {
-        val last = lastStream
-        finish(context, from, r, last?.intent ?: UserIntent.DICTATION, last?.transcript)
-    }
-
-    private fun finish(context: Context, from: DictationSession?, r: Result<String>, intent: Int, transcript: String?) {
+    private fun finish(context: Context, from: DictationSession?, r: Result<Heard>) {
         if (_state.value == State.Idle || from !== session) return // cancelled or replaced
         _level.value = 0f
         // A failed dictation keeps its session, and with it the audio and the field, for retry.
@@ -208,9 +200,9 @@ object Dictation {
             target = null
         }
         _state.value = r.fold(
-            onSuccess = { text ->
-                if (text.isBlank()) State.Error(ErrorKind.NOTHING_HEARD)
-                else deliver(context, text, intent, transcript, into)
+            onSuccess = { heard ->
+                if (heard.words.isBlank()) State.Error(ErrorKind.NOTHING_HEARD)
+                else deliver(context, heard, into)
             },
             onFailure = { e ->
                 android.util.Log.e(TAG, "dictation failed", e)
@@ -225,14 +217,12 @@ object Dictation {
      * user focuses a field. A result the server read as a command (edit, rewrite, compose) is
      * never typed as if dictated: the user's own words go to the clipboard only.
      */
-    private fun deliver(
-        context: Context, text: String, intent: Int, transcript: String?, into: InsertionService.Target?,
-    ): State {
-        if (!UserIntent.isDictation(intent)) {
-            val words = transcript?.takeIf { it.isNotBlank() } ?: text
-            copy(context, words)
-            return State.Done(words, Output.CLIPBOARD, delivered = true)
+    private fun deliver(context: Context, heard: Heard, into: InsertionService.Target?): State {
+        if (heard.isCommand) {
+            copy(context, heard.words)
+            return State.Done(heard.words, Output.CLIPBOARD, delivered = true)
         }
+        val text = heard.text
         if (into != null && InsertionService.instance?.insert(into, text) == true) {
             inserted()
             return State.Done(text, Output.INSERT, delivered = true)
