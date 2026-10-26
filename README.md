@@ -24,7 +24,7 @@ Android 12 or later. Download the APK from [the latest release](https://github.c
 
 Your dictated audio goes to Google's speech server, the one Gboard uses. There is no Burble server, account or tracking. [Everything Burble sends and keeps](docs/privacy.md).
 
-Questions: [FAQ](docs/faq.md). Not working? [Status](https://github.com/T0mSIlver/burble/issues/1).
+Questions: [FAQ](docs/faq.md).
 
 ## Disclaimer
 

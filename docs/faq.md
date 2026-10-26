@@ -12,10 +12,6 @@ Android lets an app type into another app's field only through an accessibility 
 
 Burble never signs in to Google, so it uses no account of yours. Google can block Burble at any time, and dictation in Burble then stops working. Nothing else on your phone changes.
 
-### Is it broken right now?
-
-The [pinned status issue](https://github.com/T0mSIlver/burble/issues/1) says whether Burble works today and what to try first.
-
 ### Does it work on Samsung and other non-Pixel phones?
 
 Burble needs Android 12 or later and uses no Pixel-only part, so the phone's brand shouldn't matter. If it fails on yours, tap **Report a problem** in Burble. It follows your keyboard's languages, or you pick from 34 common ones in **Advanced**, and Google's server decides how well each works.
