@@ -24,7 +24,7 @@ class DictationSession(
     private val dir: File,
     private val newRecognizer: (onDone: (Result<String>) -> Unit) -> Recognizer,
     private val onResult: (Result<String>) -> Unit,
-    /** The wave's level per 100 ms buffer, 0..1: the voice against the room ([VoiceLevel]). */
+    /** The wave's level every 32 ms, 0..1: the voice against the room ([VoiceLevel]). */
     private val onLevel: (Float) -> Unit = {},
     /** Stops after this long without voice; 0 never does. */
     private val silenceMs: Long = 30_000,
@@ -78,12 +78,29 @@ class DictationSession(
                 // Another app holding the mic (a call, a recorder) fails here, not at init.
                 if (r.recordingState != AudioRecord.RECORDSTATE_RECORDING) throw MicException("busy")
                 begin(SystemClock.elapsedRealtime())
+                // Read 32 ms at a time, as Gboard measures its level, and hand the audio on in
+                // the same 100 ms buffers as before.
+                val chunk = ByteArray(LEVEL_BYTES)
                 val pcm = ByteArray(3200) // 100 ms
-                while (!stopping) {
-                    val n = r.read(pcm, 0, pcm.size)
+                var fill = 0
+                var more = true
+                while (!stopping && more) {
+                    val n = r.read(chunk, 0, chunk.size)
                     if (n <= 0) break
-                    if (!audio(pcm.copyOf(n), SystemClock.elapsedRealtime())) break
+                    hear(chunk, n)
+                    var at = 0
+                    while (at < n) {
+                        val k = minOf(n - at, pcm.size - fill)
+                        System.arraycopy(chunk, at, pcm, fill, k)
+                        fill += k
+                        at += k
+                        if (fill == pcm.size) {
+                            fill = 0
+                            if (!audio(pcm.copyOf(), SystemClock.elapsedRealtime())) { more = false; break }
+                        }
+                    }
                 }
+                if (more && fill > 0) audio(pcm.copyOf(fill), SystemClock.elapsedRealtime())
                 stopping = true
                 endAudio()
             } catch (e: Exception) {
@@ -147,10 +164,14 @@ class DictationSession(
         }
     }
 
+    /** Takes 32 ms of PCM for the wave's level. */
+    internal fun hear(pcm: ByteArray, n: Int) {
+        if (!cancelled) onLevel(voice.feed(pcm, n))
+    }
+
     /** Takes one PCM buffer; false when silence has lasted [silenceMs]. */
     internal fun audio(pcm: ByteArray, nowMs: Long): Boolean = synchronized(lock) {
         if (cancelled) return false
-        onLevel(voice.feed(pcm, pcm.size))
         val level = levelOf(pcm, pcm.size)
         val quiet = level < QUIET
         if (!quiet) lastVoiceMs = nowMs
@@ -237,6 +258,8 @@ class DictationSession(
         private const val TAG = "DictationSession"
         /** Level under which a buffer counts as silence: -50 dBFS, under speech at arm's length. */
         private const val QUIET = 0.25f
+        /** 512 samples, 32 ms: Gboard's level cadence. */
+        private const val LEVEL_BYTES = 1024
 
         /**
          * Loudness of 16-bit little-endian PCM, 0..1: -55 dBFS (a quiet room) to -25 dBFS (normal

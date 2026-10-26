@@ -52,7 +52,7 @@ object Dictation {
     val state: StateFlow<State> = _state.asStateFlow()
 
     /**
-     * The voice against the room ([VoiceLevel]), 0..1, ten updates a second while listening.
+     * The voice against the room ([VoiceLevel]), 0..1, every 32 ms while listening.
      * Drives the wave, which treats anything under 0.5 as silence.
      */
     private val _level = MutableStateFlow(0f)
