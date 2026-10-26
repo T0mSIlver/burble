@@ -240,20 +240,23 @@ private fun CanvasWave(frame: () -> WaveFrame, colors: WaveColors, surface: Colo
     Spacer(modifier.drawWithCache {
         val c = Offset(size.width / 2, size.height / 2)
         val r = hypot(size.width, size.height) / 2
-        val n = 16
+        val n = 64 // about 0.7 dp a stop, fine enough for the crisp silent edge
         onDrawBehind {
             val f = frame()
             // The humps' rise and fall, without their shape round the edge.
             val edge = 15f + 20f * f.glow + 0.25f * (13f + 25f * f.glow) * sin(1.1f * f.morph)
-            val band = BAR_DP / 6 * (1 + f.bands)
+            val e0 = 15f + 20f * f.glow
+            val band = minOf(BAR_DP / 6 * (1 + f.bands), 0.45f * e0)
+            val soft = 6f * (SILENT_SOFT + (1 - SILENT_SOFT) * f.glow)
             val glow = Array(n + 1) { i ->
                 val u = i * r / n / dp
-                i / n.toFloat() to colors.glow.copy(alpha = logistic((edge - u) / 6f) * reveal(u))
+                i / n.toFloat() to colors.glow.copy(alpha = logistic((edge - u) / soft) * reveal(u))
             }
             val core = Array(n + 1) { i ->
                 val u = i * r / n / dp
                 val t = ((band - u) / band).coerceIn(0f, 1f)
-                i / n.toFloat() to Color.White.copy(alpha = CORE * t * t * (3 - 2 * t))
+                val ring = exp(-((u - 0.3f * e0) / 0.8f).pow(2)) * 0.3f * (1 - f.glow)
+                i / n.toFloat() to Color.White.copy(alpha = (CORE * t * t * (3 - 2 * t) + ring).coerceAtMost(1f))
             }
             drawRect(surface)
             drawRect(Brush.radialGradient(*glow, center = c, radius = r))
@@ -265,6 +268,7 @@ private fun CanvasWave(frame: () -> WaveFrame, colors: WaveColors, surface: Colo
 private fun logistic(x: Float) = 1f / (1f + exp(-x))
 private fun reveal(u: Float) = 1f / (1f + exp(6f * (u - 2f * BAR_DP / 3f) / BAR_DP))
 private const val CORE = 0.2f
+private const val SILENT_SOFT = 0.2f
 
 // The shader. p is in px from the top-left; u is the distance from the centre in dp, the
 // height above Gboard's bar edge.
@@ -288,6 +292,7 @@ const float CELL = 3.75;   // lattice cell, dp
 const float DOT_MAX = 0.37;
 const float DOT_MIN = -0.07;
 const float CORE = 0.2;
+const float SILENT_SOFT = 0.2;
 
 // Rotate v by -a, as Gboard's 2D rotation does.
 float2 turn(float2 v, float a) {
@@ -336,10 +341,12 @@ float glowNoise(float2 q) {
 }
 
 // The glow's opacity at height u: a soft step at 15 + 20 * level dp, moved by the humps (noise
-// taken at hq, round the centre), its softness varying with the noise at q.
+// taken at hq, round the centre), its softness varying with the noise at q. Gboard's 6 dp edge
+// reads as a glow on its 51 dp bar but as fog across the bubble, so silence draws it at a fifth
+// of that and the voice brings Gboard's softness back.
 float glowAlpha(float u, float2 q, float2 hq) {
     float e = 15.0 + 20.0 * glowLvl + (glowNoise(hq) - 0.5) * (13.0 + 25.0 * glowLvl);
-    float x = (e - u) / 6.0;
+    float x = (e - u) / (6.0 * mix(SILENT_SOFT, 1.0, glowLvl));
     return 1.0 / (1.0 + exp(-x / (0.5 * (1.0 + 2.0 * glowNoise(q)))));
 }
 
@@ -404,10 +411,21 @@ half4 main(float2 p) {
     float open = 1.0 / (1.0 + exp(6.0 * (u - 2.0 * R * opened - BAR / 3.0) / BAR));
     float shown = min(reveal, open);
     float a = glowAlpha(u, q + float2(-drift * BAR, 0.0), hq) * shown;
-    half3 col = mix(surface.rgb, glowColor.rgb, half(a));
-    float f = BAR / 3.0 * (1.0 + bandsLvl) * dp;
+    float e0 = 15.0 + 20.0 * glowLvl;
+    // In silence the disc is saturated mid-way and paler toward its rim, as Gboard's band pales
+    // above its saturated part.
+    float pale = 0.6 * smoothstep(0.35 * e0, e0, u) * (1.0 - glowLvl);
+    half3 tone = mix(glowColor.rgb, mix(glowColor.rgb, half3(1.0), 0.35), half(pale));
+    half3 col = mix(surface.rgb, tone, half(a));
+    // The light bands stop inside the rim, so nothing hazes past it.
+    float f = min(BAR / 3.0 * (1.0 + bandsLvl), 0.9 * e0) * dp;
     col = lighten(col, band(u * dp, f, glowColor.rgb, glowColor.rgb) * half(0.9 * shown));
     col = lighten(col, band(u * dp, 0.5 * f, half3(1.0), glowColor.rgb) * half(CORE * shown));
+    // Gboard's thin pale line at the bar's source: a faint ring round the centre that breathes
+    // and wobbles with the glow's noise, fading as the voice comes in.
+    float rr = 0.3 * e0 * (1.0 + 0.25 * (glowNoise(hq * 0.6) - 0.5));
+    float ring = exp(-pow((u - rr) / 0.8, 2.0)) * (0.75 + 0.25 * sin(morph * 2.1));
+    col = mix(col, half3(1.0), half(0.3 * ring * a * (1.0 - glowLvl)));
     float area = max(0.0, 1.0 - u / BAR) * smoothstep(-1.32 * BAR, 0.0, -min(u, BAR - u));
     float dots = clamp(dotsAlpha * area * diamonds(p, c) * a, 0.0, 1.0);
     return half4(mix(col, dotColor.rgb, half(dots)), 1.0);
