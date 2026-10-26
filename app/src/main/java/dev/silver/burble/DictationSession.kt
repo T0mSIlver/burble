@@ -33,6 +33,8 @@ class DictationSession(
     private val silenceMs: Long = 30_000,
     private val newEncoder: () -> AudioEncoder = { OggOpusEncoder() },
     private val limits: Limits = Limits(),
+    /** Opened on the recording thread; the debug build's test hook plays a clip instead. */
+    private val newMic: () -> PcmSource = { Microphone() },
 ) {
     /**
      * Segments switch at the first quiet buffer after [switchFromMs], and by [switchByMs] at the
@@ -67,31 +69,23 @@ class DictationSession(
 
     val isActive get() = thread?.isAlive == true && !stopping
 
-    @SuppressLint("MissingPermission") // caller checks RECORD_AUDIO
     fun start() {
         if (thread != null) return
         thread = Thread {
-            var record: AudioRecord? = null
+            var mic: PcmSource? = null
             try {
-                val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT)
-                val r = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000,
-                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
-                    maxOf(minBuf, 32000))
-                record = r
-                if (r.state != AudioRecord.STATE_INITIALIZED) throw MicException("init ${r.state}")
-                r.startRecording()
-                // Another app holding the mic (a call, a recorder) fails here, not at init.
-                if (r.recordingState != AudioRecord.RECORDSTATE_RECORDING) throw MicException("busy")
+                val m = newMic()
+                mic = m
+                Latency.mark("mic open")
                 begin(SystemClock.elapsedRealtime())
-                // Read 32 ms at a time, as Gboard measures its level, and hand the audio on in
-                // the same 100 ms buffers as before.
+                // Read 32 ms at a time, as Gboard measures its level, and encode 64 ms at a
+                // time, as Gboard does: each buffer goes to the server as one Ogg page.
                 val chunk = ByteArray(LEVEL_BYTES)
-                val pcm = ByteArray(3200) // 100 ms
+                val pcm = ByteArray(2048) // 64 ms
                 var fill = 0
                 var more = true
                 while (!stopping && more) {
-                    val n = r.read(chunk, 0, chunk.size)
+                    val n = m.read(chunk)
                     if (n <= 0) break
                     hear(chunk, n)
                     var at = 0
@@ -122,8 +116,7 @@ class DictationSession(
                     if (!cancelled) onAudioEnd()
                 }
             } finally {
-                runCatching { record?.stop() }
-                runCatching { record?.release() }
+                runCatching { mic?.close() }
             }
         }.apply { start() }
     }
@@ -211,6 +204,7 @@ class DictationSession(
             audioEnded = true
             segments.lastOrNull()?.takeIf { it.recording }
         }
+        Latency.mark("audio end")
         // Closing a cancelled segment still frees its codec.
         last?.let(::close)
         synchronized(lock) { if (!cancelled) reportIfDone() }
@@ -240,6 +234,7 @@ class DictationSession(
     private fun close(seg: Segment) {
         // A codec that broke loses only its last few frames; the rest is already written.
         val tail = runCatching { seg.encoder!!.flush() }.getOrElse { ByteArray(0) }
+        Latency.mark("encoder flushed")
         synchronized(lock) {
             if (cancelled) return
             runCatching { write(seg, tail) }
@@ -362,6 +357,43 @@ private fun unspaced(c: Char): Boolean = when (Character.UnicodeScript.of(c.code
     Character.UnicodeScript.KHMER, Character.UnicodeScript.MYANMAR,
     Character.UnicodeScript.TIBETAN -> true
     else -> false
+}
+
+/** 16 kHz mono PCM16, read on the recording thread. */
+interface PcmSource {
+    /** Fills [buf] with the next audio; 0 or less ends the recording. */
+    fun read(buf: ByteArray): Int
+    fun close()
+}
+
+/** The microphone, as Gboard opens it for dictation. */
+@SuppressLint("MissingPermission") // caller checks RECORD_AUDIO
+internal class Microphone : PcmSource {
+    private val record: AudioRecord
+
+    init {
+        val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT)
+        val r = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000,
+            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, 32000))
+        record = r
+        try {
+            if (r.state != AudioRecord.STATE_INITIALIZED) throw MicException("init ${r.state}")
+            r.startRecording()
+            // Another app holding the mic (a call, a recorder) fails here, not at init.
+            if (r.recordingState != AudioRecord.RECORDSTATE_RECORDING) throw MicException("busy")
+        } catch (e: Exception) {
+            close()
+            throw e
+        }
+    }
+
+    override fun read(buf: ByteArray) = record.read(buf, 0, buf.size)
+
+    override fun close() {
+        runCatching { record.stop() }
+        runCatching { record.release() }
+    }
 }
 
 /** The audio of a dictation whose process stopped before its text arrived. */

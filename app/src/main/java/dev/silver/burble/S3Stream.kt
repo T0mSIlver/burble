@@ -2,14 +2,22 @@ package dev.silver.burble
 
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.Connection
+import okhttp3.EventListener
+import okhttp3.Handshake
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.Response
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.util.Log
 import okio.BufferedSink
 import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -43,13 +51,15 @@ interface Recognizer {
 class S3Stream(
     private val request: S3Request,
     private val onDone: (Result<String>) -> Unit,
-    client: OkHttpClient = S3.client(),
+    client: OkHttpClient = S3.client,
 ) : Recognizer {
     private val http = client
     /** Encoded Ogg Opus bytes; the empty array marks the end of audio. */
     private val queue = LinkedBlockingQueue<ByteArray>()
     private var call: Call? = null
     @Volatile private var finished = false
+    /** The end of data went out: a final result now is the last. */
+    @Volatile private var ended = false
     private var finalText: String? = null
     private var intent = UserIntent.DICTATION
 
@@ -111,6 +121,7 @@ class S3Stream(
                             S3Exception(code, resp.header("grpc-message") ?: resp.message)))
                         return
                     }
+                    Latency.mark("response headers")
                     readResponses(resp)
                 }
             }
@@ -122,7 +133,9 @@ class S3Stream(
         try {
             sink.use { out ->
                 out.write(grpcFrame(s3Header(request, elapsedMs()))).flush()
+                Latency.mark("header sent")
                 val chunks = Chunker(Identity.CHUNK)
+                var sent = false
                 while (!finished) {
                     val bytes = queue.poll(120, TimeUnit.SECONDS)
                         ?: throw IOException("no audio within 120 s")
@@ -131,13 +144,18 @@ class S3Stream(
                         out.write(grpcFrame(s3Audio(c, elapsedMs())))
                     }
                     if (end) {
+                        ended = true
                         if (!finished) out.write(grpcFrame(S3_END))
                         out.flush()
+                        Latency.mark("last audio and end of data sent")
                         break
                     }
                     out.flush()
+                    if (!sent) Latency.mark("first audio sent")
+                    sent = true
                 }
             }
+            Latency.mark("request half-closed")
         } catch (e: IOException) {
             // A session already answered or cancelled stops writing; otherwise the response side
             // reports the failure once the call is gone.
@@ -151,6 +169,7 @@ class S3Stream(
     private fun readResponses(resp: Response) {
         val src = resp.body?.byteStream()
             ?: run { complete(Result.failure(S3Exception(-1, "empty body"))); return }
+        var messages = 0
         try {
             while (true) {
                 val lenBuf = ByteArray(5)
@@ -163,19 +182,19 @@ class S3Stream(
                 if (len > 4_000_000) throw S3Exception(-1, "oversized frame $len")
                 val payload = ByteArray(len)
                 if (readFully(src, payload) < len) break
+                if (++messages == 1) Latency.mark("first response message")
                 handleMessage(payload)
             }
             val trailers = resp.trailers()
+            Latency.mark("stream closed")
             val status = trailers["grpc-status"] ?: "0"
             if (status != "0") {
                 complete(Result.failure(S3Exception(status.toInt(),
                     trailers["grpc-message"] ?: "trailer failure")))
                 return
             }
-            val text = finalText
             // A clean end with no transcript (silence) is an empty result, not a failure.
-            Log.d(TAG, "final result, intent $intent")
-            complete(Result.success(text ?: ""))
+            complete(Result.success(finalText ?: ""))
         } catch (e: Exception) {
             complete(Result.failure(e))
         }
@@ -211,6 +230,12 @@ class S3Stream(
         val transcript = voiceAction?.let { Pb.first(it, 1)?.toString(Charsets.UTF_8) }
             ?.takeIf { intent != UserIntent.DICTATION && it.isNotEmpty() }
         finalText = transcript ?: text
+        Latency.mark("final result")
+        // Gboard inserts on the final result, not when the stream closes after it.
+        if (ended) {
+            Log.d(TAG, "final result, intent $intent")
+            complete(Result.success(finalText!!))
+        }
     }
 
     private fun readFully(src: java.io.InputStream, buf: ByteArray): Int {
@@ -331,10 +356,40 @@ internal fun grpcStatusOf(http: Int): Int = when (http) {
 }
 
 object S3 {
-    fun client(): OkHttpClient = OkHttpClient.Builder()
+    /**
+     * One client for every session, so a dictation reuses the last one's connection, as Gboard's
+     * gRPC channel does, instead of a new TLS handshake each time.
+     */
+    val client: OkHttpClient by lazy { newClient() }
+
+    /**
+     * Drops the idle connections, which a new network leaves dead: a session sent on one would
+     * wait for an answer that never comes.
+     */
+    fun watchNetwork(context: Context) {
+        context.getSystemService(ConnectivityManager::class.java)
+            .registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) = client.connectionPool.evictAll()
+                override fun onLost(network: Network) = client.connectionPool.evictAll()
+            })
+    }
+
+    private fun newClient(): OkHttpClient = OkHttpClient.Builder()
+        .eventListener(Timing)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .retryOnConnectionFailure(false)
+        // A connection that stops answering fails within a minute instead of the read timeout.
+        .pingInterval(30, TimeUnit.SECONDS)
         .build()
+}
+
+/** The connection's steps, into [Latency]. */
+private object Timing : EventListener() {
+    override fun connectStart(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy) =
+        Latency.mark("connecting")
+    override fun secureConnectEnd(call: Call, handshake: Handshake?) = Latency.mark("TLS connected")
+    override fun connectionAcquired(call: Call, connection: Connection) =
+        Latency.mark("connection acquired, ${connection.protocol()}")
 }

@@ -74,9 +74,11 @@ object Dictation {
         }
     }
 
-    fun start(context: Context) {
+    /** [mic] replaces the microphone; for the debug build's test hook. */
+    fun start(context: Context, mic: (() -> PcmSource)? = null) {
         val app = context.applicationContext
         if (session?.isActive == true) return
+        Latency.start("tap")
         if (app.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
             _state.value = State.Error(ErrorKind.NO_MIC)
@@ -119,6 +121,7 @@ object Dictation {
                     }
                 }
             },
+            newMic = mic ?: { Microphone() },
         )
         session = s
         MicService.start(app)
@@ -129,6 +132,7 @@ object Dictation {
     fun stop() {
         val s = session ?: return
         if (!s.isActive) return
+        Latency.mark("stop tap")
         s.stop()
         _level.value = 0f
         _state.value = State.Finishing
@@ -246,6 +250,7 @@ object Dictation {
 
     private fun finish(context: Context, from: DictationSession?, r: Result<String>) {
         if (_state.value == State.Idle || from !== session) return // cancelled or replaced
+        Latency.mark("result on the main thread")
         _level.value = 0f
         // A failed dictation keeps its session, and with it the audio and the field, for retry.
         val retryable = r.isFailure && kindOf(r.exceptionOrNull()!!) != ErrorKind.NO_MIC
@@ -276,12 +281,14 @@ object Dictation {
         val tapped = service?.tappedTarget()
         var field: AccessibilityNodeInfo? = null
         if (service != null && pickTarget(tapped, into) { t -> service.insert(t, text)?.also { field = it } != null } != null) {
+            Latency.mark("inserted")
             service.showKeyboard(field)
             Log.d(TAG, "delivered: inserted")
             return State.Done(text, Output.INSERT, delivered = true)
         }
         if (tapped == null && into == null) Log.d(TAG, "insert fell back: no field tapped or focused at the start")
         copy(context, text)
+        Latency.mark("copied")
         service?.showKeyboard()
         Log.d(TAG, "delivered: clipboard")
         return State.Done(text, Output.CLIPBOARD, delivered = true)

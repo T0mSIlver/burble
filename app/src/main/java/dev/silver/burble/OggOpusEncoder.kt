@@ -114,7 +114,7 @@ class OggOpusEncoder internal constructor(
     private var pageSeq = 0
     private var granule = 0L
     private var pendingSegments = ArrayList<ByteArray>()
-    private var pendingBytes = 0
+    private var pendingLacing = 0
     /** PCM the codec hasn't taken yet, oldest first. */
     private val unqueued = ArrayDeque<ByteArray>()
     private var unqueuedAt = 0
@@ -194,8 +194,6 @@ class OggOpusEncoder internal constructor(
         while (!ended) {
             val packet = codec.take(timeoutUs) ?: return
             if (packet.config) continue
-            // One 20 ms frame at 48 kHz per packet.
-            granule += SAMPLES_PER_PACKET
             addPacket(packet.bytes)
             if (packet.end) ended = true
         }
@@ -203,17 +201,19 @@ class OggOpusEncoder internal constructor(
 
     private fun addPacket(packet: ByteArray) {
         val lacing = lacingCount(packet.size)
-        if (pendingSegments.isNotEmpty() &&
-            (pendingSegments.size + lacing > 255 || pendingBytes + packet.size > 32_000)
-        ) {
-            emitPage(0x00)
-        }
+        if (pendingSegments.isNotEmpty() && pendingLacing + lacing > 255) emitPage(0x00)
         pendingSegments.add(packet)
-        pendingBytes += packet.size
+        pendingLacing += lacing
+        // One 20 ms frame at 48 kHz per packet.
+        granule += SAMPLES_PER_PACKET
     }
 
+    /**
+     * Every call ends a page, as Gboard's native writer does in its low-latency mode: the server
+     * hears each buffer as it comes, so little is left to recognize after the stop.
+     */
     private fun takePages(force: Boolean): ByteArray {
-        if (force && pendingSegments.isNotEmpty()) emitPage(0x04) // EOS
+        if (pendingSegments.isNotEmpty()) emitPage(if (force) 0x04 else 0x00) // 0x04: EOS
         val out = pages.toByteArray()
         pages.reset()
         return out
@@ -225,7 +225,7 @@ class OggOpusEncoder internal constructor(
         pendingSegments.forEach { p -> lac.write(lacingFor(p.size)) }
         pages.write(oggPage(body.toByteArray(), lac.toByteArray(), flags, granule))
         pendingSegments = ArrayList()
-        pendingBytes = 0
+        pendingLacing = 0
     }
 
     private fun lacingCount(size: Int) = size / 255 + 1

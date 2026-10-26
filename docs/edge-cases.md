@@ -12,6 +12,8 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Case | Coverage | Status |
 |---|---|---|
 | Tap → Listening → tap or silence → Finishing → Inserted (check 0.7 s) | Unit `DictationSessionTest.stopsAfterSilence`; emulator recording `motion-r1` | ✅ |
+| The text lands 0.5 s after the stop (Gboard on a Pixel: 0.7 s): each 64 ms of audio goes out as its own Ogg page, one connection serves every dictation, and the text goes in on the final result, not when the stream closes | Unit `EncoderBackpressureTest.eachBufferGoesOutAsAPage`; emulator `tools/emulator/latency.sh` (535 to 551 ms from the stop to the insert) | ✅ |
+| The network changes between two dictations: the second opens a new connection instead of waiting on the dead one | Emulator: airplane mode on and off, then `latency.sh` | ✅ |
 | No field, or not on screen → clipboard, Copied (check 1 s, TalkBack says it), nothing inserted later | Unit `TargetsTest`; emulator `tools/emulator/where-text-goes.sh switch` | ✅ |
 | Keyboard hidden only in Listening and Finishing; back as the words land | Code (`followDictation`, `showKeyboard`); emulator `tools/emulator/keyboard-back.sh` | ✅ |
 | Keyboard back in an EditText, a Compose field, Chrome's address bar, a Chrome page's textarea and Messages: started in the field, a field tapped mid-dictation (its app takes the keyboard for shown: focus taken for a frame), clipboard with a field focused; none without one | Emulator `tools/emulator/keyboard-back.sh` (0.4 to 0.7 s, the keyboard's own animation included) | ✅ |
@@ -104,3 +106,4 @@ Status: ✅ covered and passing, 👤 needs the phone.
 6. With Dot docked at the edge: a drag that starts on the dot moves it; Android's back gesture doesn't take it.
 7. On a fresh install, finish onboarding to Try it: tap the bubble, say a sentence, tap again; it lands in the field. Rotate the phone mid-sentence once.
 8. Start a dictation in Chrome's address bar, tap a text box on the page, stop: the words land in the text box.
+9. Dictate a short sentence and tap to stop as you finish: the words land in about half a second, as fast as in Gboard's own dictation.

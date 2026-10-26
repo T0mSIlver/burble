@@ -55,14 +55,25 @@ class EncoderBackpressureTest {
         assertTrue(codec.released)
     }
 
+    @Test fun eachBufferGoesOutAsAPage() {
+        val enc = OggOpusEncoder(FakeCodec())
+        enc.encode(ByteArray(60))
+        for (i in 1..3) {
+            // A 60-byte packet: a 28-byte page header with its one lacing value, then the packet.
+            val out = enc.encode(ByteArray(60) { i.toByte() })
+            assertEquals("OggS", String(out, 0, 4, Charsets.ISO_8859_1))
+            assertEquals(28 + 60, out.size)
+        }
+    }
+
     @Test fun flushEndsInTimeWhenTheCodecNeverFinishes() {
         val codec = FakeCodec(ends = false)
         val enc = OggOpusEncoder(codec, flushMs = 200)
-        enc.encode(pcm(0))
+        val sent = enc.encode(pcm(0))
         val t0 = System.nanoTime()
         val tail = enc.flush()
         assertTrue((System.nanoTime() - t0) / 1_000_000 < 1_000)
-        assertTrue(tail.isNotEmpty()) // the frame it did encode
+        assertTrue((sent + tail).size > 3200) // the frame it did encode
         assertTrue(codec.released)
     }
 
