@@ -29,8 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import dev.silver.burble.R
 import java.util.Locale
 
@@ -47,7 +45,7 @@ fun languageName(tag: String, locale: Locale = Locale.getDefault()): String =
     Locale.forLanguageTag(tag).getDisplayName(locale).replaceFirstChar { it.titlecase(locale) }
 
 /**
- * Full screen, as Android's own language settings: tick the languages you speak; the primary one
+ * A page over Advanced, as Android's own language settings: tick the languages you speak; the primary one
  * is the one Burble expects first, chosen with Make primary rather than by the order of ticking.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,56 +54,54 @@ fun LanguagesScreen(current: List<String>, onDone: (List<String>) -> Unit, onDis
     var picked by rememberSaveable { mutableStateOf(current) }
     // The ones in use first, so a long list doesn't hide them.
     val list = remember(current) { current + Languages.filterNot { it in current } }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text(stringResource(R.string.languages)) },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, stringResource(android.R.string.cancel)) }
-                    },
-                    actions = { TextButton(onClick = { onDone(picked) }) { Text(stringResource(R.string.done)) } },
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.languages)) },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, stringResource(android.R.string.cancel)) }
+                },
+                actions = { TextButton(onClick = { onDone(picked) }) { Text(stringResource(R.string.done)) } },
+            )
+        },
+    ) { padding ->
+        LazyColumn(contentPadding = padding) {
+            item {
+                Text(
+                    stringResource(R.string.languages_hint),
+                    Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            },
-        ) { padding ->
-            LazyColumn(contentPadding = padding) {
-                item {
+            }
+            items(list) { tag ->
+                val on = tag in picked
+                val primary = picked.firstOrNull() == tag
+                // The last language can't go: dictation needs one.
+                val locked = on && picked.size == 1
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                        .toggleable(on, enabled = !locked, role = Role.Checkbox) {
+                            picked = if (it) picked + tag else picked - tag
+                        }
+                        .padding(start = 16.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = on, onCheckedChange = null, enabled = !locked)
                     Text(
-                        stringResource(R.string.languages_hint),
-                        Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        languageName(tag),
+                        Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodyLarge,
                     )
-                }
-                items(list) { tag ->
-                    val on = tag in picked
-                    val primary = picked.firstOrNull() == tag
-                    // The last language can't go: dictation needs one.
-                    val locked = on && picked.size == 1
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                            .toggleable(on, enabled = !locked, role = Role.Checkbox) {
-                                picked = if (it) picked + tag else picked - tag
-                            }
-                            .padding(start = 16.dp, end = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(checked = on, onCheckedChange = null, enabled = !locked)
-                        Text(
-                            languageName(tag),
-                            Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.bodyLarge,
+                    when {
+                        primary -> Text(
+                            stringResource(R.string.languages_primary),
+                            Modifier.padding(end = 12.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
                         )
-                        when {
-                            primary -> Text(
-                                stringResource(R.string.languages_primary),
-                                Modifier.padding(end = 12.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            on -> TextButton(onClick = { picked = listOf(tag) + (picked - tag) }) {
-                                Text(stringResource(R.string.languages_make_primary))
-                            }
+                        on -> TextButton(onClick = { picked = listOf(tag) + (picked - tag) }) {
+                            Text(stringResource(R.string.languages_make_primary))
                         }
                     }
                 }

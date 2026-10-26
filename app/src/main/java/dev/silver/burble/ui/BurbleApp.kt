@@ -64,21 +64,9 @@ fun BurbleApp() {
         openBattery = { open(Permissions.batterySettings(context)) },
     )
 
-    report?.let { draft ->
-        // A report restored after the process was stopped asks Google again: the test's result
-        // doesn't outlive the process the way the draft does.
-        LaunchedEffect(Unit) { if (TestAudio.state.value == TestAudio.State.Idle) TestAudio.send(context) }
-        ReportScreen(
-            draft,
-            test,
-            onCopy = { body ->
-                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("report", body))
-            },
-            onOpen = { body -> open(Intent(Intent.ACTION_VIEW, Uri.parse(Report.issueUrl(SOURCE, body)))) },
-            onBack = { report = null },
-        )
-        return
-    }
+    // A report restored after the process was stopped asks Google again: the test's result
+    // doesn't outlive the process the way the draft does.
+    if (report != null) LaunchedEffect(Unit) { if (TestAudio.state.value == TestAudio.State.Idle) TestAudio.send(context) }
     if (!settings.onboarded) {
         Onboarding(access, actions, dictation, onDone = { Prefs.update { it.copy(onboarded = true, bubbleOn = true) } })
     } else {
@@ -102,9 +90,15 @@ fun BurbleApp() {
                         context.mainExecutor.execute { report = draft }
                     }.start()
                 },
+                copy = { body ->
+                    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("report", body))
+                },
+                closeReport = { report = null },
             ),
             version = Updater.installedVersion(context),
             keyboard = keyboard,
+            report = report,
+            test = test,
         )
     }
 }

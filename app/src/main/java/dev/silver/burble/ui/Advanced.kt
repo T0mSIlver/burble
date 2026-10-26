@@ -23,10 +23,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,7 +33,7 @@ import dev.silver.burble.Settings
 
 /**
  * What most people never change: the dictation languages, which follow the keyboard unless the
- * user picks their own, and the keyboard while dictating.
+ * user picks their own on [LanguagesScreen], and the keyboard while dictating.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -45,10 +41,9 @@ fun Advanced(
     settings: Settings,
     keyboard: List<String>,
     actions: HomeActions,
+    onLanguages: () -> Unit,
     onBack: () -> Unit,
-    languagesOpen: Boolean = false,
 ) {
-    var picking by rememberSaveable { mutableStateOf(languagesOpen) }
     val set = actions.update
     val names = { tags: List<String> -> tags.joinToString(", ") { languageName(it) } }
     SubScreen(stringResource(R.string.advanced), onBack) {
@@ -60,7 +55,7 @@ fun Advanced(
                 },
                 radioRow(stringResource(R.string.languages_custom), names(settings.languages), !settings.languagesFromKeyboard) {
                     set { it.copy(languagesFromKeyboard = false) }
-                    picking = true
+                    onLanguages()
                 },
             ))
         }
@@ -73,9 +68,4 @@ fun Advanced(
             ))
         }
     }
-    if (picking) LanguagesScreen(
-        current = settings.languages,
-        onDone = { tags -> set { it.copy(languages = tags, languagesFromKeyboard = false) }; picking = false },
-        onDismiss = { picking = false },
-    )
 }

@@ -1,12 +1,12 @@
 package dev.silver.burble.ui
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -38,8 +38,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +54,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.silver.burble.BubbleShow
 import dev.silver.burble.R
+import dev.silver.burble.Report
 import dev.silver.burble.Settings
 import dev.silver.burble.WhenIdle
 import dev.silver.burble.updater.Release
@@ -62,6 +67,8 @@ class HomeActions(
     val installUpdate: (Release) -> Unit,
     val openUrl: (String) -> Unit,
     val reportProblem: () -> Unit,
+    val copy: (String) -> Unit = {},
+    val closeReport: () -> Unit = {},
 ) {
     companion object {
         val None = HomeActions(AccessActions.None, {}, {}, {}, {}, {})
@@ -70,11 +77,16 @@ class HomeActions(
 
 internal const val SOURCE = "https://github.com/T0mSIlver/burble"
 
+/** Home and the pages under it, each opened from the one before it in the stack. */
+enum class Page { HOME, ADVANCED, LANGUAGES, LOOK, ABOUT, LICENCES, LICENCE, REPORT }
+
+private val PagesSaver = listSaver<List<Page>, String>({ it.map(Page::name) }, { it.map(Page::valueOf) })
+
 /**
  * One screen, laid out as Android's own settings: what's missing first, then the main switch,
  * when the bubble shows, a row to its look, a row to [Advanced], and About. [keyboard] is the
- * keyboard's languages, which dictation follows by default. The last parameters open pages for
- * screenshots.
+ * keyboard's languages, which dictation follows by default. A [report] opens over About until
+ * [HomeActions.closeReport]. [pages] opens pages over home, for screenshots.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -85,16 +97,27 @@ fun Home(
     actions: HomeActions,
     version: String,
     keyboard: List<String> = emptyList(),
-    advancedOpen: Boolean = false,
-    languagesOpen: Boolean = false,
-    licencesOpen: Boolean = false,
-    lookOpen: Boolean = false,
-    aboutOpen: Boolean = false,
+    pages: List<Page> = emptyList(),
+    report: Report.Draft? = null,
+    test: TestAudio.State = TestAudio.State.Idle,
 ) {
-    var advanced by rememberSaveable { mutableStateOf(advancedOpen) }
-    var licences by rememberSaveable { mutableStateOf(licencesOpen) }
-    var look by rememberSaveable { mutableStateOf(lookOpen) }
-    var about by rememberSaveable { mutableStateOf(aboutOpen || licencesOpen) }
+    var stack by rememberSaveable(stateSaver = PagesSaver) { mutableStateOf(listOf(Page.HOME) + pages) }
+    var licence by rememberSaveable { mutableIntStateOf(0) }
+    // The report stays on its page while the page slides away.
+    var draft by remember { mutableStateOf(report) }
+    LaunchedEffect(report) {
+        if (report == null) return@LaunchedEffect
+        draft = report
+        if (Page.REPORT !in stack) stack = stack + Page.REPORT
+    }
+    val open = { p: Page -> stack = stack + p }
+    val back = {
+        val closed = stack.last()
+        stack = stack.dropLast(1)
+        if (closed == Page.REPORT) actions.closeReport()
+    }
+    // A page's own back arrow, ignored while it slides away under another tap.
+    val close = { p: Page -> { if (stack.last() == p) back() } }
     val set = actions.update
     @Composable fun HomeMain() {
         val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -130,30 +153,36 @@ fun Home(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         },
-                        lookRow(settings) { look = true },
+                        lookRow(settings) { open(Page.LOOK) },
                     ))
                 }
 
                 item { Spacer(Modifier.size(24.dp)) }
                 item {
                     Group(listOf(
-                        linkRow(Icons.Outlined.Tune, stringResource(R.string.advanced), stringResource(R.string.advanced_hint)) { advanced = true },
-                        linkRow(Icons.Outlined.Info, stringResource(R.string.section_about), stringResource(R.string.version, version)) { about = true },
+                        linkRow(Icons.Outlined.Tune, stringResource(R.string.advanced), stringResource(R.string.advanced_hint)) { open(Page.ADVANCED) },
+                        linkRow(Icons.Outlined.Info, stringResource(R.string.section_about), stringResource(R.string.version, version)) { open(Page.ABOUT) },
                     ))
                 }
             }
         }
     }
-    // Pages under home slide in from the end, on the motion scheme's springs, and back.
-    // Ordered by depth, so Licences slides in over About and back out to it.
-    val page = when { advanced -> 1; look -> 2; about && licences -> 4; about -> 3; else -> 0 }
-    AnimatedContent(page, transitionSpec = { pageTransition(forward = targetState > initialState) }, label = "page") { p ->
+    PageStack(stack, onBack = back, Modifier.fillMaxSize()) { p ->
         when (p) {
-            1 -> Advanced(settings, keyboard, actions, onBack = { advanced = false }, languagesOpen)
-            2 -> BubbleLook(settings, set, onBack = { look = false })
-            3 -> About(settings, update, version, actions, onLicences = { licences = true }, onBack = { about = false })
-            4 -> Licences(onBack = { licences = false })
-            else -> HomeMain()
+            Page.HOME -> HomeMain()
+            Page.ADVANCED -> Advanced(settings, keyboard, actions, onLanguages = { open(Page.LANGUAGES) }, onBack = close(p))
+            Page.LANGUAGES -> LanguagesScreen(
+                current = settings.languages,
+                onDone = { tags -> set { it.copy(languages = tags, languagesFromKeyboard = false) }; close(p)() },
+                onDismiss = close(p),
+            )
+            Page.LOOK -> BubbleLook(settings, set, onBack = close(p))
+            Page.ABOUT -> About(settings, update, version, actions, onLicences = { open(Page.LICENCES) }, onBack = close(p))
+            Page.LICENCES -> Licences(onOpen = { licence = it; open(Page.LICENCE) }, onBack = close(p))
+            Page.LICENCE -> LicenceText(licence, onBack = close(p))
+            Page.REPORT -> draft?.let { d ->
+                ReportScreen(d, test, actions.copy, onOpen = { body -> actions.openUrl(Report.issueUrl(SOURCE, body)) }, onBack = close(p))
+            }
         }
     }
 }

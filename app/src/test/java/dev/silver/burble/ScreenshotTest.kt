@@ -1,18 +1,20 @@
 package dev.silver.burble
 
+import androidx.activity.BackEventCompat
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
-import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureRoboImage
-import com.github.takahirom.roborazzi.captureScreenRoboImage
 import dev.silver.burble.ui.Access
 import dev.silver.burble.ui.AccessActions
 import dev.silver.burble.ui.Home
 import dev.silver.burble.ui.ReportScreen
 import dev.silver.burble.ui.HomeActions
 import dev.silver.burble.ui.Onboarding
+import dev.silver.burble.ui.Page
 import dev.silver.burble.ui.Step
 import dev.silver.burble.ui.TestAudio
 import dev.silver.burble.ui.theme.AppTheme
@@ -127,28 +129,41 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     }
 
     @Test fun licences() = capture("licences") {
-        Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", licencesOpen = true)
+        Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", pages = listOf(Page.ABOUT, Page.LICENCES))
     }
 
     // Tall enough for the pinned preview and all its controls.
     @Config(qualifiers = "w412dp-h1400dp-xxhdpi")
     @Test fun bubbleLook() = capture("bubble-look") {
-        Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, lookOpen = true)
+        Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, listOf(Page.LOOK))
     }
 
     // With an update: its details live here, the card on home.
     @Test fun about() = capture("about") {
-        Home(settings, Access.All, Updater.State.Available(release), HomeActions.None, "0.1.0", aboutOpen = true)
+        Home(settings, Access.All, Updater.State.Available(release), HomeActions.None, "0.1.0", pages = listOf(Page.ABOUT))
+    }
+
+    // Swiping back from About, 60 % of the way: About shrinks over home, dimmed behind it.
+    @Test fun backPreview() {
+        lateinit var dispatcher: OnBackPressedDispatcher
+        themed {
+            dispatcher = LocalOnBackPressedDispatcherOwner.current!!.onBackPressedDispatcher
+            Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", pages = listOf(Page.ABOUT))
+        }
+        compose.runOnIdle {
+            dispatcher.dispatchOnBackStarted(BackEventCompat(0f, 1400f, 0f, BackEventCompat.EDGE_LEFT))
+            dispatcher.dispatchOnBackProgressed(BackEventCompat(400f, 1600f, 0.6f, BackEventCompat.EDGE_LEFT))
+        }
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("screenshots/back-preview-$name.png")
     }
 
     @Test fun advanced() = capture("advanced") {
-        Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, advancedOpen = true)
+        Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, listOf(Page.ADVANCED))
     }
 
-    @OptIn(ExperimentalRoborazziApi::class)
-    @Test fun languages() {
-        themed { Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, advancedOpen = true, languagesOpen = true) }
-        captureScreenRoboImage("screenshots/home-languages-$name.png")
+    @Test fun languages() = capture("home-languages") {
+        Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, listOf(Page.ADVANCED, Page.LANGUAGES))
     }
 
 

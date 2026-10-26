@@ -6,11 +6,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -32,23 +28,20 @@ private val LICENSED = listOf(
     Licensed("OkHttp and Okio", "Apache License 2.0", "Apache-2.0.txt"),
 )
 
-/** Burble's licence and the open-source licences of what it bundles; a tap shows the full text. */
+/** Burble's licence and the open-source licences of what it bundles; a tap opens the full text. */
 @Composable
-fun Licences(onBack: () -> Unit) {
-    var open by rememberSaveable { mutableStateOf<Int?>(null) }
-    open?.let { i ->
-        LicenceText(LICENSED[i]) { open = null }
-        return
-    }
+fun Licences(onOpen: (Int) -> Unit, onBack: () -> Unit) {
     SubScreen(stringResource(R.string.licence), onBack) {
         item {
-            Group(LICENSED.mapIndexed { i, l -> linkRow(Icons.Outlined.Description, l.name, l.licence) { open = i } })
+            Group(LICENSED.mapIndexed { i, l -> linkRow(Icons.Outlined.Description, l.name, l.licence) { onOpen(i) } })
         }
     }
 }
 
+/** The full text of licence [index] of [Licences]. */
 @Composable
-private fun LicenceText(l: Licensed, onBack: () -> Unit) {
+fun LicenceText(index: Int, onBack: () -> Unit) {
+    val l = LICENSED[index]
     val assets = LocalContext.current.assets
     val text = remember(l.file) { runCatching { assets.open("licences/${l.file}").bufferedReader().use { it.readText() } }.getOrElse { l.licence } }
     SubScreen(l.name, onBack) {

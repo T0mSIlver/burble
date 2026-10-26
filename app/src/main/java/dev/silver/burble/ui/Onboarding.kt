@@ -1,16 +1,11 @@
 package dev.silver.burble.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +19,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
@@ -118,8 +115,6 @@ fun Onboarding(
     // and saw it refused, and apps can't read either fact: each button of the unlock moves the
     // step on to the next one.
     var unlockStage by rememberSaveable { mutableIntStateOf(initialUnlockStage) }
-    // Back from Try it would only bounce off the granted service: it leaves the app instead.
-    BackHandler(enabled = index == Step.INSERTION.ordinal) { index-- }
     // The microphone granted on the first screen moves on; one granted before needs Continue.
     val micOnArrival = remember(index) { access.microphone }
     LaunchedEffect(index, access.microphone) {
@@ -137,13 +132,15 @@ fun Onboarding(
                 progress = { progress },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
             )
-            AnimatedContent(
-                targetState = index,
-                transitionSpec = { pageTransition(forward = targetState > initialState) },
-                modifier = Modifier.weight(1f),
-                label = "step",
-            ) { i ->
-                StepPage(steps[i], access, actions, unlocking, unlockStage, { unlockStage = it }, dictation, tryField, onNext = { index = 1 }, onDone)
+            // Back from the second step returns to the first; from the first it leaves the app. Back
+            // from Try it would only bounce off the granted service: it leaves the app too.
+            val stack = when (steps[index]) {
+                Step.WELCOME -> listOf(Step.WELCOME)
+                Step.INSERTION -> listOf(Step.WELCOME, Step.INSERTION)
+                Step.TRY -> listOf(Step.TRY)
+            }
+            PageStack(stack, onBack = { index = Step.WELCOME.ordinal }, Modifier.weight(1f)) { step ->
+                StepPage(step, access, actions, unlocking, unlockStage, { unlockStage = it }, dictation, tryField, onNext = { index = 1 }, onDone)
             }
         }
     }

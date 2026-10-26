@@ -1,23 +1,5 @@
 package dev.silver.burble.ui
 
-import androidx.activity.BackEventCompat
-import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MotionScheme
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.unit.IntOffset
-import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
@@ -28,10 +10,10 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
@@ -96,46 +78,13 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier, color: Color = Ma
     )
 }
 
-/**
- * How pages under home come and go: in from the end and out to the start going in, the other way
- * back, on the motion scheme's spatial spring with an effects fade.
- */
-fun AnimatedContentTransitionScope<Int>.pageTransition(forward: Boolean): ContentTransform {
-    val sign = if (forward) 1 else -1
-    val spatial = MotionScheme.expressive().defaultSpatialSpec<IntOffset>()
-    val effects = MotionScheme.expressive().defaultEffectsSpec<Float>()
-    return (slideInHorizontally(spatial) { sign * it / 5 } + fadeIn(effects)) togetherWith
-        (slideOutHorizontally(spatial) { -sign * it / 5 } + fadeOut(MotionScheme.expressive().fastEffectsSpec()))
-}
-
 /** A screen under home: a large title that collapses as it scrolls, a back arrow, a list. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SubScreen(title: String, onBack: () -> Unit, content: LazyListScope.() -> Unit) {
-    // Android's predictive back: the page shrinks and moves with the swipe, then goes.
-    var back by remember { mutableFloatStateOf(0f) }
-    var fromLeft by remember { mutableStateOf(true) }
-    PredictiveBackHandler { events ->
-        try {
-            events.collect { back = it.progress; fromLeft = it.swipeEdge == BackEventCompat.EDGE_LEFT }
-            onBack()
-        } catch (e: CancellationException) {
-            back = 0f
-            throw e
-        }
-    }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
-        modifier = Modifier
-            .graphicsLayer {
-                val scale = 1f - 0.1f * back
-                scaleX = scale
-                scaleY = scale
-                translationX = (if (fromLeft) 1f else -1f) * back * 8.dp.toPx()
-                shape = RoundedCornerShape(32.dp * back)
-                clip = back > 0f
-            }
-            .nestedScroll(scroll.nestedScrollConnection),
+        modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
             LargeFlexibleTopAppBar(
                 title = { Text(title) },
