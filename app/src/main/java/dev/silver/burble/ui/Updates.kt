@@ -35,14 +35,12 @@ fun updateSwitch(auto: Boolean, state: State, version: String, actions: HomeActi
         State.Idle -> null
         State.Checking -> R.string.updates_checking
         State.UpToDate -> R.string.updates_up_to_date
-        is State.Available, is State.Downloading, is State.Installing -> null
-        is State.Failed -> if (release == null) R.string.updates_not_checked else null
+        is State.Available, is State.Downloading, is State.Installing -> R.string.updates_new
+        is State.Failed -> if (release == null) R.string.updates_not_checked else R.string.updates_new
     }
-    val summary = when {
-        release != null -> stringResource(R.string.updates_available, release.version)
-        status != null -> stringResource(R.string.version_status, version, stringResource(status))
-        else -> stringResource(R.string.version, version)
-    }
+    // Always the version; the update's own row below names the new one.
+    val summary = status?.let { stringResource(R.string.version_status, version, stringResource(it)) }
+        ?: stringResource(R.string.version, version)
     return switchRow(Icons.Outlined.Update, stringResource(R.string.updates_auto), summary, auto) { on ->
         actions.update { it.copy(checkUpdates = on) }
         if (on) actions.checkForUpdate()

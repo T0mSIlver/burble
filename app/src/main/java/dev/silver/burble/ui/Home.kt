@@ -149,9 +149,9 @@ fun Home(
     val page = when { advanced -> 1; look -> 2; about && licences -> 4; about -> 3; else -> 0 }
     AnimatedContent(page, transitionSpec = { pageTransition(forward = targetState > initialState) }, label = "page") { p ->
         when (p) {
-            1 -> Advanced(settings, keyboard, update, version, actions, onBack = { advanced = false }, languagesOpen)
+            1 -> Advanced(settings, keyboard, actions, onBack = { advanced = false }, languagesOpen)
             2 -> BubbleLook(settings, set, onBack = { look = false })
-            3 -> About(update, actions, onLicences = { licences = true }, onBack = { about = false })
+            3 -> About(settings, update, version, actions, onLicences = { licences = true }, onBack = { about = false })
             4 -> Licences(onBack = { licences = false })
             else -> HomeMain()
         }
@@ -238,12 +238,13 @@ private fun Missing(label: Int?, detail: Int?, action: Int, onClick: () -> Unit)
 }
 
 /**
- * Report a problem, privacy, licences, source and the disclaimer, one tap from home, with the
- * update's details while there is one.
+ * One tap from home: the version with the automatic update check, the update's details while
+ * there is one, report a problem, privacy, licences, source and the disclaimer.
  */
 @Composable
-private fun About(update: Updater.State, actions: HomeActions, onLicences: () -> Unit, onBack: () -> Unit) {
+private fun About(settings: Settings, update: Updater.State, version: String, actions: HomeActions, onLicences: () -> Unit, onBack: () -> Unit) {
     val rows = listOfNotNull(
+        updateSwitch(settings.checkUpdates, update, version, actions),
         releaseRow(update, actions),
         linkRow(Icons.Outlined.BugReport, stringResource(R.string.report_problem), stringResource(R.string.report_problem_hint)) {
             actions.reportProblem()

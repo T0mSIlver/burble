@@ -34,19 +34,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.silver.burble.R
 import dev.silver.burble.Settings
-import dev.silver.burble.updater.Updater
 
 /**
  * What most people never change: the dictation languages, which follow the keyboard unless the
- * user picks their own, the keyboard while dictating, and the daily update check.
+ * user picks their own, and the keyboard while dictating.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun Advanced(
     settings: Settings,
     keyboard: List<String>,
-    update: Updater.State,
-    version: String,
     actions: HomeActions,
     onBack: () -> Unit,
     languagesOpen: Boolean = false,
@@ -73,7 +70,6 @@ fun Advanced(
                 switchRow(Icons.Outlined.KeyboardHide, stringResource(R.string.hide_keyboard), stringResource(R.string.hide_keyboard_hint), settings.hideKeyboard) { on ->
                     set { it.copy(hideKeyboard = on) }
                 },
-                updateSwitch(settings.checkUpdates, update, version, actions),
             ))
         }
     }

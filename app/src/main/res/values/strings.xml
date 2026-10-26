@@ -122,7 +122,7 @@
     <string name="updates_auto">Check for updates automatically</string>
     <string name="status_insert_hint">Turn on Burble in Accessibility settings</string>
     <string name="advanced">Advanced</string>
-    <string name="advanced_hint">Languages, keyboard, updates</string>
+    <string name="advanced_hint">Languages, keyboard</string>
     <string name="back">Back</string>
     <string name="languages_keyboard">Use keyboard languages</string>
     <string name="languages_custom">Choose languages</string>
