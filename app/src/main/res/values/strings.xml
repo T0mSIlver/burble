@@ -114,8 +114,8 @@
     <string name="languages_hint">Pick the languages you speak. The first one you pick is the main one.</string>
     <string name="languages_main">Main</string>
     <string name="test_connection">Test the connection</string>
-    <string name="privacy">Privacy policy</string>
-    <string name="privacy_hint">What is sent, and where</string>
+    <string name="privacy">What leaves your phone</string>
+    <string name="privacy_hint">Your dictated audio, to Google</string>
     <string name="licence">Licence</string>
     <string name="licence_hint">GNU GPL version 3</string>
     <string name="source">Source code</string>

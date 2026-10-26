@@ -184,7 +184,7 @@ fun Home(
             item {
                 Group(listOf(
                     linkRow(Icons.Outlined.PrivacyTip, stringResource(R.string.privacy), stringResource(R.string.privacy_hint)) {
-                        actions.openUrl("$SOURCE/blob/main/PRIVACY.md")
+                        actions.openUrl("$SOURCE#what-leaves-your-phone")
                     },
                     linkRow(Icons.Outlined.Gavel, stringResource(R.string.licence), stringResource(R.string.licence_hint)) {
                         actions.openUrl("$SOURCE/blob/main/LICENSE")

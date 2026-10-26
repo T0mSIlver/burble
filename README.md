@@ -44,6 +44,15 @@ and shows what the server heard; use it to check connectivity without speaking.
 - The backend is undocumented and can change or reject this client at any
   time. `Send test audio` is the first thing to try after a Gboard update.
 
+## What leaves your phone
+
+The audio you dictate and your phone's model go to Google's speech service,
+the one Gboard uses. The update check asks GitHub for the latest release.
+Nothing else: no Burble server, account, analytics or tracking. The
+accessibility service touches only the text field you were typing in, once a
+dictation ends, to insert the words. **Report a problem** opens a GitHub issue
+you read and edit before sending.
+
 ## Building
 
 ```bash
@@ -83,7 +92,7 @@ contains no Google code.
   restrictions, data loss or wrongly inserted text.
 - **Your responsibility.** You are responsible for following the laws where
   you live and the terms of any third-party service you use with this app.
-  Audio you dictate is sent to Google (see [PRIVACY.md](PRIVACY.md)). Do not
+  Audio you dictate is sent to Google (see [What leaves your phone](#what-leaves-your-phone)). Do not
   dictate what you may not share.
 
 ## License
