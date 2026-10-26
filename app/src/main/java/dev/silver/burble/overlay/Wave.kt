@@ -148,8 +148,8 @@ private const val MORPH = 0.95f
  */
 @Immutable
 internal data class WaveShape(
-    /** Scales the glow's distances: 1.25 lights a quarter more radius. */
-    val cover: Float = 1f,
+    /** Scales the glow's distances: 1.25 lights a quarter more radius. Tom's pick on the phone. */
+    val cover: Float = 1.5f,
     /** 0 a disc; toward 1 a wide horizontal ellipse. */
     val blend: Float = 0f,
     /** The glow's source below the centre, share of the radius. */
@@ -284,6 +284,9 @@ private fun oklch(lightness: Double, chroma: Double, hue: Double): Color {
     }
 }
 
+/** The largest bubble's radius, dp: the glow's geometry is drawn to it and scaled to the bubble. */
+private const val REF_R = 48f
+
 /** Gboard's bar height, dp: it sets the light bands, the fade and the diamonds' reach. */
 private const val BAR_DP = 51f
 
@@ -293,6 +296,8 @@ private fun CanvasWave(frame: () -> WaveFrame, colors: WaveColors, surface: Colo
     Spacer(modifier.drawWithCache {
         val c = Offset(size.width / 2, size.height / 2)
         val r = hypot(size.width, size.height) / 2
+        // The glow follows the bubble's size, as in the shader.
+        val ref = REF_R / (minOf(size.width, size.height) / 2 / dp)
         val n = 64 // about 0.7 dp a stop, fine enough for the crisp silent edge
         onDrawBehind {
             val f = frame()
@@ -303,11 +308,11 @@ private fun CanvasWave(frame: () -> WaveFrame, colors: WaveColors, surface: Colo
             val band = minOf(BAR_DP / 6 * (1 + f.bands), 0.45f * e0)
             val soft = 6f * (SILENT_SOFT + (1 - SILENT_SOFT) * f.glow)
             val glow = Array(n + 1) { i ->
-                val u = i * r / n / dp / shape.cover
+                val u = i * r / n / dp * ref / shape.cover
                 i / n.toFloat() to colors.glow.copy(alpha = logistic((edge - u) / soft) * reveal(u))
             }
             val core = Array(n + 1) { i ->
-                val u = i * r / n / dp / shape.cover
+                val u = i * r / n / dp * ref / shape.cover
                 val t = ((band - u) / band).coerceIn(0f, 1f)
                 i / n.toFloat() to Color.White.copy(alpha = CORE * t * t * (3 - 2 * t))
             }
@@ -351,6 +356,7 @@ const float DOT_MAX = 0.37;
 const float DOT_MIN = -0.07;
 const float CORE = 0.2;
 const float SILENT_SOFT = 0.2;
+const float REF_R = 48.0;  // the largest bubble's radius, dp: the glow's geometry is drawn to it
 
 // Rotate v by -a, as Gboard's 2D rotation does.
 float2 turn(float2 v, float a) {
@@ -458,18 +464,20 @@ float diamonds(float2 p, float2 c) {
 
 half4 main(float2 p) {
     float2 c = size * 0.5;
-    float2 q = (p - c) / dp;
+    // The glow follows the bubble's size: its distances are in dp of the largest bubble (96 dp,
+    // radius REF_R), so a coverage looks the same at every size. The diamonds stay in real dp.
     float R = min(size.x, size.y) * 0.5 / dp;
+    float2 q = (p - c) / dp * (REF_R / R);
     // The source can sit below the centre (lift) and the disc widen into a horizontal ellipse
     // (blend); cover scales every distance.
-    float2 qs = float2(q.x * (1.0 - min(blend, 0.95)), q.y - lift * R);
+    float2 qs = float2(q.x * (1.0 - min(blend, 0.95)), q.y - lift * REF_R);
     float u = length(qs) / cover;
     // The humps travel round the source at the bar's sideways speed, on a 25 dp circle.
     float rw = 25.0;
     float tw = atan(qs.y, qs.x) + drift * BAR / rw;
     float2 hq = rw * float2(cos(tw), sin(tw));
     float reveal = 1.0 / (1.0 + exp(6.0 * (u - 2.0 * BAR / 3.0) / BAR));
-    float open = 1.0 / (1.0 + exp(6.0 * (u - 2.0 * R * opened - BAR / 3.0) / BAR));
+    float open = 1.0 / (1.0 + exp(6.0 * (u - 2.0 * REF_R * opened - BAR / 3.0) / BAR));
     float shown = min(reveal, open);
     float a = glowAlpha(u, q + float2(-drift * BAR, 0.0), hq) * shown;
     float e0 = edgeRest + edgeGain * glowLvl;

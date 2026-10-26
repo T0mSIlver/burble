@@ -127,6 +127,15 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
      */
     @Test fun waveStudy() = capture("wave-study") { WaveStudy(shader = true) }
 
+    /** The wave at the smallest, default and largest sizes: its glow scales with the bubble. */
+    @Test fun waveSizes() = capture("wave-sizes") {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (level in listOf(0f, 0.8f)) Labelled(if (level == 0f) "silence" else "speech") {
+                for (size in listOf(40, 64, 96)) Bubble(Look.Listening, level = level, time = 2f, size = size)
+            }
+        }
+    }
+
     /** In a pink wallpaper's colours, as in the owner's Gboard recording, for a side-by-side. */
     @Test fun waveStudyPink() {
         assumeTrue(palette == "google") // one copy per light and dark

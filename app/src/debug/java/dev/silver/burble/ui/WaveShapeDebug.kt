@@ -36,12 +36,16 @@ fun LazyListScope.debugRows() {
     item { WaveShapeDebug() }
 }
 
-/** The playground's coverage options (Burble's design notes, material/images/wave-coverage). */
+/**
+ * The playground's coverage options (Burble's design notes, material/images/wave-coverage), now drawn
+ * to the 96 dp bubble and scaled to the size set; "Tom 1.50" is the default.
+ */
 private val presets = listOf(
-    "Radial today" to WaveShape(),
+    "Tom 1.50" to WaveShape(),
+    "Radial today" to WaveShape(cover = 1f),
     "A bigger radial" to WaveShape(cover = 1.1f, edgeRest = 17f, edgeGain = 17f),
-    "B ellipse 0.4" to WaveShape(blend = 0.4f),
-    "C ellipse 0.6" to WaveShape(blend = 0.6f),
+    "B ellipse 0.4" to WaveShape(cover = 1f, blend = 0.4f),
+    "C ellipse 0.6" to WaveShape(cover = 1f, blend = 0.6f),
     "D low source" to WaveShape(cover = 1.3f, lift = 0.3f),
 )
 
