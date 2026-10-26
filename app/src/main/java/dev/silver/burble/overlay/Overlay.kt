@@ -282,7 +282,12 @@ class Overlay(
             when {
                 st.recording || (st as? Dictation.State.Error)?.waits == true -> Dictation.cancel()
                 st is Dictation.State.Ready -> Dictation.discard()
-                else -> onSnooze()
+                // A check mark or an error that doesn't wait goes with the bubble, or its state
+                // would show it again until it times out.
+                else -> {
+                    Dictation.acknowledge()
+                    onSnooze()
+                }
             }
             place(animate = true)
             return

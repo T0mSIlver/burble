@@ -124,12 +124,20 @@ class InsertionService : AccessibilityService() {
      * text field: another one, or the same one once focus has left it and come back.
      */
     private var snoozed = false
-    private var snoozedIn: AccessibilityNodeInfo? = null
+    private var snoozedIn: FieldKey? = null
     private var focusLeft = false
+
+    /**
+     * A field, as compared across nodes: AccessibilityNodeInfo.equals is identity before
+     * Android 13, so two nodes for one field never match there.
+     */
+    private data class FieldKey(val window: Int, val id: String?, val bounds: Rect)
+
+    private fun AccessibilityNodeInfo.key() = FieldKey(windowId, viewIdResourceName, Rect().also(::getBoundsInScreen))
 
     private fun snooze() {
         snoozed = true
-        snoozedIn = focusedField()
+        snoozedIn = focusedField()?.key()
         focusLeft = snoozedIn == null
         main.removeCallbacks(goAway)
         away = true
@@ -139,7 +147,7 @@ class InsertionService : AccessibilityService() {
         if (!snoozed || Prefs.settings.value.bubbleShow != BubbleShow.TYPING) return
         when {
             field == null -> focusLeft = true
-            focusLeft || field != snoozedIn -> snoozed = false
+            focusLeft || field.key() != snoozedIn -> snoozed = false
         }
     }
 
