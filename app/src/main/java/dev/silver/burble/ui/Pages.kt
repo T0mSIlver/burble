@@ -117,9 +117,12 @@ fun <T : Any> PageStack(stack: List<T>, onBack: () -> Unit, modifier: Modifier =
             throw e
         }
         val m = preview
-        // The back button, or a gesture cut short by a page opening: back slides the page out.
-        if (m == null || motion !== m || gesture.value < 0.01f) {
-            if (motion === m) motion = null
+        // A page opened mid-gesture, a report or the next onboarding step, stays: the swipe was
+        // about the page it covered.
+        if (m != null && motion !== m) return@PredictiveBackHandler
+        // The back button: back slides the page out.
+        if (m == null || gesture.value < 0.01f) {
+            if (m != null) motion = null
             back()
             return@PredictiveBackHandler
         }
