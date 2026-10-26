@@ -274,11 +274,13 @@ object Dictation {
         val service = InsertionService.instance
         val tapped = service?.tappedTarget()
         if (service != null && pickTarget(tapped, into) { service.insert(it, text) } != null) {
+            service.showKeyboard()
             Log.d(TAG, "delivered: inserted")
             return State.Done(text, Output.INSERT, delivered = true)
         }
         if (tapped == null && into == null) Log.d(TAG, "insert fell back: no field tapped or focused at the start")
         copy(context, text)
+        service?.showKeyboard()
         Log.d(TAG, "delivered: clipboard")
         return State.Done(text, Output.CLIPBOARD, delivered = true)
     }

@@ -256,7 +256,8 @@ class InsertionService : AccessibilityService() {
      * The show mode alone doesn't bring the keyboard back: Android waits for the app to ask for
      * it again, which takes a tap. A click on the field with focus is that tap.
      */
-    private fun showKeyboard() {
+    /** Also called by [Dictation] the moment the words land, a few frames before its state does. */
+    fun showKeyboard() {
         if (!keyboardHidden) return
         softKeyboardController.setShowMode(SHOW_MODE_AUTO)
         keyboardHidden = false
