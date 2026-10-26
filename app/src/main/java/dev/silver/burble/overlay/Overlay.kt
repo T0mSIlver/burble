@@ -34,6 +34,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import android.os.Build
 import android.view.HapticFeedbackConstants
 import dev.silver.burble.Dictation
 import dev.silver.burble.Prefs
@@ -344,8 +345,23 @@ class Overlay(
         val near = kotlin.math.hypot(cx - tx, cy - ty) < ARM_DP * density
         if (near != armed.value) {
             armed.value = near
-            if (near) frame.performHapticFeedback(HapticFeedbackConstants.SEGMENT_TICK)
+            snapHaptic(frame, near)
         }
+    }
+
+    /**
+     * Snapping onto ✕ clicks, and Android 14+ marks letting go of it too; Android 12 and 13 have
+     * no threshold effects, so a clock tick marks the snap alone.
+     */
+    private fun snapHaptic(frame: View, near: Boolean) {
+        val effect = when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
+                if (near) HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
+                else HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE
+            near -> HapticFeedbackConstants.CLOCK_TICK
+            else -> return
+        }
+        frame.performHapticFeedback(effect)
     }
 
     /** After a drag: drop on ✕, or pick the nearer side, spring to it, remember it. */
