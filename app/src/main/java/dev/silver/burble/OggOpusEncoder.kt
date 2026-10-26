@@ -2,7 +2,9 @@ package dev.silver.burble
 
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.util.Log
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** PCM16 mono 16 kHz in, one Ogg stream out. Each server session needs a fresh one. */
@@ -14,30 +16,115 @@ interface AudioEncoder {
 }
 
 /**
- * Streams PCM16 mono 16 kHz through MediaCodec's Opus encoder and produces Ogg Opus bytes,
- * mirroring the stream Gboard sends (16 kHz, 24 kbps, Ogg container, OpusHead preskip 312).
- * Feed with [encode]; call [flush] at end of audio.
+ * The few MediaCodec calls the encoder makes, so tests can stall them. Every wait is bounded by
+ * its timeout.
  */
-class OggOpusEncoder : AudioEncoder {
+internal interface OpusCodec {
+    /** Queues up to [length] bytes of [pcm] from [offset]; returns how many, 0 when no buffer freed up in time. */
+    fun queue(pcm: ByteArray, offset: Int, length: Int, timeoutUs: Long): Int
+    /** Queues the end of the stream; false when no buffer freed up in time. */
+    fun queueEnd(timeoutUs: Long): Boolean
+    /** The next encoded packet, null when none came in time. */
+    fun take(timeoutUs: Long): Packet?
+    fun release()
 
+    /** [config]: codec setup data, not audio. [end]: the last packet of the stream. */
+    class Packet(val bytes: ByteArray, val config: Boolean, val end: Boolean)
+}
+
+/** Android's own Opus encoder, configured as Gboard's: 16 kHz mono at 24 kbps. */
+internal class MediaCodecOpus : OpusCodec {
     private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS)
-    private val stopped = AtomicBoolean(false)
-    private var pages = ByteArrayOutputStream()
-    private var pageSeq = 0
-    private var granule = 0L
-    private var pendingSegments = ArrayList<ByteArray>()
-    private var pendingBytes = 0
-
-    // Ogg page serial, fixed per stream.
-    private val serial = java.util.Random().nextInt()
+    private val info = MediaCodec.BufferInfo()
 
     init {
         val fmt = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, 16000, 1).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, 24000)
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384)
         }
-        codec.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        codec.start()
+        try {
+            codec.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            codec.start()
+        } catch (e: Exception) {
+            codec.release()
+            throw e
+        }
+    }
+
+    override fun queue(pcm: ByteArray, offset: Int, length: Int, timeoutUs: Long): Int {
+        val idx = codec.dequeueInputBuffer(timeoutUs)
+        if (idx < 0) return 0
+        val buf = codec.getInputBuffer(idx)!!
+        buf.clear()
+        val n = minOf(length, buf.remaining())
+        buf.put(pcm, offset, n)
+        codec.queueInputBuffer(idx, 0, n, 0, 0)
+        return n
+    }
+
+    override fun queueEnd(timeoutUs: Long): Boolean {
+        val idx = codec.dequeueInputBuffer(timeoutUs)
+        if (idx < 0) return false
+        codec.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+        return true
+    }
+
+    override fun take(timeoutUs: Long): OpusCodec.Packet? {
+        while (true) {
+            val idx = codec.dequeueOutputBuffer(info, timeoutUs)
+            if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) continue // headers written by us
+            if (idx < 0) return null
+            val bytes = ByteArray(info.size).also { codec.getOutputBuffer(idx)!!.get(it) }
+            codec.releaseOutputBuffer(idx, false)
+            return OpusCodec.Packet(bytes,
+                config = info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0,
+                end = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0)
+        }
+    }
+
+    override fun release() {
+        runCatching { codec.stop() }
+        codec.release()
+    }
+}
+
+/**
+ * Streams PCM16 mono 16 kHz through MediaCodec's Opus encoder and produces Ogg Opus bytes,
+ * mirroring the stream Gboard sends (16 kHz, 24 kbps, Ogg container, OpusHead preskip 312).
+ * Feed with [encode]; call [flush] at end of audio.
+ *
+ * A busy codec never drops audio: PCM it can't take yet waits here and goes in first on the next
+ * call. Every wait on the codec is bounded, so a hung codec fails with [CodecStalled] instead of
+ * blocking the caller.
+ */
+class OggOpusEncoder internal constructor(
+    private val codec: OpusCodec,
+    /** How long [encode] waits for the codec before leaving the rest for the next call. */
+    private val encodeWaitMs: Long = 40,
+    /** How long the codec may take no audio at all before [encode] gives up on it. */
+    private val stallMs: Long = 3_000,
+    /** How long [flush] waits for the codec to take the last audio and end the stream. */
+    private val flushMs: Long = 2_000,
+) : AudioEncoder {
+
+    constructor() : this(MediaCodecOpus())
+
+    private val stopped = AtomicBoolean(false)
+    private var pages = ByteArrayOutputStream()
+    private var pageSeq = 0
+    private var granule = 0L
+    private var pendingSegments = ArrayList<ByteArray>()
+    private var pendingBytes = 0
+    /** PCM the codec hasn't taken yet, oldest first. */
+    private val unqueued = ArrayDeque<ByteArray>()
+    private var unqueuedAt = 0
+    private var lastTakenMs = now()
+    private var ended = false
+
+    // Ogg page serial, fixed per stream.
+    private val serial = java.util.Random().nextInt()
+
+    init {
         val head = headerPacket()
         pages.write(oggPage(head, lacingFor(head.size), 0x02, 0))
         val tags = tagsPacket()
@@ -45,50 +132,72 @@ class OggOpusEncoder : AudioEncoder {
     }
 
     override fun encode(pcm: ByteArray): ByteArray {
-        if (stopped.get()) return ByteArray(0)
-        val idx = codec.dequeueInputBuffer(10_000)
-        if (idx >= 0) {
-            val buf = codec.getInputBuffer(idx)!!
-            buf.clear()
-            buf.put(pcm)
-            codec.queueInputBuffer(idx, 0, pcm.size, 0, 0)
+        if (stopped.get() || released) return ByteArray(0)
+        if (pcm.isNotEmpty()) unqueued.addLast(pcm)
+        queueUnqueued(now() + encodeWaitMs)
+        drain(0)
+        if (unqueued.isNotEmpty() && now() - lastTakenMs > stallMs) {
+            // The pages made so far stay for [flush].
+            release()
+            throw CodecStalled("the codec took no audio for $stallMs ms")
         }
-        drain()
         return takePages(force = false)
     }
 
     override fun flush(): ByteArray {
         if (!stopped.compareAndSet(false, true)) return ByteArray(0)
-        val idx = codec.dequeueInputBuffer(10_000)
-        if (idx >= 0) {
-            codec.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+        if (released) return takePages(force = true)
+        try {
+            val deadline = now() + flushMs
+            queueUnqueued(deadline)
+            while (!codec.queueEnd(WAIT_US)) {
+                drain(0)
+                if (now() >= deadline) break
+            }
+            while (!ended && now() < deadline) drain(WAIT_US)
+            if (unqueued.isNotEmpty() || !ended) Log.w(TAG, "the codec didn't finish within $flushMs ms; its last frames are lost")
+            return takePages(force = true)
+        } finally {
+            release()
         }
-        drain(eos = true)
-        val out = takePages(force = true)
-        codec.stop()
-        codec.release()
-        return out
     }
 
-    private fun drain(eos: Boolean = false) {
-        val info = MediaCodec.BufferInfo()
-        while (true) {
-            val idx = codec.dequeueOutputBuffer(info, if (eos) 10_000 else 0)
-            when {
-                idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> { /* headers written by us */ }
-                idx >= 0 -> {
-                    val packet = ByteArray(info.size).also {
-                        codec.getOutputBuffer(idx)!!.get(it)
-                    }
-                    codec.releaseOutputBuffer(idx, false)
-                    if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) continue
-                    // One 20 ms frame at 48 kHz per packet.
-                    granule += SAMPLES_PER_PACKET
-                    addPacket(packet)
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
+    private var released = false
+
+    private fun release() {
+        if (released) return
+        released = true
+        runCatching { codec.release() }
+    }
+
+    /** Hands the codec what it will take before [deadline]; the rest stays queued here. */
+    private fun queueUnqueued(deadline: Long) {
+        while (unqueued.isNotEmpty()) {
+            val pcm = unqueued.first()
+            val n = codec.queue(pcm, unqueuedAt, pcm.size - unqueuedAt, WAIT_US)
+            if (n > 0) {
+                lastTakenMs = now()
+                unqueuedAt += n
+                if (unqueuedAt == pcm.size) {
+                    unqueued.removeFirst()
+                    unqueuedAt = 0
                 }
-                else -> if (!eos || idx != MediaCodec.INFO_TRY_AGAIN_LATER) return
+                continue
             }
+            // Output the codec holds may be what keeps its input buffers busy.
+            drain(0)
+            if (now() >= deadline) return
+        }
+    }
+
+    private fun drain(timeoutUs: Long) {
+        while (!ended) {
+            val packet = codec.take(timeoutUs) ?: return
+            if (packet.config) continue
+            // One 20 ms frame at 48 kHz per packet.
+            granule += SAMPLES_PER_PACKET
+            addPacket(packet.bytes)
+            if (packet.end) ended = true
         }
     }
 
@@ -189,6 +298,9 @@ class OggOpusEncoder : AudioEncoder {
     }
 
     companion object {
+        private const val TAG = "OggOpusEncoder"
+        private const val WAIT_US = 10_000L
+        private fun now() = System.nanoTime() / 1_000_000
         const val SAMPLES_PER_PACKET = 960L // 20 ms at the Opus clock of 48 kHz
 
         /** CRC-32/MPEG-2 (poly 0x04C11DB7, init 0, no reflection, no xorout), as Ogg requires. */
@@ -205,3 +317,6 @@ class OggOpusEncoder : AudioEncoder {
         }
     }
 }
+
+/** The codec stopped taking audio. */
+class CodecStalled(message: String) : IOException(message)

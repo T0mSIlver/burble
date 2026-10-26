@@ -38,10 +38,10 @@ class DictationSession(
      */
     data class Limits(val switchFromMs: Long = 265_000, val switchByMs: Long = 280_000)
 
-    private inner class Segment(val index: Int, val startMs: Long) {
+    /** Only the recording thread touches [encoder], and never under [lock]: codec calls wait. */
+    private inner class Segment(val index: Int, val startMs: Long, val encoder: AudioEncoder) {
         val file = File(dir, "$index.ogg")
         val out = FileOutputStream(file)
-        val encoder = newEncoder()
         /** Null once its live session has failed: the audio then only goes to [file]. */
         var recognizer: Recognizer? = null
         var attempt = 0
@@ -156,12 +156,13 @@ class DictationSession(
     // ---- driven by the recording thread; internal for tests ----
 
     internal fun begin(nowMs: Long) {
+        val encoder = newEncoder()
         synchronized(lock) {
-            if (cancelled) return
+            if (cancelled) return@synchronized null
             dir.mkdirs()
             lastVoiceMs = nowMs
-            open(nowMs)
-        }
+            open(nowMs, encoder)
+        } ?: release(encoder)
     }
 
     /** Takes 32 ms of PCM for the wave's level. */
@@ -170,37 +171,45 @@ class DictationSession(
     }
 
     /** Takes one PCM buffer; false when silence has lasted [silenceMs]. */
-    internal fun audio(pcm: ByteArray, nowMs: Long): Boolean = synchronized(lock) {
-        if (cancelled) return false
+    internal fun audio(pcm: ByteArray, nowMs: Long): Boolean {
         val level = levelOf(pcm, pcm.size)
         val quiet = level < QUIET
-        if (!quiet) lastVoiceMs = nowMs
-        var seg = segments.last()
-        val age = nowMs - seg.startMs
-        if (age >= limits.switchFromMs && (quiet || age >= limits.switchByMs)) {
-            close(seg)
-            seg = open(nowMs)
+        val (seg, switch, more) = synchronized(lock) {
+            if (cancelled) return false
+            if (!quiet) lastVoiceMs = nowMs
+            val seg = segments.last()
+            val age = nowMs - seg.startMs
+            Triple(seg, age >= limits.switchFromMs && (quiet || age >= limits.switchByMs),
+                silenceMs <= 0 || nowMs - lastVoiceMs < silenceMs)
         }
-        write(seg, seg.encoder.encode(pcm))
-        silenceMs <= 0 || nowMs - lastVoiceMs < silenceMs
+        var into = seg
+        if (switch) {
+            // The next session opens before this one ends, so no audio falls between them.
+            val encoder = newEncoder()
+            into = synchronized(lock) { if (cancelled) null else open(nowMs, encoder) }
+                ?: run { release(encoder); return false }
+            close(seg)
+        }
+        val ogg = into.encoder.encode(pcm)
+        synchronized(lock) { if (!cancelled) write(into, ogg) }
+        return more
     }
 
-    internal fun endAudio() = synchronized(lock) {
-        if (audioEnded) return
-        audioEnded = true
-        val last = segments.lastOrNull()?.takeIf { it.recording }
-        if (cancelled) {
-            runCatching { last?.encoder?.flush() } // frees the codec
-            return
+    internal fun endAudio() {
+        val last = synchronized(lock) {
+            if (audioEnded) return
+            audioEnded = true
+            segments.lastOrNull()?.takeIf { it.recording }
         }
+        // Closing a cancelled segment still frees its codec.
         last?.let(::close)
-        reportIfDone()
+        synchronized(lock) { if (!cancelled) reportIfDone() }
     }
 
     // ---- segments ----
 
-    private fun open(nowMs: Long): Segment {
-        val seg = Segment(segments.size, nowMs)
+    private fun open(nowMs: Long, encoder: AudioEncoder): Segment {
+        val seg = Segment(segments.size, nowMs, encoder)
         segments.add(seg)
         seg.recognizer = connect(seg)
         return seg
@@ -220,11 +229,19 @@ class DictationSession(
     /** Ends a segment's audio; a segment whose live session failed is sent again whole. */
     private fun close(seg: Segment) {
         // A codec that broke loses only its last few frames; the rest is already written.
-        runCatching { write(seg, seg.encoder.flush()) }
-        runCatching { seg.out.close() }
-        seg.recording = false
-        val live = seg.recognizer
-        if (live != null) live.finish() else resend(seg)
+        val tail = runCatching { seg.encoder.flush() }.getOrElse { ByteArray(0) }
+        synchronized(lock) {
+            if (cancelled) return
+            runCatching { write(seg, tail) }
+            runCatching { seg.out.close() }
+            seg.recording = false
+            val live = seg.recognizer
+            if (live != null) live.finish() else resend(seg)
+        }
+    }
+
+    private fun release(encoder: AudioEncoder) {
+        runCatching { encoder.flush() }
     }
 
     private fun resend(seg: Segment) {
