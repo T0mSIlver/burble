@@ -233,7 +233,10 @@ class InsertionService : AccessibilityService() {
 
     /** The text field with input focus. Never a password field: no words go there, spoken aloud. */
     private fun focusedField(): AccessibilityNodeInfo? =
-        rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable && !it.isPassword }
+        (restoring ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT))?.takeIf { it.isEditable && !it.isPassword }
+
+    /** The field whose window [blipFocus] took focus from: it still counts as focused. */
+    private var restoring: AccessibilityNodeInfo? = null
 
     override fun onInterrupt() = Unit
 
@@ -323,7 +326,12 @@ class InsertionService : AccessibilityService() {
      * Takes input focus from [node]'s window for a frame, then runs [then] once the window has
      * it back: before that, its app can't ask for the keyboard.
      */
-    private fun blipFocus(node: AccessibilityNodeInfo, then: () -> Unit) {
+    private fun blipFocus(node: AccessibilityNodeInfo, after: () -> Unit) {
+        restoring = node
+        val then = {
+            if (restoring === node) restoring = null
+            after()
+        }
         val wm = getSystemService(WindowManager::class.java)
         val view = View(this)
         var removed = false
@@ -355,9 +363,8 @@ class InsertionService : AccessibilityService() {
 
     /** The field a dictation would go into now, with its app; never a password field. */
     fun captureTarget(): Target? {
-        val root = rootInActiveWindow ?: return null
-        val node = focusedField()?.takeUnless { it.isPassword } ?: return null
-        return Target(node, root.packageName?.toString(), node.windowId, node.viewIdResourceName,
+        val node = focusedField() ?: return null
+        return Target(node, node.packageName?.toString(), node.windowId, node.viewIdResourceName,
             Rect().also(node::getBoundsInScreen))
     }
 
@@ -482,7 +489,7 @@ class InsertionService : AccessibilityService() {
 
         /** Package of the app whose field has input focus; Rambler gets it as the trigger app. */
         fun focusedApp(): String? = runCatching {
-            instance?.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            instance?.let { it.restoring ?: it.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }
                 ?.packageName?.toString()
         }.getOrNull()
     }
