@@ -2,6 +2,8 @@ package dev.silver.burble.ui
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -44,6 +46,7 @@ fun BurbleApp() {
 
     val open = { intent: Intent -> context.startActivity(intent) }
     var micAsked by rememberSaveable { mutableStateOf(false) }
+    var report by remember { mutableStateOf<Report.Draft?>(null) }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { access = Permissions.read(context) }
     val actions = AccessActions(
         requestMicrophone = {
@@ -57,6 +60,17 @@ fun BurbleApp() {
         openBattery = { open(Permissions.batterySettings(context)) },
     )
 
+    report?.let { draft ->
+        ReportScreen(
+            draft,
+            onCopy = { body ->
+                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("report", body))
+            },
+            onOpen = { body -> open(Intent(Intent.ACTION_VIEW, Uri.parse(Report.issueUrl(SOURCE, body)))) },
+            onBack = { report = null },
+        )
+        return
+    }
     if (!settings.onboarded) {
         Onboarding(access, actions, onDone = { Prefs.update { it.copy(onboarded = true, bubbleOn = true) } })
     } else {
@@ -77,8 +91,8 @@ fun BurbleApp() {
                     val languages = if (settings.languagesFromKeyboard) KeyboardLanguages.read(context) else settings.languages
                     // Reading logcat spawns a process: keep it off the main thread.
                     Thread {
-                        val url = Report.issueUrl(SOURCE, version, languages)
-                        context.mainExecutor.execute { open(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                        val draft = Report.collect(version, languages)
+                        context.mainExecutor.execute { report = draft }
                     }.start()
                 },
             ),

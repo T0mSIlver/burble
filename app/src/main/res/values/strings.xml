@@ -96,7 +96,12 @@
     <string name="licence_hint">GNU GPL version 3</string>
     <string name="source">Source code</string>
     <string name="report_problem">Report a problem</string>
-    <string name="report_problem_hint">Opens a GitHub issue with your phone model and Burble\'s log</string>
+    <string name="report_problem_hint">Shows your phone model and Burble\'s log, then opens a GitHub issue</string>
+    <string name="report_intro">This goes into a new GitHub issue, where you can still edit it before sending. The log holds none of your dictated words.</string>
+    <string name="report_keep_apps">Include app names</string>
+    <string name="report_keep_apps_hint">The log names the app when text fell back to the clipboard</string>
+    <string name="report_copy">Copy</string>
+    <string name="report_open">Open GitHub issue</string>
     <string name="updates_auto_hint">Checks GitHub once a day when you open Burble</string>
     <string name="version_status">Version %1$s · %2$s</string>
     <string name="updates_up_to_date">Up to date</string>

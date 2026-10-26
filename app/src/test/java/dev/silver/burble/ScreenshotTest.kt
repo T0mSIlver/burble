@@ -9,6 +9,7 @@ import com.github.takahirom.roborazzi.captureScreenRoboImage
 import dev.silver.burble.ui.Access
 import dev.silver.burble.ui.AccessActions
 import dev.silver.burble.ui.Home
+import dev.silver.burble.ui.ReportScreen
 import dev.silver.burble.ui.HomeActions
 import dev.silver.burble.ui.Onboarding
 import dev.silver.burble.ui.Step
@@ -104,6 +105,16 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
             settings.copy(bubbleSize = 80, shape = BubbleShape.CLOVER_4, idleOpacity = 60, whenIdle = WhenIdle.DOT),
             Access.All, TestAudio.State.Idle, Updater.State.Downloading(release, 0.4f), HomeActions.None, "0.1.0", previewIdle = true,
         )
+    }
+
+    @Config(qualifiers = "w412dp-h1400dp-xxhdpi")
+    @Test fun report() = capture("report") {
+        val draft = Report.Draft(
+            phone = "- Burble 0.1.0\n- Google Pixel 9\n- Android 16 (SDK 36)\n- Languages: en-US, fr-FR\n",
+            log = "10-26 15:02:11.204 D/Insert: insert fell back: android.widget.EditText in com.example.chat refused the text\n" +
+                "10-26 15:02:11.209 D/Dictation: insert fell back: no field had input focus at the start",
+        )
+        ReportScreen(draft, onCopy = {}, onOpen = {}, onBack = {})
     }
 
     @Test fun advanced() = capture("advanced") {
