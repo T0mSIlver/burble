@@ -2,6 +2,7 @@ package dev.silver.burble.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -66,7 +67,7 @@ fun Advanced(
                 },
             ))
         }
-        item { SectionHeader(stringResource(R.string.section_keyboard)) }
+        item { Spacer(Modifier.height(16.dp)) }
         item {
             Group(listOf(
                 switchRow(Icons.Outlined.KeyboardHide, stringResource(R.string.hide_keyboard), stringResource(R.string.hide_keyboard_hint), settings.hideKeyboard) { on ->
@@ -77,7 +78,7 @@ fun Advanced(
         item { SectionHeader(stringResource(R.string.section_troubleshooting)) }
         item {
             Group(listOf(
-                linkRow(Icons.Outlined.RecordVoiceOver, stringResource(R.string.test_connection), stringResource(R.string.test_connection_hint)) {
+                linkRow(Icons.Outlined.RecordVoiceOver, stringResource(R.string.test_connection), null) {
                     testing = true
                 },
             ))

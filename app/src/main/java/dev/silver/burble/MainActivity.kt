@@ -13,4 +13,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent { AppTheme { BurbleApp() } }
     }
+
+    override fun onStart() {
+        super.onStart()
+        OwnScreens.shown(true)
+    }
+
+    override fun onStop() {
+        OwnScreens.shown(false)
+        super.onStop()
+    }
 }

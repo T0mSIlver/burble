@@ -231,7 +231,7 @@ fun <T> Choices(choices: List<Pair<T, Int>>, selected: T, onPick: (T) -> Unit) {
 
 /** A slider over [range] in steps of [step], with its value written beside it. */
 @Composable
-fun Stepped(value: Int, range: IntRange, step: Int, label: String, onChange: (Int) -> Unit) {
+fun Stepped(value: Int, range: IntRange, step: Int, label: String?, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Slider(
             value = value.toFloat(),
@@ -240,7 +240,7 @@ fun Stepped(value: Int, range: IntRange, step: Int, label: String, onChange: (In
             steps = (range.last - range.first) / step - 1,
             modifier = Modifier.weight(1f),
         )
-        Text(
+        if (label != null) Text(
             label,
             Modifier.padding(start = 16.dp).widthIn(min = 52.dp),
             style = MaterialTheme.typography.labelLarge,

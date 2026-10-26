@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.Tune
@@ -110,7 +111,8 @@ fun Home(
                     ShapePicker(settings.shape) { s -> set { it.copy(shape = s) } }
                 },
                 contentRow(null, stringResource(R.string.bubble_size)) {
-                    Stepped(settings.bubbleSize, MIN_SIZE..MAX_SIZE, 8, stringResource(R.string.dp, settings.bubbleSize)) { s ->
+                    // No value: the preview shows the size.
+                    Stepped(settings.bubbleSize, MIN_SIZE..MAX_SIZE, 8, null) { s ->
                         set { it.copy(bubbleSize = s) }
                     }
                 },
@@ -132,14 +134,6 @@ fun Home(
                 // Until setup is done the switch would switch nothing.
                 if (!access.ready) item { Setup(access, actions.access) }
                 else item { MainSwitch(settings.bubbleOn) { on -> set { it.copy(bubbleOn = on) } } }
-                if (access.ready && settings.bubbleOn && !settings.dictated) item {
-                    Text(
-                        stringResource(R.string.how_to),
-                        Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
 
                 item { SectionHeader(stringResource(R.string.section_bubble)) }
                 item {
@@ -185,9 +179,12 @@ fun Home(
                         linkRow(Icons.Outlined.PrivacyTip, stringResource(R.string.privacy), stringResource(R.string.privacy_hint)) {
                             actions.openUrl("$SOURCE#what-leaves-your-phone")
                         },
-                        linkRow(Icons.Outlined.Gavel, stringResource(R.string.licence), stringResource(R.string.licence_hint)) { licences = true },
+                        linkRow(Icons.Outlined.Gavel, stringResource(R.string.licence), null) { licences = true },
                         linkRow(Icons.Outlined.Code, stringResource(R.string.source), SOURCE.removePrefix("https://")) {
                             actions.openUrl(SOURCE)
+                        },
+                        linkRow(Icons.Outlined.FavoriteBorder, stringResource(R.string.thanks), stringResource(R.string.thanks_hint)) {
+                            actions.openUrl("https://github.com/Akshayykadam/PixelBoard")
                         },
                     ))
                 }
@@ -261,7 +258,7 @@ private fun Setup(access: Access, actions: AccessActions) {
                 return@Column
             }
             Text(stringResource(R.string.status_setup), style = MaterialTheme.typography.titleLarge)
-            if (!access.microphone) Missing(R.string.onb_mic_title, null, R.string.onb_allow_mic, actions.requestMicrophone)
+            if (!access.microphone) Missing(null, null, R.string.onb_allow_mic, actions.requestMicrophone)
             if (!access.insertion) {
                 Missing(R.string.onb_insert_title, if (access.restricted) R.string.status_restricted else R.string.status_insert_hint,
                     R.string.open_settings, actions.openAccessibility)
@@ -272,9 +269,9 @@ private fun Setup(access: Access, actions: AccessActions) {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun Missing(label: Int, detail: Int?, action: Int, onClick: () -> Unit) {
+private fun Missing(label: Int?, detail: Int?, action: Int, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
-        Text(stringResource(label), style = MaterialTheme.typography.bodyLarge)
+        if (label != null) Text(stringResource(label), style = MaterialTheme.typography.bodyLarge)
         if (detail != null) {
             Text(stringResource(detail), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

@@ -485,7 +485,7 @@ private fun Look.Failed.action() = when (kind) {
     ErrorKind.QUOTA -> R.string.overlay_action_later
     ErrorKind.NOTHING_HEARD -> R.string.overlay_action_speak
     ErrorKind.NETWORK, ErrorKind.OTHER -> R.string.overlay_action_retry
-    ErrorKind.UNSENT -> R.string.overlay_action_retry_unsent
+    ErrorKind.UNSENT -> R.string.overlay_action_retry
 }
 
 /**

@@ -31,7 +31,8 @@ object TestAudio {
                 onDone = { r ->
                     _state.value = r.fold(
                         onSuccess = { State.Heard(it.trim()) },
-                        onFailure = { State.Failed(it.message?.take(120)) },
+                        // The details go to the log, for a report; the screen says try again.
+                        onFailure = { android.util.Log.w("TestAudio", "test failed", it); State.Failed(it.message?.take(120)) },
                     )
                 },
             )

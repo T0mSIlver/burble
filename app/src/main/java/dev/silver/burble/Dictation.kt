@@ -210,7 +210,6 @@ object Dictation {
     internal fun readyInserted() {
         val ready = _state.value as? State.Ready ?: return
         dropSession()
-        inserted()
         _state.value = State.Done(ready.text, Output.INSERT, delivered = true)
     }
 
@@ -220,10 +219,6 @@ object Dictation {
         target = null
     }
 
-    /** Home says how to dictate until this first happens. */
-    private fun inserted() {
-        if (!Prefs.settings.value.dictated) Prefs.update { it.copy(dictated = true) }
-    }
 
     fun copy(context: Context, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -298,8 +293,7 @@ object Dictation {
      */
     private fun deliver(context: Context, text: String, into: InsertionService.Target?): State {
         if (into != null && InsertionService.instance?.insert(into, text) == true) {
-            inserted()
-            return State.Done(text, Output.INSERT, delivered = true)
+                return State.Done(text, Output.INSERT, delivered = true)
         }
         if (into == null) Log.d(TAG, "insert fell back: no field had input focus at the start")
         copy(context, text)

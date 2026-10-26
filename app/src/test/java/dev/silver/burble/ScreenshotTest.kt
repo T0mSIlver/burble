@@ -65,10 +65,10 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     @Test fun unlockAppInfo() = step("unlock-appinfo", Access.None.copy(microphone = true), Step.INSERTION, unlockStage = 1)
 
     private val keyboard = listOf("en-US", "fr-FR")
-    private val settings = Settings(onboarded = true, dictated = true, languages = listOf("en-US", "fr-FR"))
+    private val settings = Settings(onboarded = true, languages = listOf("en-US", "fr-FR"))
     private val release = Release(
         version = "0.2.0",
-        notes = "- The bubble keeps your words when the screen rotates.\n- Languages: pick several; the first is the main one.\n- Fixes a crash when the network drops mid-dictation.",
+        notes = "- The bubble keeps your words when the screen rotates.\n- Languages: pick several; the first is the primary one.\n- Fixes a crash when the network drops mid-dictation.",
         apkUrl = "",
         apkSize = 0,
     )
@@ -82,7 +82,7 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     // Before the first dictation: the main switch says how.
     @Config(qualifiers = "w412dp-h2600dp-xxhdpi")
     @Test fun homeReady() = capture("home-ready") {
-        Home(settings.copy(dictated = false), Access.All, TestAudio.State.Idle, Updater.State.UpToDate, HomeActions.None, "0.1.0")
+        Home(settings, Access.All, TestAudio.State.Idle, Updater.State.UpToDate, HomeActions.None, "0.1.0")
     }
 
     @Test fun homeOff() = capture("home-off") {

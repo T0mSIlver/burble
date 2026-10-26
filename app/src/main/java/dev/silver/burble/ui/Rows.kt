@@ -91,14 +91,14 @@ fun switchRow(icon: ImageVector, title: String, hint: String?, checked: Boolean,
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-fun linkRow(icon: ImageVector, title: String, value: String, onClick: () -> Unit): SettingRow = { shapes ->
+fun linkRow(icon: ImageVector, title: String, value: String?, onClick: () -> Unit): SettingRow = { shapes ->
     SegmentedListItem(
         onClick = onClick,
         shapes = shapes,
         colors = listColors(),
         leadingContent = { Icon(icon, contentDescription = null) },
         trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null) },
-        supportingContent = { Text(value) },
+        supportingContent = value?.let { { Text(it) } },
     ) { Text(title) }
 }
 

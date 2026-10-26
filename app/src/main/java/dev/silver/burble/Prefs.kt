@@ -49,8 +49,6 @@ data class Settings(
     val languagesFromKeyboard: Boolean = true,
     /** "Use Burble": the main switch on home and the Quick Settings tile. Off, the bubble is gone. */
     val bubbleOn: Boolean = true,
-    /** A dictation has gone into a field once: home stops saying how to dictate. */
-    val dictated: Boolean = false,
     val bubbleShow: BubbleShow = BubbleShow.ALWAYS,
     /** The bubble's opacity in Idle, 20 to 100 %; every other state is opaque. */
     val idleOpacity: Int = 100,
@@ -86,7 +84,6 @@ object Prefs {
             .putString("languages", next.languages.joinToString(","))
             .putBoolean("languagesFromKeyboard", next.languagesFromKeyboard)
             .putBoolean("bubbleOn", next.bubbleOn)
-            .putBoolean("dictated", next.dictated)
             .putString("bubbleShow", next.bubbleShow.name)
             .putInt("idleOpacity", next.idleOpacity)
             .putString("whenIdle", next.whenIdle.name)
@@ -118,7 +115,6 @@ object Prefs {
                 ?: listOf(language),
             languagesFromKeyboard = sp.getBoolean("languagesFromKeyboard", d.languagesFromKeyboard),
             bubbleOn = sp.getBoolean("bubbleOn", d.bubbleOn),
-            dictated = sp.getBoolean("dictated", d.dictated),
             bubbleShow = enumOr(sp.getString("bubbleShow", null), d.bubbleShow),
             idleOpacity = sp.getInt("idleOpacity", d.idleOpacity),
             whenIdle = enumOr(sp.getString("whenIdle", null), d.whenIdle),
