@@ -142,6 +142,16 @@ class Overlay(
     var touchedOutsideAt = 0L
         private set
 
+    /**
+     * The user touched or scrolled the app underneath: they've moved on, so an idle bubble rests
+     * now rather than after 3 s. Once on its way, more of these change nothing.
+     */
+    fun elsewhere() {
+        if (!ui.rest.value && restsEarly(ui.idle.value, ui.touching.value, SystemClock.uptimeMillis(), ui.releasedAt)) {
+            ui.rest.value = true
+        }
+    }
+
     fun show() {
         if (bubble != null) return
         dropShapeThatHung()
@@ -426,6 +436,7 @@ class Overlay(
             when (e.actionMasked) {
                 MotionEvent.ACTION_OUTSIDE -> {
                     touchedOutsideAt = SystemClock.uptimeMillis()
+                    elsewhere()
                     return false
                 }
                 MotionEvent.ACTION_DOWN -> {
@@ -454,6 +465,7 @@ class Overlay(
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val tap = !dragging && e.actionMasked == MotionEvent.ACTION_UP
+                    ui.releasedAt = SystemClock.uptimeMillis()
                     ui.touching.value = false
                     ui.pressed.value = false
                     if (dragging) {

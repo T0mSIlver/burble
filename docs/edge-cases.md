@@ -38,7 +38,11 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Nothing off screen or under bars and cutouts, portrait and landscape | Unit `GeometryTest.nothingLeavesTheScreenOrGoesUnderBarsOrCutouts` | ✅ |
 | Touch area at least 48 dp, holding the bubble | Unit `GeometryTest.theTouchAreaIsAtLeast48dpAndHoldsTheBubble` | ✅ |
 | The bubble's window never resizes | Unit `GeometryTest.theWindowNeverChangesSize` | ✅ |
-| Full ↔ idle is one interpolation; size and opacity move together, one way | Unit `GeometryTest.theTransitionIsOneInterpolation`, `RestTransitionTest` | ✅ |
+| Full ↔ idle is one interpolation on the spatial spring; size, dock, opacity together; no frame jumps; overshoot stays on screen and in the window | Unit `GeometryTest.theTransitionIsOneInterpolation`, `nothingLeavesTheScreenOrGoesUnderBarsOrCutouts`, `RestTransitionTest`; frames every 16 ms `DockFramesTest`; emulator `tools/emulator/dock-anim.sh` | ✅ |
+| The Dot morphs into a circle, its shadow with it; the glyph fades out halfway, with no frame where it drops | Frames `DockFramesTest` | ✅ |
+| A motion frame redraws the bubble without recomposing it | Code (`Placement` read while drawing); 12 recompositions over 122 frames, 172 before | ✅ |
+| A touch or scroll in the app underneath rests the idle bubble at once; repeated ones don't restart it | Unit `RestsEarlyTest`; emulator `TRIGGER=scroll tools/emulator/dock-anim.sh` | ✅ |
+| Never early during a dictation, a result or an error, with a finger on the bubble, or within 0.5 s of one leaving it | Unit `RestsEarlyTest` | ✅ |
 | Rotation keeps the side and the share of the height | Unit `GeometryTest.rotationKeepsTheSideAndTheShareOfTheHeight` | ✅ |
 | Drag keeps it on screen; release docks at the nearer edge, at the drop height | Unit `GeometryTest.aDragKeepsTheBubbleOnScreenAndDropsWhereItWas`; emulator recording | ✅ |
 | Label comes and goes: the bubble doesn't move by a pixel, either side | Emulator `tools/emulator/bubble-stays.sh pill right|left` | ✅ |

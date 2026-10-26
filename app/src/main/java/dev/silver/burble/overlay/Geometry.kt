@@ -55,6 +55,8 @@ object Geometry {
     /** The label's window: wide and tall enough for its longest two lines, and their shadow. */
     const val PILL_WIDTH_DP = 256f
     const val PILL_HEIGHT_DP = 72f
+    /** How far past full or the idle look a layout goes, as a share of the way between them. */
+    const val OVERSHOOT = 0.03f
 
     /** The bubble's window side: the largest bubble and room for its shadow. */
     fun windowSide(density: Float) = (MAX_DP + 2 * PAD_DP) * density
@@ -68,7 +70,9 @@ object Geometry {
 
     /**
      * The layout at [progress] from full (0) to the idle look (1), moved by [drag] while a finger
-     * drags it. Every in-between layout is a straight interpolation of the two ends.
+     * drags it. Every in-between layout is a straight interpolation of the two ends. A spring
+     * passes the ends a little: up to [OVERSHOOT] past either still lays out on screen, so the
+     * motion settles rather than stopping dead.
      */
     fun layout(
         screen: Screen,
@@ -96,7 +100,7 @@ object Geometry {
             right -> safe.right - inset - v / 2
             else -> safe.left + inset + v / 2
         }
-        val p = progress.coerceIn(0f, 1f)
+        val p = progress.coerceIn(-OVERSHOOT, 1f + OVERSHOOT)
         val cx = fullX + (dockX - fullX) * p
         val size = s + (v - s) * p
         // A drag keeps the whole bubble on screen.
@@ -124,7 +128,7 @@ object Geometry {
         val pillLeft = (if (right) fullX - s / 2 - gap - pw else fullX + s / 2 + gap)
             .coerceIn(safe.left, max(safe.left, safe.right - pw))
         val pill = Box(pillLeft, pillTop, pillLeft + pw, pillTop + ph).moved(dx, dy)
-        val alpha = 1f + (idleOpacity - 1f) * p
+        val alpha = (1f + (idleOpacity - 1f) * p).coerceIn(0f, 1f)
         return BubbleLayout(window, bubble, alpha, touch, pill)
     }
 

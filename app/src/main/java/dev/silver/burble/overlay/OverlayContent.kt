@@ -91,6 +91,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.RoundedPolygon
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.SpringSpec
+import androidx.compose.material3.MotionScheme
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.asComposePath
+import androidx.graphics.shapes.Morph
+import androidx.graphics.shapes.toPath
 import dev.silver.burble.BubbleShape
 import dev.silver.burble.WhenIdle
 import dev.silver.burble.Dictation
@@ -143,7 +151,24 @@ internal class OverlayUi {
     val labelled = mutableStateOf(false)
     /** Docked at rest: the touch window narrows to the edge. */
     val docked = mutableStateOf(false)
+    /** Idle and untouched: it may rest. */
+    val idle = mutableStateOf(false)
+    /** At rest, or on its way there: the idle look. */
+    val rest = mutableStateOf(false)
+    /** When a finger last left the bubble, in [android.os.SystemClock.uptimeMillis]. */
+    var releasedAt = 0L
 }
+
+/**
+ * Whether a touch or a scroll in the app underneath, at [now], sends the bubble to rest at once
+ * rather than after [REST_MS]: only [idle] (no dictation, no result, no error showing), with no
+ * finger on it, and not within [OWN_TOUCH_MS] of a finger leaving it, which the same gesture's
+ * own events would otherwise do.
+ */
+internal fun restsEarly(idle: Boolean, touching: Boolean, now: Long, releasedAt: Long) =
+    idle && !touching && now - releasedAt >= OWN_TOUCH_MS
+
+internal const val OWN_TOUCH_MS = 500L
 
 /**
  * The bubble in its own window, wired to [Dictation] and [Prefs]: results time out, haptics mark
@@ -188,33 +213,45 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
     // A quiet error looks, and rests, like Idle.
     val shown = if (look is Look.Failed && quiet) Look.Idle else look
     val badge = look is Look.Failed && quiet && look.waits
-    // 3 s untouched in Idle, counted again after every touch and every dictation.
-    var rest by remember { mutableStateOf(false) }
+    // 3 s untouched in Idle, counted again after every touch and every dictation; sooner when
+    // the user touches or scrolls the app underneath ([Overlay.elsewhere]).
     val idle = shown is Look.Idle && !ui.touching.value
     LaunchedEffect(idle) {
-        rest = false
+        ui.idle.value = idle
+        ui.rest.value = false
         if (idle) {
             delay(REST_MS)
-            rest = true
+            ui.rest.value = true
         }
     }
-    val atRest = idle && rest
-    val progress by animateFloatAsState(if (atRest) 1f else 0f, RestSpec)
-    val docked = atRest && progress == 1f && settings.whenIdle != WhenIdle.FULL
+    val atRest = idle && ui.rest.value
+    // One spring from full to the idle look and back. Read only while drawing: a frame of the
+    // motion redraws the bubble without recomposing it.
+    val progress = remember { Animatable(0f) }
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(atRest) {
+        settled = false
+        progress.animateTo(if (atRest) 1f else 0f, RestSpec)
+        settled = true
+    }
+    val docked = atRest && settled && settings.whenIdle != WhenIdle.FULL
     LaunchedEffect(docked) { ui.docked.value = docked }
     val visible = remember { MutableTransitionState(false) }
     visible.targetState = !(ui.locked.value || ui.away.value || ui.closing.value)
     LaunchedEffect(visible.isIdle, visible.currentState, ui.closing.value) {
         if (ui.closing.value && visible.isIdle && !visible.currentState) onGone()
     }
-    val l = Geometry.layout(ui.screen.value, ui.anchor.value, settings.bubbleSize, settings.whenIdle, progress,
-        settings.idleOpacity / 100f, ui.drag.value)
     val density = LocalDensity.current
     val side = Geometry.windowSide(density.density)
-    // Drawn against the window's rounded origin, as Overlay places it.
-    val centre = Offset(l.bubble.centerX - l.window.left.roundToInt(), l.bubble.centerY - l.window.top.roundToInt())
+    val sizePx = with(density) { settings.bubbleSize.dp.toPx() }
+    val layout = { p: Float ->
+        Geometry.layout(ui.screen.value, ui.anchor.value, settings.bubbleSize, settings.whenIdle, p,
+            settings.idleOpacity / 100f, ui.drag.value)
+    }
     val motion = MaterialTheme.motionScheme
-    val origin = TransformOrigin(centre.x / side, centre.y / side)
+    // It shows and hides from its centre, full or at rest.
+    val origin = placement(layout(if (atRest) 1f else 0f), sizePx, settings.whenIdle, 0f).centre
+        .let { TransformOrigin(it.x / side, it.y / side) }
     Box(Modifier.size(with(density) { side.toDp() })) {
         AnimatedVisibility(
             visible,
@@ -222,15 +259,42 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
             exit = fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec(), targetScale = 0.6f, transformOrigin = origin),
         ) {
             BubbleBody(
-                shown, settings.shape, settings.bubbleSize.dp, centre,
+                shown, settings.shape, settings.bubbleSize.dp,
+                place = { placement(layout(progress.value), sizePx, settings.whenIdle, progress.value) },
                 badge = badge,
-                scale = l.bubble.width / with(density) { settings.bubbleSize.dp.toPx() },
-                alpha = l.alpha,
                 pressed = ui.pressed.value,
-                glyphs = if (settings.whenIdle == WhenIdle.DOT) 1f - progress else 1f,
             ) { color, modifier -> LiveWave(Dictation.level, color, modifier) }
         }
     }
+}
+
+/**
+ * Where the bubble is drawn in its window this frame, and how: [round] morphs its shape towards
+ * a circle, [glyphs] fades what it shows. Read while drawing, so a motion redraws the bubble
+ * without recomposing it.
+ */
+internal class Placement(
+    val centre: Offset,
+    val scale: Float = 1f,
+    val alpha: Float = 1f,
+    val glyphs: Float = 1f,
+    val round: Float = 0f,
+)
+
+/**
+ * [l]'s bubble, drawn against its window's rounded origin as Overlay places it, at [p] between
+ * full and at rest. The dot is a circle: a 12 dp cookie reads as a blur. The glyph is gone
+ * halfway there, where the bubble gets too small for it.
+ */
+internal fun placement(l: BubbleLayout, sizePx: Float, whenIdle: WhenIdle, p: Float): Placement {
+    val dot = whenIdle == WhenIdle.DOT
+    return Placement(
+        centre = Offset(l.bubble.centerX - l.window.left.roundToInt(), l.bubble.centerY - l.window.top.roundToInt()),
+        scale = l.bubble.width / sizePx,
+        alpha = l.alpha,
+        glyphs = if (dot) (1f - 2f * p).coerceIn(0f, 1f) else 1f,
+        round = if (dot) p.coerceIn(0f, 1f) else 0f,
+    )
 }
 
 /** The error's label in its own window beside the bubble, on the side facing the screen. */
@@ -296,13 +360,18 @@ internal fun ColorScheme.waveColor(wallpaper: Boolean): Color = primary
 /** Draws the wave; the live overlay passes the mic's, screenshot tests a frozen one. */
 internal typealias WaveSlot = @Composable (color: Color, modifier: Modifier) -> Unit
 
-private const val REST_MS = 3000L
+internal const val REST_MS = 3000L
 
 /**
- * Between full (0) and at rest (1). Critically damped: no overshoot, so size, dock and opacity
- * each move one way from one look to the other.
+ * Between full (0) and at rest (1): the expressive scheme's spatial spring, moving size, dock,
+ * shape and opacity as one. It overshoots by about 2 %, which [Geometry] keeps on screen. It
+ * runs until under a pixel from the end: the default stop, at 1 %, snapped a 96 dp bubble by
+ * 2 px in its last frame.
  */
-internal val RestSpec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+internal val RestSpec: FiniteAnimationSpec<Float> =
+    (MotionScheme.expressive().defaultSpatialSpec<Float>() as SpringSpec<Float>)
+        .let { spring(it.dampingRatio, it.stiffness, visibilityThreshold = 0.002f) }
 
 /** Finds the bubble in tests. */
 internal const val BUBBLE_TAG = "bubble"
@@ -310,8 +379,8 @@ internal const val BUBBLE_TAG = "bubble"
 /**
  * The bubble, the only thing Burble draws over other apps. It keeps its shape and size in
  * every state, so nothing it covers changes while you talk: the wave, the loader and the check
- * all play inside it, cross-fading on the motion scheme's springs. Drawn centred on [centre] in
- * its parent, at [scale] and [alpha] from [Geometry]; [pressed] shrinks it a little.
+ * all play inside it, cross-fading on the motion scheme's springs. Drawn where [place] says in
+ * its parent; [pressed] shrinks it a little.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -319,12 +388,8 @@ internal fun BubbleBody(
     look: Look,
     shape: BubbleShape,
     side: Dp,
-    centre: Offset,
-    scale: Float = 1f,
-    alpha: Float = 1f,
+    place: () -> Placement,
     pressed: Boolean = false,
-    /** The glyph's opacity: a 12 dp dot has no room for it. */
-    glyphs: Float = 1f,
     /** A failed dictation's audio waits: a small retry badge on the bubble's own look. */
     badge: Boolean = false,
     wave: WaveSlot,
@@ -343,10 +408,14 @@ internal fun BubbleBody(
     val fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     val bg by animateColorAsState(container, effects)
     val fg by animateColorAsState(content, effects)
-    val press by animateFloatAsState(if (pressed) 0.9f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
+    val press = animateFloatAsState(if (pressed) 0.9f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
     val outline = shape.polygon().toShape()
     val keyShadow = remember(outline) { DropShadowPainter(outline, KeyShadow) }
     val ambientShadow = remember(outline) { DropShadowPainter(outline, AmbientShadow) }
+    // Towards the dot: the shape morphs into a circle, its shadow fades into a circle's.
+    val rounding = remember(shape) { Rounding(shape.polygon()) }
+    val roundKeyShadow = remember { DropShadowPainter(CircleShape, KeyShadow) }
+    val roundAmbientShadow = remember { DropShadowPainter(CircleShape, AmbientShadow) }
     val density = LocalDensity.current
     val half = with(density) { side.toPx() } / 2
     // The bubble's place, size and opacity; the shape's mask is inside, so the badge isn't cut.
@@ -355,11 +424,12 @@ internal fun BubbleBody(
             .testTag(BUBBLE_TAG)
             .size(side)
             .graphicsLayer {
-                translationX = centre.x - half
-                translationY = centre.y - half
-                scaleX = scale * press
-                scaleY = scale * press
-                this.alpha = alpha
+                val at = place()
+                translationX = at.centre.x - half
+                translationY = at.centre.y - half
+                scaleX = at.scale * press.value
+                scaleY = at.scale * press.value
+                this.alpha = at.alpha
                 // Offscreen, the fade would crop the shadow to the bubble's square.
                 compositingStrategy = CompositingStrategy.ModulateAlpha
             },
@@ -376,9 +446,16 @@ internal fun BubbleBody(
                         addOutline(outline.createOutline(this@drawWithCache.size, layoutDirection, this@drawWithCache))
                     }
                     onDrawBehind {
-                        clipPath(inside, ClipOp.Difference) {
-                            with(keyShadow) { draw(this@onDrawBehind.size) }
-                            with(ambientShadow) { draw(this@onDrawBehind.size) }
+                        val round = place().round
+                        clipPath(if (round == 0f) inside else rounding.path(round, size), ClipOp.Difference) {
+                            if (round < 1f) {
+                                with(keyShadow) { draw(this@onDrawBehind.size, alpha = 1f - round) }
+                                with(ambientShadow) { draw(this@onDrawBehind.size, alpha = 1f - round) }
+                            }
+                            if (round > 0f) {
+                                with(roundKeyShadow) { draw(this@onDrawBehind.size, alpha = round) }
+                                with(roundAmbientShadow) { draw(this@onDrawBehind.size, alpha = round) }
+                            }
                         }
                     }
                 }
@@ -387,23 +464,35 @@ internal fun BubbleBody(
                 // fading in at partial alpha showed its square past the shape.
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithCache {
+                    val square = Rect(Offset.Zero, size)
                     val outside = Path().apply {
-                        addRect(Rect(Offset.Zero, this@drawWithCache.size))
+                        addRect(square)
                         addOutline(outline.createOutline(this@drawWithCache.size, layoutDirection, this@drawWithCache))
                         fillType = PathFillType.EvenOdd
                     }
+                    val morphing = Path().apply { fillType = PathFillType.EvenOdd }
                     onDrawWithContent {
                         drawRect(bg)
                         drawContent()
-                        drawPath(outside, Color.Black, blendMode = BlendMode.Clear)
+                        val round = place().round
+                        val mask = if (round == 0f) outside else morphing.apply {
+                            rewind()
+                            addRect(square)
+                            addPath(rounding.path(round, size))
+                        }
+                        drawPath(mask, Color.Black, blendMode = BlendMode.Clear)
                     }
                 },
             contentAlignment = Alignment.Center,
         ) {
             AnimatedContent(
                 targetState = look,
-                // A 12 dp dot has no room for the glyph.
-                modifier = Modifier.graphicsLayer { this.alpha = glyphs },
+                // A 12 dp dot has no room for the glyph. Faded in place: a layer that turned
+                // offscreen as it left full opacity dropped the glyph for a frame.
+                modifier = Modifier.graphicsLayer {
+                    this.alpha = place().glyphs
+                    compositingStrategy = CompositingStrategy.ModulateAlpha
+                },
                 contentKey = { it::class },
                 transitionSpec = {
                     // Every look fills the bubble, so no size transform clips one to a growing box.
@@ -439,6 +528,28 @@ internal fun BubbleBody(
     }
 }
 
+/** The bubble at rest in its parent, centred on [centre]: the settings' shape tiles. */
+@Composable
+internal fun BubbleBody(look: Look, shape: BubbleShape, side: Dp, centre: Offset, wave: WaveSlot) =
+    BubbleBody(look, shape, side, place = { Placement(centre) }, wave = wave)
+
+/** [polygon] part of the way to a circle, as a path for a [Size] box. */
+private class Rounding(polygon: RoundedPolygon) {
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    private val morph = Morph(polygon, MaterialShapes.Circle)
+    private val path = android.graphics.Path()
+    private val matrix = android.graphics.Matrix()
+
+    fun path(round: Float, size: Size): Path {
+        path.rewind()
+        morph.toPath(round, path)
+        // The shapes span the unit square.
+        matrix.setScale(size.width, size.height)
+        path.transform(matrix)
+        return path.asComposePath()
+    }
+}
+
 /**
  * The bubble as the overlay draws it, for screenshots and the settings preview: in a window's
  * square, against the edge [alignEnd] picks, placed by [Geometry] as on screen, with an error's
@@ -459,19 +570,22 @@ internal fun OverlayContent(
     val density = LocalDensity.current
     val w = Geometry.windowSide(density.density)
     val sizeDp = side.value.roundToInt()
-    val progress by animateFloatAsState(if (rest && look == Look.Idle) 1f else 0f, RestSpec)
-    val l = Geometry.layout(
-        Screen(w, w, Box(0f, 0f, w, w), density.density), Anchor(if (alignEnd) Edge.RIGHT else Edge.LEFT, 0.5f),
-        sizeDp, whenIdle, progress, idleOpacity,
-    )
+    val sizePx = with(density) { side.toPx() }
+    val progress = remember { Animatable(if (rest && look == Look.Idle) 1f else 0f) }
+    LaunchedEffect(rest && look == Look.Idle) { progress.animateTo(if (rest && look == Look.Idle) 1f else 0f, RestSpec) }
+    val screen = Screen(w, w, Box(0f, 0f, w, w), density.density)
+    val anchor = Anchor(if (alignEnd) Edge.RIGHT else Edge.LEFT, 0.5f)
     val failed = (look as? Look.Failed)?.takeIf { labelled }
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (alignEnd) ErrorPill(failed, towardsStart = true) {}
         Box(Modifier.size(with(density) { w.toDp() })) {
             BubbleBody(
-                look, shape, side, Offset(l.bubble.centerX, l.bubble.centerY),
-                scale = l.bubble.width / with(density) { side.toPx() }, alpha = l.alpha,
-                glyphs = if (whenIdle == WhenIdle.DOT) 1f - progress else 1f, wave = wave,
+                look, shape, side,
+                place = {
+                    val p = progress.value
+                    placement(Geometry.layout(screen, anchor, sizeDp, whenIdle, p, idleOpacity), sizePx, whenIdle, p)
+                },
+                wave = wave,
             )
         }
         if (!alignEnd) ErrorPill(failed, towardsStart = false) {}

@@ -23,6 +23,8 @@ class GeometryTest {
     private val sizes = (40..96 step 8).toList()
     private val heights = listOf(0f, 0.5f, 1f)
     private val steps = listOf(0f, 0.25f, 0.5f, 0.75f, 1f)
+    // A spring passes either end a little on its way.
+    private val overshot = steps + listOf(-Geometry.OVERSHOOT, 1f + Geometry.OVERSHOOT)
 
     private fun each(block: (String, Screen, Anchor, Int, WhenIdle) -> Unit) {
         for ((name, screen) in screens()) for (edge in Edge.entries) for (f in heights)
@@ -64,7 +66,7 @@ class GeometryTest {
     }
 
     @Test fun nothingLeavesTheScreenOrGoesUnderBarsOrCutouts() = each { name, screen, anchor, size, look ->
-        for (p in steps) {
+        for (p in overshot) {
             val l = layout(screen, anchor, size, look, p)
             assertTrue("$name $p bubble", screen.safe.contains(l.bubble))
             assertTrue("$name $p window", screen.safe.contains(l.window))
@@ -83,7 +85,7 @@ class GeometryTest {
     }
 
     @Test fun theWindowNeverChangesSize() = each { name, screen, anchor, size, look ->
-        for (p in steps) {
+        for (p in overshot) {
             val l = layout(screen, anchor, size, look, p)
             near("$name width", Geometry.windowSide(d), l.window.width)
             near("$name height", Geometry.windowSide(d), l.window.height)

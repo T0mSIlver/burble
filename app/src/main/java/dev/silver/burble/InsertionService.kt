@@ -190,6 +190,12 @@ class InsertionService : AccessibilityService() {
         // Switched off, Burble doesn't follow focus at all.
         if (!Prefs.settings.value.bubbleOn) return
         if (event != null && Dictation.state.value.recording && tappedField(event)) noteTap(event)
+        // A scroll in another app: the user has moved on, the idle bubble rests now. Not a focus
+        // change, so nothing more to look at.
+        if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+            if (event.packageName != packageName) overlay?.elsewhere()
+            return
+        }
         if (Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS && !visibility.snoozed) return
         // Focus moves in bursts (a window opens, then a field takes focus): look once it settles.
         main.removeCallbacks(focusCheck)
