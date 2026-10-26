@@ -87,10 +87,16 @@ fun Home(
     advancedOpen: Boolean = false,
     languagesOpen: Boolean = false,
     testOpen: Boolean = false,
+    licencesOpen: Boolean = false,
 ) {
     var advanced by rememberSaveable { mutableStateOf(advancedOpen) }
     if (advanced) {
         Advanced(settings, keyboard, test, actions, onBack = { advanced = false }, languagesOpen, testOpen)
+        return
+    }
+    var licences by rememberSaveable { mutableStateOf(licencesOpen) }
+    if (licences) {
+        Licences(onBack = { licences = false })
         return
     }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -177,9 +183,7 @@ fun Home(
                     linkRow(Icons.Outlined.PrivacyTip, stringResource(R.string.privacy), stringResource(R.string.privacy_hint)) {
                         actions.openUrl("$SOURCE#what-leaves-your-phone")
                     },
-                    linkRow(Icons.Outlined.Gavel, stringResource(R.string.licence), stringResource(R.string.licence_hint)) {
-                        actions.openUrl("$SOURCE/blob/main/LICENSE")
-                    },
+                    linkRow(Icons.Outlined.Gavel, stringResource(R.string.licence), stringResource(R.string.licence_hint)) { licences = true },
                     linkRow(Icons.Outlined.Code, stringResource(R.string.source), SOURCE.removePrefix("https://")) {
                         actions.openUrl(SOURCE)
                     },

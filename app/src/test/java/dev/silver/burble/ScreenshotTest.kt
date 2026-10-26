@@ -117,6 +117,10 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
         ReportScreen(draft, onCopy = {}, onOpen = {}, onBack = {})
     }
 
+    @Test fun licences() = capture("licences") {
+        Home(settings, Access.All, TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0", licencesOpen = true)
+    }
+
     @Test fun advanced() = capture("advanced") {
         Home(settings, Access.All, TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, advancedOpen = true)
     }

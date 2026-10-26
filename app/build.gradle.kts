@@ -14,6 +14,26 @@ class RobolectricSdk(@get:InputFiles @get:PathSensitive(PathSensitivity.NAME_ONL
     override fun asArguments() = listOf("-Drobolectric.dependency.dir=${jars.singleFile.parentFile.absolutePath}")
 }
 
+/** The licence texts the Licences page shows, copied from the repository's own: assets/licences/. */
+abstract class LicenceAssets : DefaultTask() {
+    @get:InputFiles @get:PathSensitive(PathSensitivity.NAME_ONLY) abstract val texts: ConfigurableFileCollection
+    @get:OutputDirectory abstract val out: DirectoryProperty
+
+    @TaskAction fun copy() {
+        val dir = out.get().asFile.resolve("licences").apply { deleteRecursively(); mkdirs() }
+        texts.forEach { it.copyTo(dir.resolve(if (it.name == "LICENSE") "GPL-3.0.txt" else it.name), overwrite = true) }
+    }
+}
+
+val licenceAssets = tasks.register<LicenceAssets>("licenceAssets") {
+    texts.from(rootProject.file("LICENSE"), rootProject.fileTree("licenses") { include("*.txt") })
+    out.set(layout.buildDirectory.dir("generated/licences"))
+}
+
+androidComponents {
+    onVariants { it.sources.assets?.addGeneratedSourceDirectory(licenceAssets, LicenceAssets::out) }
+}
+
 android {
     namespace = "dev.silver.burble"
     compileSdk = 37

@@ -92,8 +92,8 @@
     <string name="test_connection">Test dictation</string>
     <string name="privacy">Privacy</string>
     <string name="privacy_hint">Dictation audio is sent to Google</string>
-    <string name="licence">Licence</string>
-    <string name="licence_hint">GNU GPL version 3</string>
+    <string name="licence">Licences</string>
+    <string name="licence_hint">GNU GPL 3, and the licences of what Burble uses</string>
     <string name="source">Source code</string>
     <string name="report_problem">Report a problem</string>
     <string name="report_problem_hint">Shows your phone model and Burble\'s log, then opens a GitHub issue</string>
