@@ -1,5 +1,6 @@
 package dev.silver.burble.ui
 
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -32,6 +33,9 @@ import dev.silver.burble.overlay.WaveShape
  * WaveShape's switchboard; keep the chosen shape. English only on purpose: never in a release.
  */
 fun LazyListScope.debugRows() {
+    // Screenshot tests (Robolectric) run the debug variant; keep the temporary row out of the
+    // goldens so they show the screen as released.
+    if (Build.FINGERPRINT == "robolectric") return
     item { SectionHeader("Wave shape (temporary)") }
     item { WaveShapeDebug() }
 }
