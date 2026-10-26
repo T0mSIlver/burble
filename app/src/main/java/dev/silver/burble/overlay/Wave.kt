@@ -424,7 +424,9 @@ half4 main(float2 p) {
     // Gboard's thin pale line at the bar's source: a faint ring round the centre that breathes
     // and wobbles with the glow's noise, fading as the voice comes in.
     float rr = 0.3 * e0 * (1.0 + 0.25 * (glowNoise(hq * 0.6) - 0.5));
-    float ring = exp(-pow((u - rr) / 0.8, 2.0)) * (0.75 + 0.25 * sin(morph * 2.1));
+    // A square, not pow(): pow of a negative base is undefined and drew a filled disc.
+    float d = (u - rr) / 0.8;
+    float ring = exp(-d * d) * (0.75 + 0.25 * sin(morph * 2.1));
     col = mix(col, half3(1.0), half(0.3 * ring * a * (1.0 - glowLvl)));
     float area = max(0.0, 1.0 - u / BAR) * smoothstep(-1.32 * BAR, 0.0, -min(u, BAR - u));
     float dots = clamp(dotsAlpha * area * diamonds(p, c) * a, 0.0, 1.0);
