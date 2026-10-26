@@ -70,6 +70,8 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Case | Coverage | Status |
 |---|---|---|
 | Onboarding: microphone, accessibility, file-install unlock, 200 % font | Screenshot `ScreenshotTest.welcome`, `insertion`, `unlock`, `unlockAppInfo`, `unlockLargeFont`; emulator recording | ✅ |
+| Try it: the field has focus on arrival, the real bubble's text lands in it, Skip then Done; a failed dictation still offers Done; 200 % font | Screenshot `ScreenshotTest.tryIt*`; emulator: fake result lands, rotation mid-dictation still lands in the field, errors, Done never shows it again | ✅ |
+| Try it with a real dictation | 👤 7 | 👤 |
 | Sideloaded install: the restricted-settings unlock works | 👤 3 | 👤 |
 | Home states: setup, stopped, off, update, 200 % font | Screenshot `ScreenshotTest.home*` | ✅ |
 | Preview pinned above its controls while they scroll | Emulator recording | ✅ |
@@ -93,3 +95,4 @@ Status: ✅ covered and passing, 👤 needs the phone.
 4. Install an update from the Dogfood release through the app.
 5. Enable two keyboard languages in Gboard: Advanced shows both under "From your keyboard"; dictate in the second.
 6. With Dot docked at the edge: a drag that starts on the dot moves it; Android's back gesture doesn't take it.
+7. On a fresh install, finish onboarding to Try it: tap the bubble, say a sentence, tap again; it lands in the field. Rotate the phone mid-sentence once.

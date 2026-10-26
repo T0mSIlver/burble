@@ -1,5 +1,6 @@
 package dev.silver.burble
 
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
@@ -25,7 +26,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-// Both onboarding screens, with the unlock of a file install, and the home screen, light and dark, in the Google blue fallback and on a
+// The onboarding screens, with the unlock of a file install, and the home screen, light and dark, in the Google blue fallback and on a
 // sample wallpaper's dynamic colours. `recordRoborazziDebug` writes app/screenshots/;
 // `verifyRoborazziDebug` fails when a screen drifts.
 @RunWith(ParameterizedRobolectricTestRunner::class)
@@ -55,13 +56,21 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     }
 
     private fun step(name: String, access: Access, step: Step, unlockStage: Int = 0) = capture("onboarding-$name") {
-        Onboarding(access, AccessActions.None, onDone = {}, initial = step.ordinal, initialUnlockStage = unlockStage)
+        Onboarding(access, AccessActions.None, Dictation.State.Idle, onDone = {}, initial = step.ordinal, initialUnlockStage = unlockStage)
+    }
+
+    private fun tryIt(name: String, dictation: Dictation.State, text: String = "") = capture("onboarding-$name") {
+        Onboarding(Access.All, AccessActions.None, dictation, onDone = {}, tryField = TextFieldState(text))
     }
 
     @Test fun welcome() = step("welcome", Access.None, Step.WELCOME)
     @Test fun insertion() = step("insertion", Access.None.copy(microphone = true, restricted = false), Step.INSERTION)
     // Installed from a file: Android's unlock, then past the refusal, App info is next.
     @Test fun unlock() = step("unlock", Access.None.copy(microphone = true), Step.INSERTION)
+    @Test fun tryIt() = tryIt("try", Dictation.State.Idle)
+    @Test fun tryItListening() = tryIt("try-listening", Dictation.State.Listening)
+    @Test fun tryItFailed() = tryIt("try-failed", Dictation.State.Error(Dictation.ErrorKind.QUOTA))
+    @Test fun tryItLanded() = tryIt("try-landed", Dictation.State.Done("Hello from Burble", Output.INSERT, delivered = true), "Hello from Burble")
     @Test fun unlockAppInfo() = step("unlock-appinfo", Access.None.copy(microphone = true), Step.INSERTION, unlockStage = 1)
 
     private val keyboard = listOf("en-US", "fr-FR")
@@ -145,6 +154,11 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
         capture("home-font200") {
             Home(settings, Access.All, Updater.State.Available(release), HomeActions.None, "0.1.0")
         }
+    }
+
+    @Test fun tryItLargeFont() {
+        RuntimeEnvironment.setFontScale(2f)
+        tryIt("try-font200", Dictation.State.Listening)
     }
 
     @Test fun unlockLargeFont() {

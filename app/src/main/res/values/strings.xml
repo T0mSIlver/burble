@@ -39,6 +39,13 @@
     <string name="onb_insert_why">Turn on Burble in Accessibility settings.</string>
     <string name="onb_allow_mic">Allow microphone</string>
     <string name="onb_continue">Continue</string>
+    <string name="onb_try_title">Try it</string>
+    <string name="onb_try_body">Tap the bubble, say something, tap again.</string>
+    <string name="onb_try_placeholder">Your words appear here</string>
+    <string name="onb_try_listening">Listening. Tap the bubble when you\'re done.</string>
+    <string name="onb_try_landed">That\'s it. It works the same in any app.</string>
+    <string name="onb_skip">Skip</string>
+    <string name="onb_done">Done</string>
     <string name="open_settings">Open Accessibility settings</string>
     <string name="open_app_info">Open app info</string>
 

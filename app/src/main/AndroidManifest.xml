@@ -18,9 +18,11 @@
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true">
 
+        <!-- Rotating keeps the window, so a dictation started in Try it's field still lands there. -->
         <activity
             android:name=".MainActivity"
             android:theme="@style/Theme.Rambler.Starting"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

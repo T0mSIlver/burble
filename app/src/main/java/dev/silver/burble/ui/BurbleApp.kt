@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.silver.burble.Dictation
 import dev.silver.burble.InsertionService
 import dev.silver.burble.KeyboardLanguages
 import dev.silver.burble.Prefs
@@ -33,6 +34,7 @@ fun BurbleApp() {
     val test by TestAudio.state.collectAsStateWithLifecycle()
     val update by Updater.state.collectAsStateWithLifecycle()
     val connected by InsertionService.connected.collectAsStateWithLifecycle()
+    val dictation by Dictation.state.collectAsStateWithLifecycle()
     var access by remember { mutableStateOf(Permissions.read(context)) }
     // The keyboard's languages may have changed while the app was away.
     var keyboard by remember { mutableStateOf(KeyboardLanguages.read(context)) }
@@ -78,7 +80,7 @@ fun BurbleApp() {
         return
     }
     if (!settings.onboarded) {
-        Onboarding(access, actions, onDone = { Prefs.update { it.copy(onboarded = true, bubbleOn = true) } })
+        Onboarding(access, actions, dictation, onDone = { Prefs.update { it.copy(onboarded = true, bubbleOn = true) } })
     } else {
         Home(
             settings = settings,
