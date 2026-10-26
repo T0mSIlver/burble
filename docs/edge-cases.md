@@ -14,16 +14,17 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Tap → Listening → tap or silence → Finishing → Inserted (check 0.7 s) | Unit `DictationSessionTest.stopsAfterSilence`; emulator recording `motion-r1` | ✅ |
 | The text lands 0.5 s after the stop (Gboard on a Pixel: 0.7 s): each 64 ms of audio goes out as its own Ogg page, one connection serves every dictation, and the text goes in on the final result, not when the stream closes | Unit `EncoderBackpressureTest.eachBufferGoesOutAsAPage`; emulator `tools/emulator/latency.sh` (535 to 551 ms from the stop to the insert) | ✅ |
 | The network changes between two dictations: the second opens a new connection instead of waiting on the dead one | Emulator: airplane mode on and off, then `latency.sh` | ✅ |
-| No field, or not on screen → clipboard, Copied (check 1 s, TalkBack says it), nothing inserted later | Unit `TargetsTest`; emulator `tools/emulator/where-text-goes.sh switch` | ✅ |
+| No field, or not on screen → clipboard, Copied (the idle look at once, a haptic, TalkBack says it), nothing inserted later | Unit `TargetsTest`; emulator `tools/emulator/where-text-goes.sh switch` | ✅ |
 | Keyboard hidden only in Listening and Finishing; back as the words land | Code (`followDictation`, `showKeyboard`); emulator `tools/emulator/keyboard-back.sh` | ✅ |
 | Keyboard back in an EditText, a Compose field, Chrome's address bar, a Chrome page's textarea and Messages: started in the field, a field tapped mid-dictation (its app takes the keyboard for shown: focus taken for a frame), clipboard with a field focused; none without one | Emulator `tools/emulator/keyboard-back.sh` (0.4 to 0.7 s, the keyboard's own animation included) | ✅ |
-| Error: its look 1.5 s, label 4 s; with audio kept, a retry badge until tap, ✕ or the next dictation | Code (`LiveBubble`); screenshot `OverlayScreenshotTest.looks` | ✅ |
+| Error: the refresh arrow and its words in a panel beside the bubble until tap, ✕ or the next dictation while its audio waits; otherwise the idle look, words 4 s (nothing heard 2 s) | Code (`LiveBubble`); screenshot `OverlayScreenshotTest.looks` | ✅ |
 | Failed with audio kept → retry sends the same audio, only the failed segment | Unit `DictationSessionTest.retrySendsTheSameBytes`, `retryResendsOnlyTheFailedSegment` | ✅ |
-| Nothing heard, no microphone → label, back to Idle after 4 s | Screenshot `OverlayScreenshotTest.looks`; emulator recording | ✅ |
+| Nothing heard → the idle look at once, its words 2 s; no microphone → the same, words 4 s | Screenshot `OverlayScreenshotTest.looks`; emulator recording | ✅ |
 | Process stopped mid-dictation → "Dictation not sent" comes back, sends again | Unit `DictationSessionTest.aStoppedProcessLeavesAudioThatSendsAgain`, `nothingToRecoverFromAnEmptyFolder` | ✅ |
 | Dictation past 5 minutes chains server sessions, no audio lost | Unit `DictationSessionTest.longDictationChainsWithoutLosingAudio`, `switchesAtTheFirstQuietBufferInTheWindow` | ✅ |
 | Encoder busy or hung: no audio lost, no hang | Unit `EncoderBackpressureTest` | ✅ |
-| Tap during Finishing or on the check does nothing | Code (`tapBubble`); emulator | ✅ |
+| Tap during Finishing does nothing; right after Inserted or Copied it starts listening | Code (`tapBubble`); emulator | ✅ |
+| Finishing: the light settles; Gboard's sweep only from 700 ms, so a quick finish shows none; with Remove animations, the settled light dimmed, no sweep | Screenshot `OverlayScreenshotTest.looks` (0.3, 1.2, 2.2 s; reduced motion) | ✅ |
 | ✕ during Listening or Finishing cancels; Error drops the audio; Inserted or Copied ends and snoozes | Code (`Overlay.release`); emulator | ✅ |
 | Dictation ends with a finger on the bubble: result at full size, 3 s count from release | Code (`LiveBubble` rest timer keyed on touch); emulator | ✅ |
 | Every state over light and dark apps, every shape, three sizes | Screenshot `OverlayScreenshotTest.overContent`, `looks`; `ShapesTest` | ✅ |

@@ -35,7 +35,7 @@ import org.robolectric.annotation.GraphicsMode
 // wallpaper, light and dark. Written to app/screenshots/overlay/.
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [36], qualifiers = "w412dp-h1000dp-xxhdpi")
+@Config(sdk = [36], qualifiers = "w412dp-h2200dp-xxhdpi")
 class OverlayScreenshotTest(private val palette: String, private val dark: Boolean) {
     companion object {
         @JvmStatic
@@ -72,10 +72,9 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             "Idle, smaller" to { Bubble(Look.Idle, idleOpacity = 0.6f, rest = true, alignEnd = true) },
             "Idle, dot" to { Bubble(Look.Idle, idleOpacity = 0.6f, rest = true, whenIdle = WhenIdle.DOT, alignEnd = true) },
             "Listening" to { Bubble(Look.Listening, level = 0.6f, alignEnd = true) },
-            "Finishing" to { Bubble(Look.Finishing, alignEnd = true) },
-            "Inserted" to { Bubble(Look.Done, alignEnd = true) },
-            "Copied" to { Bubble(Look.Copied, alignEnd = true) },
-            "Error" to { Bubble(Look.Failed(ErrorKind.QUOTA), alignEnd = true) },
+            "Finishing, its sweep 1.2 s in" to { Bubble(Look.Finishing, finishingMs = 1200, alignEnd = true) },
+            "Inserted: the idle look" to { Bubble(Look.Done, alignEnd = true) },
+            "Error, its audio kept" to { Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), alignEnd = true) },
         )
         Column(Modifier.width(412.dp).background(c.surface)) {
             for ((label, bubble) in states) Box(Modifier.fillMaxWidth().height(112.dp)) {
@@ -93,7 +92,12 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             Labelled("40, 64, 96 dp") {
                 for (size in listOf(40, 64, 96)) Bubble(Look.Idle, size = size)
             }
-            Labelled("idle at 50 %: just touched, shrunk, dot") {
+            Labelled("full, smaller, dot") {
+                Bubble(Look.Idle)
+                Bubble(Look.Idle, rest = true)
+                Bubble(Look.Idle, rest = true, whenIdle = WhenIdle.DOT)
+            }
+            Labelled("50 %") {
                 Bubble(Look.Idle, idleOpacity = 0.5f)
                 Bubble(Look.Idle, idleOpacity = 0.5f, rest = true)
                 Bubble(Look.Idle, idleOpacity = 0.5f, rest = true, whenIdle = WhenIdle.DOT)
@@ -101,19 +105,23 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             for (row in BubbleShape.entries.chunked(3)) Labelled("shapes") {
                 for (shape in row) Bubble(Look.Idle, shape = shape)
             }
-            Labelled("listening: silence, 0.6, 0.9") {
+            Labelled("listening 0, 0.6, 0.9") {
                 for (level in listOf(0f, 0.6f, 0.9f)) Bubble(Look.Listening, level = level)
             }
-            Labelled("finishing, inserted, copied") {
-                Bubble(Look.Finishing)
+            Labelled("finishing 0.3, 1.2, 2.2 s") {
+                for (ms in listOf(300L, 1200L, 2200L)) Bubble(Look.Finishing, finishingMs = ms)
+            }
+            Labelled("reduced motion") {
+                Bubble(Look.Finishing, finishingMs = 1200, reducedMotion = true)
+                Bubble(Look.Done, reducedMotion = true)
+                Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), reducedMotion = true, labelled = false)
+            }
+            Labelled("inserted, copied") {
                 Bubble(Look.Done)
                 Bubble(Look.Copied)
             }
             Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), alignEnd = true)
             for (kind in ErrorKind.entries) Bubble(Look.Failed(kind, waits = kind != ErrorKind.NOTHING_HEARD && kind != ErrorKind.NO_MIC))
-            Labelled("after 4 s: waiting for retry, no label") {
-                Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), labelled = false)
-            }
             Row(verticalAlignment = Alignment.Bottom) {
                 DismissTarget(armed = false)
                 DismissTarget(armed = true)
@@ -191,9 +199,12 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
         alignEnd: Boolean = false,
         shader: Boolean = true,
         labelled: Boolean = true,
+        finishingMs: Long? = null,
+        reducedMotion: Boolean = false,
     ) {
-        OverlayContent(look, shape, size.dp, alignEnd, labelled, rest, whenIdle, idleOpacity) { color, modifier ->
-            Wave({ frame ?: WaveFrame.steady(level, time) }, color, modifier, shader = shader)
+        OverlayContent(look, shape, size.dp, alignEnd, labelled, rest, whenIdle, idleOpacity, finishingMs, reducedMotion) { color, modifier ->
+            // Finishing: the light settled, as the live host leaves it.
+            Wave({ frame ?: WaveFrame.steady(if (look == Look.Finishing) 0f else level, time) }, color, modifier, shader = shader)
         }
     }
 }

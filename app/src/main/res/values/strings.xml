@@ -14,18 +14,14 @@
     <string name="overlay_retry">Retry</string>
     <string name="overlay_close">Hide bubble</string>
     <string name="overlay_inserted">Inserted</string>
-    <string name="overlay_error_no_mic">Allow microphone access</string>
-    <string name="overlay_error_nothing_heard">Didn\'t hear anything</string>
-    <string name="overlay_error_quota">Dictation limit reached. Try again later.</string>
-    <string name="overlay_error_rejected">Dictation unavailable</string>
-    <string name="overlay_error_network">Couldn\'t connect</string>
-    <string name="overlay_error_other">Dictation failed. Try again.</string>
-    <string name="overlay_error_unsent">Dictation not sent</string>
-    <string name="overlay_action_retry">Tap to retry</string>
-    <string name="overlay_action_later">Try again later</string>
-    <string name="overlay_action_speak">Tap to dictate</string>
-    <string name="overlay_action_allow_mic">Open Burble to allow access</string>
-    <string name="overlay_action_update">Check for updates</string>
+    <!-- An error's panel beside the bubble: what happened, then what to do. -->
+    <string name="overlay_panel_network">Can\'t connect. Tap to retry.</string>
+    <string name="overlay_panel_other">Couldn\'t finish. Tap to retry.</string>
+    <string name="overlay_panel_unsent">Dictation not sent. Tap to retry.</string>
+    <string name="overlay_panel_quota">Dictation limit reached. Try again later.</string>
+    <string name="overlay_panel_rejected">Dictation unavailable. Tap to check for updates.</string>
+    <string name="overlay_panel_no_mic">Burble can\'t use the microphone. Tap to allow it.</string>
+    <string name="overlay_panel_nothing_heard">Didn\'t hear anything</string>
 
     <!-- Onboarding -->
     <string name="onb_welcome_title">Dictate in any app</string>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn for Burble (Burble's design notes material/wave-playground/finalists.js); 24 dp, optically centred. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <group android:translateX="12" android:translateY="12.198">
+        <path android:fillColor="#FF000000" android:pathData="M0.000,-10.400L0.000,-10.400A5,5 0 0,1 5.000,-5.400L5.000,-3.000A5,5 0 0,1 0.000,2.000L0.000,2.000A5,5 0 0,1 -5.000,-3.000L-5.000,-5.400A5,5 0 0,1 0.000,-10.400Z" />
+        <path android:fillColor="#FF000000" android:pathData="M9.326,-1.222A9.400,9.400 0 0,1 -9.326,-1.222A1.2,1.2 0 0,1 -6.945,-1.523A7.000,7.000 0 0,0 6.945,-1.523A1.2,1.2 0 0,1 9.326,-1.222Z" />
+        <path android:fillColor="#FF000000" android:pathData="M-1.200,5.900L-1.200,8.200A1.2,1.2 0 0,0 1.200,8.200L1.200,5.900A1.2,1.2 0 0,0 -1.200,5.900Z" />
+        <path android:fillColor="#FF000000" android:pathData="M-3.000,10.100L3.000,10.100A1.2,1.2 0 0,0 3.000,7.700L-3.000,7.700A1.2,1.2 0 0,0 -3.000,10.100Z" />
+    </group>
+</vector>

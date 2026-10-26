@@ -1,9 +1,11 @@
 package dev.silver.burble.overlay
 
 import android.content.Context
+import android.animation.ValueAnimator
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +27,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import dev.silver.burble.BuildConfig
+import dev.silver.burble.ui.theme.Motion
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.atan2
 import kotlin.math.cbrt
@@ -82,13 +85,14 @@ internal fun gate(level: Float) = if (level < 0.5f) 0f else level.coerceAtMost(1
  * level at 5 per second both ways (0 to 1 in 200 ms). On opening, the diamonds show for 166 ms
  * and fade over 333 ms. Times in ms.
  */
-internal class WaveHost(now: Double) {
-    private val start = now
+internal class WaveHost(now: Double, settled: Boolean = false) {
+    private val start = if (settled) now - 333 else now
     private var glow = 0f
     private var target = 0f
     private val bands = Ramp(0f)
-    private val dots = Ramp(DOTS_ON)
-    private var dotsFadeAt = now + 166
+    // Settled (a retry, straight into finishing): already open, no opening flash.
+    private val dots = Ramp(if (settled) 0f else DOTS_ON)
+    private var dotsFadeAt = if (settled) -1.0 else now + 166
     private var drift = 0f
     private var morph = 0f
     private var last = now
@@ -103,6 +107,17 @@ internal class WaveHost(now: Double) {
             dots.set(if (l > 0f) DOTS_ON else 0f, now, 200.0)
         }
         target = l
+    }
+
+    /**
+     * Finishing: the diamonds and the light bands leave in 100 ms and the glow chases silence,
+     * at most 200 ms from full voice, settling to its resting light.
+     */
+    fun settle(now: Double) {
+        dotsFadeAt = -1.0
+        dots.set(0f, now, 100.0, Motion.standard)
+        bands.set(0f, now, 100.0, Motion.standard)
+        target = 0f
     }
 
     /** Once per frame. */
@@ -124,15 +139,20 @@ internal class WaveHost(now: Double) {
         ((now - start) / 1000).toFloat(), ((now - start) / 333).toFloat().coerceIn(0f, 1f),
     )
 
+    /** Gboard's straight ramps; [easing] curves one (the bubble's settle). */
     private class Ramp(v: Float) {
         private var from = v
         private var to = v
         private var start = 0.0
         private var ms = 1.0
-        fun set(target: Float, now: Double, duration: Double) {
-            from = at(now); to = target; start = now; ms = duration
+        private var easing: Easing? = null
+        fun set(target: Float, now: Double, duration: Double, easing: Easing? = null) {
+            from = at(now); to = target; start = now; ms = duration; this.easing = easing
         }
-        fun at(now: Double) = from + (to - from) * ((now - start) / ms).coerceIn(0.0, 1.0).toFloat()
+        fun at(now: Double): Float {
+            val k = ((now - start) / ms).coerceIn(0.0, 1.0).toFloat()
+            return from + (to - from) * (easing?.transform(k) ?: k)
+        }
     }
 }
 
@@ -197,7 +217,8 @@ internal fun Wave(
     modifier: Modifier = Modifier,
     shader: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
 ) {
-    val surface = MaterialTheme.colorScheme.surfaceContainerLowest
+    // The bubble's one background, in every state.
+    val surface = MaterialTheme.colorScheme.surfaceContainerHigh
     val dark = surface.luminance() < 0.5f
     val colors = remember(accent, dark) { waveColors(accent, dark) }
     val dp = LocalDensity.current.density
@@ -210,23 +231,38 @@ internal fun Wave(
 
 /** [Wave] driven by the live level, [Dictation.level]'s scale, and the frame clock. */
 @Composable
-fun LiveWave(level: StateFlow<Float>, accent: Color, modifier: Modifier = Modifier) {
+fun LiveWave(
+    level: StateFlow<Float>,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    finishing: () -> Boolean = { false },
+    reducedMotion: Boolean = !ValueAnimator.areAnimatorsEnabled(),
+) {
     val state = remember { mutableStateOf(WaveFrame.steady(0f, 0f).copy(dots = DOTS_ON, opened = 0f)) }
     LaunchedEffect(level) {
         var host: WaveHost? = null
         // The flow starts at 0 before the first buffer. It drops repeats, where Gboard would
         // restart the same ramps, which changes nothing.
         var fed = 0f
+        var settled = false
         while (true) withInfiniteAnimationFrameNanos { nanos ->
             val now = nanos / 1e6
-            val h = host ?: WaveHost(now).also { host = it }
-            val heard = level.value
-            if (heard != fed) {
-                h.feed(heard, now)
-                fed = heard
+            val h = host ?: WaveHost(now, settled = finishing()).also { host = it }
+            if (finishing()) {
+                if (!settled) { h.settle(now); settled = true }
+            } else {
+                // Listening again in the same wave (a tap within its fade-out): the next finish
+                // settles it again.
+                settled = false
+                val heard = level.value
+                if (heard != fed) {
+                    h.feed(heard, now)
+                    fed = heard
+                }
             }
             h.step(now)
-            state.value = h.frame(now)
+            // Removed animations: the glow still follows the voice; its noise and diamonds stay still.
+            state.value = h.frame(now).let { if (reducedMotion) it.copy(drift = 0f, morph = 0f, time = 0f) else it }
         }
     }
     val context = LocalContext.current
@@ -252,8 +288,29 @@ internal fun waveColors(accent: Color, dark: Boolean): WaveColors {
     else WaveColors(oklch(0.78, 0.14, hue), Color.White)
 }
 
+/**
+ * The bubble's glyphs (the mic, the refresh arrow): the glow's hue, deep enough to read on the
+ * bubble's tonal background (OKLCH lightness 0.5, 0.86 on a dark surface), at 1.3 times the
+ * glow's chroma up to 0.16.
+ */
+internal fun waveInk(accent: Color, dark: Boolean): Color {
+    val glow = waveColors(accent, dark).glow
+    val (a, b) = oklabAb(glow)
+    val hue = (Math.toDegrees(atan2(b, a)) + 360) % 360
+    return oklch(if (dark) 0.86 else 0.5, minOf(0.16, 1.3 * hypot(a, b)), hue)
+}
+
 private fun lin(c: Float): Double = if (c <= 0.04045f) c / 12.92 else ((c + 0.055) / 1.055).pow(2.4)
 private fun gam(c: Double): Double = if (c <= 0.0031308) 12.92 * c else 1.055 * c.pow(1 / 2.4) - 0.055
+
+/** OKLab's a and b for [c]. */
+private fun oklabAb(c: Color): Pair<Double, Double> {
+    val r = lin(c.red); val g = lin(c.green); val b = lin(c.blue)
+    val l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+    val m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+    val s = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+    return (1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s) to (0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s)
+}
 
 private fun accentHue(c: Color): Double {
     val r = lin(c.red); val g = lin(c.green); val b = lin(c.blue)

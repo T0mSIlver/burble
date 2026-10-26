@@ -52,9 +52,10 @@ object Geometry {
     const val DOT_DP = 12f
     const val SMALLER = 0.6f
     const val PILL_GAP_DP = 8f
-    /** The label's window: wide and tall enough for its longest two lines, and their shadow. */
+    /** The label's window: wide and tall enough for its longest words and their shadow, two lines
+     *  at 100 % font, four at 200 % (its height grows with the font scale). */
     const val PILL_WIDTH_DP = 256f
-    const val PILL_HEIGHT_DP = 72f
+    const val PILL_HEIGHT_DP = 96f
     /** How far past full or the idle look a layout goes, as a share of the way between them. */
     const val OVERSHOOT = 0.03f
 
