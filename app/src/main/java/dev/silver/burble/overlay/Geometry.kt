@@ -20,8 +20,11 @@ data class Box(val left: Float, val top: Float, val right: Float, val bottom: Fl
     }
 }
 
-/** The screen: its size, the area clear of system bars and cutouts, and its density. */
-data class Screen(val width: Float, val height: Float, val safe: Box, val density: Float)
+/**
+ * The screen: its size, the area clear of system bars and cutouts, its density, and the font
+ * scale the label's text grows by.
+ */
+data class Screen(val width: Float, val height: Float, val safe: Box, val density: Float, val fontScale: Float = 1f)
 
 enum class Edge { LEFT, RIGHT }
 
@@ -114,7 +117,8 @@ object Geometry {
             Box.centred(fullX, cy, t, t)
         }.moved(dx, dy)
         val pw = PILL_WIDTH_DP * d
-        val ph = PILL_HEIGHT_DP * d
+        // Tall enough for the label at a larger font size: its text grows in sp.
+        val ph = PILL_HEIGHT_DP * d * max(1f, screen.fontScale)
         val gap = PILL_GAP_DP * d
         val pillTop = (cy - ph / 2).coerceIn(safe.top, max(safe.top, safe.bottom - ph))
         val pillLeft = (if (right) fullX - s / 2 - gap - pw else fullX + s / 2 + gap)

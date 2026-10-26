@@ -170,10 +170,15 @@ class Overlay(
         scope?.launch { snapshotFlow { ui.docked.value }.collect { apply() } }
         scope?.launch { Prefs.settings.collect { apply() } }
         scope?.launch {
-            Dictation.state.collect { st ->
-                frame.contentDescription = context.getString(st.look().action())
-                // Only a label that opens the app takes touches; others let them through.
-                val opens = (st as? Dictation.State.Error)?.kind.let { it == Dictation.ErrorKind.NO_MIC || it == Dictation.ErrorKind.REJECTED }
+            Dictation.state.collect { st -> frame.contentDescription = context.getString(st.look().action()) }
+        }
+        // Only a label that shows and opens the app takes touches; otherwise touches go through.
+        scope?.launch {
+            snapshotFlow {
+                val kind = (Dictation.state.value as? Dictation.State.Error)?.kind
+                (kind == Dictation.ErrorKind.NO_MIC || kind == Dictation.ErrorKind.REJECTED) && ui.labelled.value &&
+                    !ui.dragging.value && !ui.moving.value && !ui.locked.value && !ui.away.value && !ui.closing.value
+            }.collect { opens ->
                 setFlag(pillParams, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, !opens)
                 pill?.let { runCatching { windowManager.updateViewLayout(it, pillParams) } }
             }
@@ -193,8 +198,9 @@ class Overlay(
         bubble = null
         scope?.cancel()
         scope = null
-        for (v in listOfNotNull(view, touch, pill)) runCatching { windowManager.removeView(v) }
-        touch = null; pill = null
+        // The target too, should Burble go mid-drag before its own exit ran.
+        for (v in listOfNotNull(view, touch, pill, target)) runCatching { windowManager.removeView(v) }
+        touch = null; pill = null; target = null
         owner?.destroy()
         owner = null
     }
@@ -214,7 +220,8 @@ class Overlay(
             WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
         val b = m.bounds
         return Screen(b.width().toFloat(), b.height().toFloat(),
-            Box(i.left.toFloat(), i.top.toFloat(), (b.width() - i.right).toFloat(), (b.height() - i.bottom).toFloat()), density)
+            Box(i.left.toFloat(), i.top.toFloat(), (b.width() - i.right).toFloat(), (b.height() - i.bottom).toFloat()), density,
+            context.resources.configuration.fontScale)
     }
 
     /** The geometry now, full or docked: the drawn bubble's own progress lives in its window. */
@@ -245,7 +252,11 @@ class Overlay(
 
     /** The touch window takes touches only while the bubble shows. */
     private fun touchable() {
-        setFlag(touchParams, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, ui.locked.value || ui.away.value || ui.closing.value)
+        val hidden = ui.locked.value || ui.away.value || ui.closing.value
+        setFlag(touchParams, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, hidden)
+        // Not a TalkBack target either while there's nothing to see.
+        touch?.importantForAccessibility =
+            if (hidden) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_YES
         applyTouch()
     }
 

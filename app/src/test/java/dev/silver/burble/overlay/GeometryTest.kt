@@ -18,6 +18,7 @@ class GeometryTest {
         "portrait, cutout" to Screen(1080f, 2400f, Box(0f, 136f, 1080f, 2400f - 63f), d),
         "landscape" to Screen(2400f, 1080f, Box(0f, 63f, 2400f - 126f, 1080f), d),
         "landscape, cutout" to Screen(2400f, 1080f, Box(136f, 63f, 2400f - 126f, 1080f), d),
+        "portrait, font 200 %" to Screen(1080f, 2400f, Box(0f, 63f, 1080f, 2400f - 63f), d, fontScale = 2f),
     )
     private val sizes = (40..96 step 8).toList()
     private val heights = listOf(0f, 0.5f, 1f)
@@ -107,6 +108,7 @@ class GeometryTest {
     @Test fun rotationKeepsTheSideAndTheShareOfTheHeight() {
         val (_, portrait) = screens()[1]
         val (_, landscape) = screens()[3]
+        // screens()[4] is portrait at a larger font: same geometry but the label.
         for (edge in Edge.entries) for (f in listOf(0.3f, 0.5f, 0.7f)) {
             val anchor = Anchor(edge, f)
             for (screen in listOf(portrait, landscape)) {
