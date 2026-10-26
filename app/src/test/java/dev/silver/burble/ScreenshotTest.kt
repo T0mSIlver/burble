@@ -136,6 +136,11 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
         Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, lookOpen = true)
     }
 
+    // With an update: its details live here, the card on home.
+    @Test fun about() = capture("about") {
+        Home(settings, Access.All, Updater.State.Available(release), HomeActions.None, "0.1.0", aboutOpen = true)
+    }
+
     @Test fun advanced() = capture("advanced") {
         Home(settings, Access.All, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, advancedOpen = true)
     }

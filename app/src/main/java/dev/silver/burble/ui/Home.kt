@@ -18,8 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Gavel
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
@@ -89,10 +89,12 @@ fun Home(
     languagesOpen: Boolean = false,
     licencesOpen: Boolean = false,
     lookOpen: Boolean = false,
+    aboutOpen: Boolean = false,
 ) {
     var advanced by rememberSaveable { mutableStateOf(advancedOpen) }
     var licences by rememberSaveable { mutableStateOf(licencesOpen) }
     var look by rememberSaveable { mutableStateOf(lookOpen) }
+    var about by rememberSaveable { mutableStateOf(aboutOpen || licencesOpen) }
     val set = actions.update
     @Composable fun HomeMain() {
         val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -112,6 +114,8 @@ fun Home(
                 // Until setup is done the switch would switch nothing.
                 if (!access.ready) item { Setup(access, actions.access) }
                 else item { MainSwitch(settings.bubbleOn) { on -> set { it.copy(bubbleOn = on) } } }
+                // An update shows here too, so it isn't hidden behind About.
+                if (update.hasRelease) item { UpdateCard(update, actions) }
 
                 item { SectionHeader(stringResource(R.string.section_bubble)) }
                 item {
@@ -134,38 +138,21 @@ fun Home(
                 item {
                     Group(listOf(
                         linkRow(Icons.Outlined.Tune, stringResource(R.string.advanced), stringResource(R.string.advanced_hint)) { advanced = true },
-                    ))
-                }
-
-                item { SectionHeader(stringResource(R.string.section_about)) }
-                item {
-                    Group(listOfNotNull(
-                        releaseRow(update, actions),
-                        linkRow(Icons.Outlined.BugReport, stringResource(R.string.report_problem), stringResource(R.string.report_problem_hint)) {
-                            actions.reportProblem()
-                        },
-                        linkRow(Icons.Outlined.PrivacyTip, stringResource(R.string.privacy), stringResource(R.string.privacy_hint)) {
-                            actions.openUrl("$SOURCE#what-leaves-your-phone")
-                        },
-                        linkRow(Icons.Outlined.Gavel, stringResource(R.string.licence), null) { licences = true },
-                        linkRow(Icons.Outlined.Code, stringResource(R.string.source), SOURCE.removePrefix("https://")) {
-                            actions.openUrl(SOURCE)
-                        },
-                        linkRow(Icons.Outlined.FavoriteBorder, stringResource(R.string.thanks), stringResource(R.string.thanks_hint)) {
-                            actions.openUrl("https://github.com/Akshayykadam/PixelBoard")
-                        },
+                        linkRow(Icons.Outlined.Info, stringResource(R.string.section_about), stringResource(R.string.version, version)) { about = true },
                     ))
                 }
             }
         }
     }
     // Pages under home slide in from the end, on the motion scheme's springs, and back.
-    val page = when { advanced -> 1; licences -> 2; look -> 3; else -> 0 }
+    // Ordered by depth, so Licences slides in over About and back out to it.
+    val page = when { advanced -> 1; look -> 2; about && licences -> 4; about -> 3; else -> 0 }
     AnimatedContent(page, transitionSpec = { pageTransition(forward = targetState > initialState) }, label = "page") { p ->
         when (p) {
             1 -> Advanced(settings, keyboard, update, version, actions, onBack = { advanced = false }, languagesOpen)
-            2 -> Licences(onBack = { licences = false })
-            3 -> BubbleLook(settings, set, onBack = { look = false })
+            2 -> BubbleLook(settings, set, onBack = { look = false })
+            3 -> About(update, actions, onLicences = { licences = true }, onBack = { about = false })
+            4 -> Licences(onBack = { licences = false })
             else -> HomeMain()
         }
     }
@@ -246,6 +233,39 @@ private fun Missing(label: Int?, detail: Int?, action: Int, onClick: () -> Unit)
         }
         FilledTonalButton(onClick = onClick, shapes = ButtonDefaults.shapes(), modifier = Modifier.padding(top = 8.dp)) {
             Text(stringResource(action))
+        }
+    }
+}
+
+/**
+ * Report a problem, privacy, licences, source and the disclaimer, one tap from home, with the
+ * update's details while there is one.
+ */
+@Composable
+private fun About(update: Updater.State, actions: HomeActions, onLicences: () -> Unit, onBack: () -> Unit) {
+    val rows = listOfNotNull(
+        releaseRow(update, actions),
+        linkRow(Icons.Outlined.BugReport, stringResource(R.string.report_problem), stringResource(R.string.report_problem_hint)) {
+            actions.reportProblem()
+        },
+        linkRow(Icons.Outlined.PrivacyTip, stringResource(R.string.privacy), stringResource(R.string.privacy_hint)) {
+            actions.openUrl("$SOURCE#what-leaves-your-phone")
+        },
+        linkRow(Icons.Outlined.Gavel, stringResource(R.string.licence), null, onLicences),
+        linkRow(Icons.Outlined.Code, stringResource(R.string.source), SOURCE.removePrefix("https://")) {
+            actions.openUrl(SOURCE)
+        },
+    )
+    SubScreen(stringResource(R.string.section_about), onBack) {
+        item { Spacer(Modifier.size(8.dp)) }
+        item { Group(rows) }
+        item {
+            Text(
+                stringResource(R.string.about_disclaimer),
+                Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

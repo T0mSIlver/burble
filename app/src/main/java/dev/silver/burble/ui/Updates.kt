@@ -1,6 +1,11 @@
 package dev.silver.burble.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -41,6 +46,43 @@ fun updateSwitch(auto: Boolean, state: State, version: String, actions: HomeActi
     return switchRow(Icons.Outlined.Update, stringResource(R.string.updates_auto), summary, auto) { on ->
         actions.update { it.copy(checkUpdates = on) }
         if (on) actions.checkForUpdate()
+    }
+}
+
+/** An update has been found: available, downloading, installing, or failed on the way. */
+val State.hasRelease get() = release != null
+
+/**
+ * The update on home, compact: which version, and Install, or how the install is going. The
+ * details stay in About.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun UpdateCard(state: State, actions: HomeActions) {
+    val release = state.release ?: return
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        color = colors.secondaryContainer,
+        contentColor = colors.onSecondaryContainer,
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    ) {
+        Column(Modifier.padding(start = 24.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.updates_available, release.version), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                when (state) {
+                    is State.Available -> Button(onClick = { actions.installUpdate(release) }, shapes = ButtonDefaults.shapes()) {
+                        Text(stringResource(R.string.updates_install_short))
+                    }
+                    is State.Failed -> TextButton(onClick = { actions.installUpdate(release) }) { Text(stringResource(R.string.updates_retry)) }
+                    else -> Unit
+                }
+            }
+            if (state is State.Downloading) LinearWavyProgressIndicator(
+                progress = { state.progress },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp),
+            )
+        }
     }
 }
 

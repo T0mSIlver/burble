@@ -129,8 +129,6 @@
     <string name="preview_active_description">The bubble in use</string>
     <string name="preview_idle_description">The bubble after 3 seconds: %1$s, at %2$d %% opacity</string>
     <string name="onb_disclosure">Not affiliated with Google. Audio goes to Google.</string>
-    <string name="thanks">Thanks to PixelBoard</string>
-    <string name="thanks_hint">By Akshay Kadam, which showed Rambler works on any phone</string>
     <string name="report_test_sending">Asking Google…</string>
     <string name="report_test_heard">Google answered: %1$s</string>
     <string name="report_test_failed">Google didn\'t answer: %1$s</string>
@@ -139,4 +137,6 @@
     <string name="look_full">same size when inactive</string>
     <string name="look_smaller">smaller when inactive</string>
     <string name="look_dot">a dot when inactive</string>
+    <string name="updates_install_short">Install</string>
+    <string name="about_disclaimer">Burble is not affiliated with Google. Your dictation audio goes to Google\'s servers, through a service Google has not opened to other apps, and it may stop working at any time.</string>
 </resources>
