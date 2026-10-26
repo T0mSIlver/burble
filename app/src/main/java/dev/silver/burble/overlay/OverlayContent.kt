@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Check
@@ -43,6 +44,8 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -353,27 +356,37 @@ private fun Label(text: String?) {
 /**
  * The ✕ at the bottom of the screen while the bubble is dragged: a surface-container circle that
  * grows and turns the error container colour when the bubble is over it. Dropping there closes
- * the bubble. [hint], once ever, says how to bring it back.
+ * the bubble. [hint], once ever, says how to bring it back, with [addTile] when Android lets the
+ * app offer its tile.
  */
 @Composable
-internal fun DismissTarget(armed: Boolean, hint: String? = null) {
+internal fun DismissTarget(armed: Boolean, hint: String? = null, addTile: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
     val grow by animateFloatAsState(if (armed) 1.2f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
     val bg by animateColorAsState(if (armed) colors.errorContainer else colors.surfaceContainerHighest)
     val fg by animateColorAsState(if (armed) colors.onErrorContainer else colors.onSurface)
     Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (hint != null) {
-            Text(
-                hint,
+            // A snackbar: the inverse surface, its action in the inverse primary.
+            Row(
                 Modifier
                     .padding(bottom = 16.dp)
-                    .widthIn(max = 320.dp)
-                    .graphicsLayer { shadowElevation = 3.dp.toPx(); shape = CircleShape; clip = true }
+                    .widthIn(max = 360.dp)
+                    .graphicsLayer { shadowElevation = 3.dp.toPx(); shape = RoundedCornerShape(24.dp); clip = true }
                     .background(colors.inverseSurface)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                color = colors.inverseOnSurface,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+                    .padding(start = 16.dp, end = if (addTile != null) 4.dp else 16.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    hint,
+                    Modifier.weight(1f, fill = false).padding(vertical = 6.dp),
+                    color = colors.inverseOnSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (addTile != null) TextButton(onClick = addTile, colors = ButtonDefaults.textButtonColors(contentColor = colors.inversePrimary)) {
+                    Text(stringResource(R.string.tile_add))
+                }
+            }
         }
         Box(
             Modifier

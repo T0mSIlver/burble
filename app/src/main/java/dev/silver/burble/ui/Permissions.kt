@@ -15,8 +15,6 @@ import dev.silver.burble.InsertionService
 /** What the app may do right now; read again whenever the user comes back from Settings. */
 data class Access(
     val microphone: Boolean,
-    /** Always true below Android 13, where apps need no permission to notify. */
-    val notifications: Boolean,
     /** The accessibility service that inserts text is on in Settings. */
     val insertion: Boolean,
     /** On in Settings but not running: Android or a battery saver stopped it. */
@@ -33,8 +31,8 @@ data class Access(
     val ready get() = microphone && insertion && !stopped
 
     companion object {
-        val All = Access(microphone = true, notifications = true, insertion = true, restricted = false)
-        val None = Access(microphone = false, notifications = false, insertion = false, restricted = true, battery = false)
+        val All = Access(microphone = true, insertion = true, restricted = false)
+        val None = Access(microphone = false, insertion = false, restricted = true, battery = false)
     }
 }
 
@@ -42,7 +40,6 @@ object Permissions {
 
     fun read(context: Context, connected: Boolean = InsertionService.connected.value) = Access(
         microphone = granted(context, Manifest.permission.RECORD_AUDIO),
-        notifications = Build.VERSION.SDK_INT < 33 || granted(context, Manifest.permission.POST_NOTIFICATIONS),
         insertion = insertion(context),
         // The service runs in this process, so its connection flag is the truth about it.
         stopped = insertion(context) && !connected,

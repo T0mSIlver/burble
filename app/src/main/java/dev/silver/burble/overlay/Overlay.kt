@@ -3,7 +3,9 @@ package dev.silver.burble.overlay
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.Configuration
+import android.content.Intent
 import android.graphics.PixelFormat
+import android.os.Build
 import android.graphics.Rect
 import android.util.Log
 import android.view.Gravity
@@ -30,6 +32,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import android.view.HapticFeedbackConstants
+import dev.silver.burble.AddTileActivity
 import dev.silver.burble.Dictation
 import dev.silver.burble.Prefs
 import dev.silver.burble.R
@@ -252,23 +255,36 @@ class Overlay(
     }
 
     /**
-     * The first time the bubble is closed, the ✕ stays 3 s with a line saying how to bring it
-     * back. Its own window and lifecycle: the bubble's go as the bubble closes.
+     * The first time the bubble is closed, the ✕ stays 5 s with a line saying how to bring it
+     * back and, from Android 13, a button that adds the tile. Its own window and lifecycle: the
+     * bubble's go as the bubble closes.
      */
     private fun showHiddenHint() {
         val o = Owner()
-        val view = ComposeView(context).apply {
-            setViewTreeLifecycleOwner(o)
-            setViewTreeSavedStateRegistryOwner(o)
-            setViewTreeViewModelStoreOwner(o)
-            setContent { AppTheme { DismissTarget(armed = true, hint = context.getString(R.string.overlay_hidden_hint)) } }
+        val view = ComposeView(context)
+        val close = {
+            if (view.isAttachedToWindow) {
+                runCatching { windowManager.removeView(view) }
+                o.destroy()
+            }
         }
-        if (runCatching { windowManager.addView(view, targetParams) }.isFailure) return
+        // Android adds a tile only for the app in front: a see-through activity asks.
+        val addTile = if (Build.VERSION.SDK_INT >= 33) ({
+            close()
+            context.startActivity(Intent(context, AddTileActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }) else null
+        view.setViewTreeLifecycleOwner(o)
+        view.setViewTreeSavedStateRegistryOwner(o)
+        view.setViewTreeViewModelStoreOwner(o)
+        view.setContent { AppTheme { DismissTarget(armed = true, hint = context.getString(R.string.overlay_hidden_hint), addTile = addTile) } }
+        // Touchable, unlike the target, for the action.
+        val params = WindowManager.LayoutParams().apply {
+            copyFrom(targetParams)
+            flags = flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        }
+        if (runCatching { windowManager.addView(view, params) }.isFailure) return
         o.resume()
-        view.postDelayed({
-            runCatching { windowManager.removeView(view) }
-            o.destroy()
-        }, HINT_MS)
+        view.postDelayed({ close() }, HINT_MS)
     }
 
     /** The target's centre and the bubble's, in screen pixels; arms the target when close. */
@@ -415,7 +431,7 @@ class Overlay(
         const val KEY_RIGHT = "right"
         const val KEY_FRACTION = "fraction"
         const val KEY_DRAWING = "drawing_shape"
-        const val HINT_MS = 3000L
+        const val HINT_MS = 5000L
         const val TAG = "Overlay"
         const val BUBBLE_DP = 80
         const val PADDING_DP = 8

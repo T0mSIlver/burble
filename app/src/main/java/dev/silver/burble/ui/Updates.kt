@@ -21,60 +21,72 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.silver.burble.R
+import dev.silver.burble.updater.Release
 import dev.silver.burble.updater.Updater
 import dev.silver.burble.updater.Updater.State
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/**
+ * The version, how its check went, and the daily check's switch, in one row; turning it on
+ * checks at once. A row with the changelog and the install follows only while an update exists.
+ */
 @Composable
-fun Updates(auto: Boolean, state: State, version: String, actions: HomeActions) {
-    Group(listOf(
-        switchRow(Icons.Outlined.Update, stringResource(R.string.updates_auto), stringResource(R.string.updates_auto_hint), auto) { on ->
+fun updateRows(auto: Boolean, state: State, version: String, actions: HomeActions): List<SettingRow> {
+    val status = when (state) {
+        State.Idle -> null
+        State.Checking -> R.string.updates_checking
+        State.UpToDate -> R.string.updates_up_to_date
+        is State.Available -> R.string.updates_new
+        is State.Downloading, is State.Installing -> R.string.updates_updating
+        is State.Failed -> if (state.release == null) R.string.updates_not_checked else R.string.updates_new
+    }
+    val title = status?.let { stringResource(R.string.version_status, version, stringResource(it)) }
+        ?: stringResource(R.string.version, version)
+    return listOfNotNull(
+        switchRow(Icons.Outlined.Update, title, stringResource(R.string.updates_auto_hint), auto) { on ->
             actions.update { it.copy(checkUpdates = on) }
+            if (on) actions.checkForUpdate()
         },
-        contentRow(Icons.Outlined.SystemUpdate, stringResource(R.string.version, version)) {
-            UpdateBody(state, actions)
+        state.release?.let { release ->
+            contentRow(Icons.Outlined.SystemUpdate, stringResource(R.string.updates_available, release.version)) {
+                UpdateBody(state, release, actions)
+            }
         },
-    ))
+    )
+}
+
+private val State.release get() = when (this) {
+    is State.Available -> release
+    is State.Downloading -> release
+    is State.Installing -> release
+    is State.Failed -> release
+    else -> null
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun UpdateBody(state: State, actions: HomeActions) {
-    val release = when (state) {
-        is State.Available -> state.release
-        is State.Downloading -> state.release
-        is State.Installing -> state.release
-        is State.Failed -> state.release
-        else -> null
-    }
-    val status = when (state) {
-        State.Idle -> null
-        State.Checking -> stringResource(R.string.updates_checking)
-        State.UpToDate -> stringResource(R.string.updates_none)
-        is State.Available -> stringResource(R.string.updates_available, state.release.version)
-        is State.Downloading -> stringResource(R.string.updates_downloading, state.release.version)
-        is State.Installing -> stringResource(R.string.updates_installing, state.release.version)
-        is State.Failed -> stringResource(
-            when (state.reason) {
-                Updater.Reason.NETWORK -> R.string.updates_failed_network
-                Updater.Reason.NO_APK -> R.string.updates_failed_apk
-                Updater.Reason.WRONG_SIGNATURE -> R.string.updates_failed_signature
-                Updater.Reason.NOT_NEWER -> R.string.updates_failed_older
-                Updater.Reason.INSTALL -> R.string.updates_failed_install
-            },
-        )
-    }
+private fun UpdateBody(state: State, release: Release, actions: HomeActions) {
     Column {
-        if (status != null) {
-            Text(status, color = if (state is State.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        if (state is State.Failed) {
+            Text(
+                stringResource(
+                    when (state.reason) {
+                        Updater.Reason.NETWORK -> R.string.updates_failed_network
+                        Updater.Reason.NO_APK -> R.string.updates_failed_apk
+                        Updater.Reason.WRONG_SIGNATURE -> R.string.updates_failed_signature
+                        Updater.Reason.NOT_NEWER -> R.string.updates_failed_older
+                        Updater.Reason.INSTALL -> R.string.updates_failed_install
+                    },
+                ),
+                color = MaterialTheme.colorScheme.error,
+            )
         }
-        if (release != null && release.notes.isNotBlank() && state !is State.Failed) {
+        if (release.notes.isNotBlank() && state !is State.Failed) {
             // Release notes as written on GitHub; Markdown stays readable as plain text.
             Text(
                 release.notes,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = 8.dp).heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
             )
         }
         when (state) {
@@ -82,21 +94,21 @@ private fun UpdateBody(state: State, actions: HomeActions) {
                 progress = { state.progress },
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             )
-            is State.Available -> Button(
-                onClick = { actions.installUpdate(state.release) },
+            is State.Installing -> Text(
+                stringResource(R.string.updates_installing, release.version),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            is State.Failed -> if (state.reason == Updater.Reason.NETWORK) OutlinedButton(
+                onClick = { actions.installUpdate(release) },
+                shapes = ButtonDefaults.shapes(),
+                modifier = Modifier.padding(top = 8.dp),
+            ) { Text(stringResource(R.string.updates_retry)) }
+            else -> Button(
+                onClick = { actions.installUpdate(release) },
                 shapes = ButtonDefaults.shapes(),
                 modifier = Modifier.padding(top = 12.dp),
             ) { Text(stringResource(R.string.updates_install)) }
-            is State.Installing, State.Checking -> Unit
-            else -> OutlinedButton(
-                onClick = if (state is State.Failed && release != null && state.reason == Updater.Reason.NETWORK) {
-                    { actions.installUpdate(release) }
-                } else {
-                    actions.checkForUpdate
-                },
-                shapes = ButtonDefaults.shapes(),
-                modifier = Modifier.padding(top = 8.dp),
-            ) { Text(stringResource(if (state is State.Failed && release != null && state.reason == Updater.Reason.NETWORK) R.string.updates_retry else R.string.updates_check)) }
         }
     }
 }

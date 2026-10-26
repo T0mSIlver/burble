@@ -23,7 +23,7 @@ import org.robolectric.ParameterizedRobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-// Every onboarding step and the home screen, light and dark, in the Google blue fallback and on a
+// Both onboarding screens, with the unlock of a file install, and the home screen, light and dark, in the Google blue fallback and on a
 // sample wallpaper's dynamic colours. `recordRoborazziDebug` writes app/screenshots/;
 // `verifyRoborazziDebug` fails when a screen drifts.
 @RunWith(ParameterizedRobolectricTestRunner::class)
@@ -52,29 +52,15 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
         compose.onRoot().captureRoboImage("screenshots/$screen-$name.png")
     }
 
-    private val steps = Step.entries
-
-    private fun step(step: Step, access: Access) = capture("onboarding-${step.name.lowercase()}") {
-        Onboarding(access, AccessActions.None, steps, onDone = {}, initial = steps.indexOf(step))
+    private fun step(name: String, access: Access, step: Step, unlockStage: Int = 0) = capture("onboarding-$name") {
+        Onboarding(access, AccessActions.None, onDone = {}, initial = step.ordinal, initialUnlockStage = unlockStage)
     }
 
-    @Test fun welcome() = step(Step.WELCOME, Access.None)
-    @Test fun microphone() = step(Step.MICROPHONE, Access.None)
-    @Test fun notifications() = step(Step.NOTIFICATIONS, Access.None)
-    @Test fun unlock() = step(Step.UNLOCK, Access.None)
-
-    // Past the refusal: App info is next.
-    @Test fun unlockAppInfo() = capture("onboarding-unlock-appinfo") {
-        Onboarding(Access.None, AccessActions.None, steps, onDone = {}, initial = steps.indexOf(Step.UNLOCK), initialUnlockStage = 1)
-    }
-    @Test fun insertion() = step(Step.INSERTION, Access.None.copy(restricted = false))
-    @Test fun battery() = step(Step.BATTERY, Access.None)
-    @Test fun tile() = step(Step.TILE, Access.None)
-
-    // The check mark the user sees on coming back from Settings.
-    @Test fun insertionGranted() = capture("onboarding-insertion-granted") {
-        Onboarding(Access.All, AccessActions.None, steps, onDone = {}, initial = steps.indexOf(Step.INSERTION))
-    }
+    @Test fun welcome() = step("welcome", Access.None, Step.WELCOME)
+    @Test fun insertion() = step("insertion", Access.None.copy(microphone = true, restricted = false), Step.INSERTION)
+    // Installed from a file: Android's unlock, then past the refusal, App info is next.
+    @Test fun unlock() = step("unlock", Access.None.copy(microphone = true), Step.INSERTION)
+    @Test fun unlockAppInfo() = step("unlock-appinfo", Access.None.copy(microphone = true), Step.INSERTION, unlockStage = 1)
 
     private val settings = Settings(onboarded = true, languages = listOf("en-US", "fr-FR"))
     private val release = Release(
@@ -84,9 +70,14 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
         apkSize = 0,
     )
 
-    @Config(qualifiers = "w412dp-h2000dp-xxhdpi")
+    @Config(qualifiers = "w412dp-h2400dp-xxhdpi")
     @Test fun home() = capture("home") {
         Home(settings, Access.All, TestAudio.State.Heard("Hello, this is a test of dictation."), Updater.State.Available(release), HomeActions.None, "0.1.0")
+    }
+
+    @Config(qualifiers = "w412dp-h2200dp-xxhdpi")
+    @Test fun homeReady() = capture("home-ready") {
+        Home(settings, Access.All, TestAudio.State.Idle, Updater.State.UpToDate, HomeActions.None, "0.1.0")
     }
 
     @Test fun homeSetup() = capture("home-setup") {

@@ -2,7 +2,6 @@ package dev.silver.burble.ui
 
 import android.Manifest
 import android.app.Activity
-import android.app.StatusBarManager
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -17,7 +16,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.silver.burble.DictationTile
 import dev.silver.burble.InsertionService
 import dev.silver.burble.Prefs
 import dev.silver.burble.Report
@@ -43,7 +41,6 @@ fun BurbleApp() {
     val open = { intent: Intent -> context.startActivity(intent) }
     var micAsked by rememberSaveable { mutableStateOf(false) }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { access = Permissions.read(context) }
-    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { access = Permissions.read(context) }
     val actions = AccessActions(
         requestMicrophone = {
             // After a second refusal Android stops showing the prompt; only App info can grant it.
@@ -51,21 +48,13 @@ fun BurbleApp() {
             if (blocked) open(Permissions.appInfo(context)) else askMic.launch(Manifest.permission.RECORD_AUDIO)
             micAsked = true
         },
-        requestNotifications = { askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) },
         openAccessibility = { open(Permissions.accessibilitySettings()) },
         openAppInfo = { open(Permissions.appInfo(context)) },
         openBattery = { open(Permissions.batterySettings(context)) },
-        addTile = { onAdded ->
-            DictationTile.requestAdd(context) { result ->
-                if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
-                    result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) onAdded()
-            }
-        },
     )
 
     if (!settings.onboarded) {
-        val steps = remember { onboardingSteps(access) }
-        Onboarding(access, actions, steps, onDone = { Prefs.update { it.copy(onboarded = true) } })
+        Onboarding(access, actions, onDone = { Prefs.update { it.copy(onboarded = true, bubbleOn = true) } })
     } else {
         Home(
             settings = settings,

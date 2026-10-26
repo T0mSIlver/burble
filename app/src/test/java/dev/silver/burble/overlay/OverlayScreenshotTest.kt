@@ -90,9 +90,14 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             Row(verticalAlignment = Alignment.Bottom) {
                 DismissTarget(armed = false)
                 DismissTarget(armed = true)
-                DismissTarget(armed = true, hint = "Hidden. Bring it back from Quick Settings or the Burble app.")
+                DismissTarget(armed = true, hint = "Hidden. Bring it back from Quick Settings or the Burble app.", addTile = {})
             }
         }
+    }
+
+    /** The one-time line under the ✕ after the first close, with its tile action. */
+    @Test fun hiddenHint() = capture("hidden-hint") {
+        DismissTarget(armed = true, hint = "Hidden. Bring it back from Quick Settings or the Burble app.", addTile = {})
     }
 
     /**

@@ -27,7 +27,6 @@ import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.Interests
 import androidx.compose.material.icons.outlined.KeyboardHide
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.OpenInFull
 import androidx.compose.material.icons.outlined.Timelapse
 import androidx.compose.material.icons.outlined.PrivacyTip
@@ -143,9 +142,6 @@ fun Home(
                     linkRow(Icons.Outlined.Language, stringResource(R.string.languages), settings.languages.joinToString(", ") { languageName(it) }) {
                         picking = true
                     },
-                    contentRow(Icons.Outlined.WifiTethering, stringResource(R.string.test_connection)) {
-                        TestConnection(test, actions.sendTestAudio)
-                    },
                 ))
             }
 
@@ -163,26 +159,26 @@ fun Home(
                     contentRow(Icons.Outlined.OpenInFull, stringResource(R.string.bubble_size)) {
                         SizePicker(settings.shape, settings.bubbleSize) { s -> set { it.copy(bubbleSize = s) } }
                     },
-                    contentRow(Icons.Outlined.Opacity, stringResource(R.string.idle_opacity)) {
+                    contentRow(Icons.Outlined.Timelapse, stringResource(R.string.when_idle)) {
+                        Choices(listOf(WhenIdle.FULL to R.string.when_idle_full, WhenIdle.SHRINK to R.string.when_idle_shrink,
+                            WhenIdle.DOT to R.string.when_idle_dot), settings.whenIdle) { w -> set { it.copy(whenIdle = w) } }
+                        Text(stringResource(R.string.idle_opacity), Modifier.padding(top = 16.dp), style = MaterialTheme.typography.labelLarge)
                         Stepped(settings.idleOpacity, 20..100, 10, stringResource(R.string.percent, settings.idleOpacity)) { o ->
                             set { it.copy(idleOpacity = o) }
                         }
                     },
-                    contentRow(Icons.Outlined.Timelapse, stringResource(R.string.when_idle)) {
-                        Choices(listOf(WhenIdle.FULL to R.string.when_idle_full, WhenIdle.SHRINK to R.string.when_idle_shrink,
-                            WhenIdle.DOT to R.string.when_idle_dot), settings.whenIdle) { w -> set { it.copy(whenIdle = w) } }
-                    },
                 ))
-            }
-
-            item { SectionHeader(stringResource(R.string.section_updates)) }
-            item {
-                Updates(settings.checkUpdates, update, version, actions)
             }
 
             item { SectionHeader(stringResource(R.string.section_about)) }
             item {
-                Group(listOf(
+                Group(updateRows(settings.checkUpdates, update, version, actions) + listOf(
+                    contentRow(Icons.Outlined.WifiTethering, stringResource(R.string.test_connection)) {
+                        TestConnection(test, actions.sendTestAudio)
+                    },
+                    linkRow(Icons.Outlined.BugReport, stringResource(R.string.report_problem), stringResource(R.string.report_problem_hint)) {
+                        actions.reportProblem()
+                    },
                     linkRow(Icons.Outlined.PrivacyTip, stringResource(R.string.privacy), stringResource(R.string.privacy_hint)) {
                         actions.openUrl("$SOURCE#what-leaves-your-phone")
                     },
@@ -191,9 +187,6 @@ fun Home(
                     },
                     linkRow(Icons.Outlined.Code, stringResource(R.string.source), SOURCE.removePrefix("https://")) {
                         actions.openUrl(SOURCE)
-                    },
-                    linkRow(Icons.Outlined.BugReport, stringResource(R.string.report_problem), stringResource(R.string.report_problem_hint)) {
-                        actions.reportProblem()
                     },
                 ))
             }
@@ -256,7 +249,7 @@ private fun Status(access: Access, actions: AccessActions) {
                     access.stopped -> {
                         Missing(R.string.status_stopped, R.string.status_stopped_hint, R.string.open_settings, actions.openAccessibility)
                         // A battery saver is the usual reason Android stops the service.
-                        if (!access.battery) Missing(R.string.onb_battery_title, R.string.status_battery_hint, R.string.onb_allow, actions.openBattery)
+                        if (!access.battery) Missing(R.string.status_battery, R.string.status_battery_hint, R.string.onb_allow, actions.openBattery)
                     }
                 }
             }
