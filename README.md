@@ -7,7 +7,7 @@ Google's Rambler dictation on any Android phone, under any keyboard, from a floa
 <!-- Demo video or GIF: reviewing a website while talking, keyboard hidden, then a tap and the whole review lands in the field. -->
 
 > [!IMPORTANT]
-> **Burble exists because of [PixelBoard](https://github.com/Akshayykadam/PixelBoard) by Akshay Kadam**, which proved Rambler works on any Android phone showed where Gboard receives its results, and keeps Rambler from pasting AI answers, an idea Burble uses too. PixelBoard builds on JasonWu's Gboard patch project. If you want Rambler inside a full Gboard keyboard, use PixelBoard.
+> **Burble exists because of [PixelBoard](https://github.com/Akshayykadam/PixelBoard) by Akshay Kadam**, which proved Rambler works on any Android phone, showed where Gboard receives its results, and keeps Rambler from pasting AI answers, an idea Burble uses too. PixelBoard builds on JasonWu's Gboard patch project. If you want Rambler inside a full Gboard keyboard, use PixelBoard.
 
 ## How it works
 
