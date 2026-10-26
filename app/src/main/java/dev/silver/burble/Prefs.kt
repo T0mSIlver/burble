@@ -20,7 +20,7 @@ enum class Output {
 enum class Trigger { BUBBLE, ACCESSIBILITY_BUTTON, QUICK_SETTINGS }
 
 /** The bubble's shape, by MaterialShapes name. */
-enum class BubbleShape { COOKIE_9, SUNNY, CLOVER_4, CIRCLE, PILL, SOFT_BURST }
+enum class BubbleShape { COOKIE_9, SUNNY, CLOVER_4, CIRCLE, OVAL, SOFT_BURST }
 
 /** What the bubble becomes after 3 s untouched in Idle. */
 enum class WhenIdle { FULL, SHRINK, DOT }
@@ -43,12 +43,14 @@ data class Settings(
     val bubbleSize: Int = 64,
     val hideKeyboard: Boolean = true,
     val checkUpdates: Boolean = true,
-    /** BCP-47 tags the user speaks; the first is [language], the others go as secondary locales. */
+    /** BCP-47 tags the user chose; the first is [language], the others go as secondary locales. */
     val languages: List<String> = listOf(language),
-    /** The bubble is on; the Quick Settings tile and dragging it to ✕ turn it off. */
+    /** Dictate in the keyboard's languages, read at each start, rather than [languages]. */
+    val languagesFromKeyboard: Boolean = true,
+    /** "Use Burble": the main switch on home and the Quick Settings tile. Off, the bubble is gone. */
     val bubbleOn: Boolean = true,
-    /** The one-time line under the ✕ on how to bring a closed bubble back has been shown. */
-    val hiddenHintShown: Boolean = false,
+    /** A dictation has gone into a field once: home stops saying how to dictate. */
+    val dictated: Boolean = false,
     val bubbleShow: BubbleShow = BubbleShow.ALWAYS,
     /** The bubble's opacity in Idle, 20 to 100 %; every other state is opaque. */
     val idleOpacity: Int = 100,
@@ -82,8 +84,9 @@ object Prefs {
             .putBoolean("checkUpdates", next.checkUpdates)
             .putBoolean("hideKeyboard", next.hideKeyboard)
             .putString("languages", next.languages.joinToString(","))
+            .putBoolean("languagesFromKeyboard", next.languagesFromKeyboard)
             .putBoolean("bubbleOn", next.bubbleOn)
-            .putBoolean("hiddenHintShown", next.hiddenHintShown)
+            .putBoolean("dictated", next.dictated)
             .putString("bubbleShow", next.bubbleShow.name)
             .putInt("idleOpacity", next.idleOpacity)
             .putString("whenIdle", next.whenIdle.name)
@@ -99,7 +102,8 @@ object Prefs {
             triggers = sp.getStringSet("triggers", null)
                 ?.mapNotNull { runCatching { Trigger.valueOf(it) }.getOrNull() }?.toSet()
                 ?: d.triggers,
-            shape = enumOr(sp.getString("shape", null), d.shape),
+            // The pill became the oval.
+            shape = enumOr(sp.getString("shape", null)?.replace("PILL", "OVAL"), d.shape),
             language = language,
             onboarded = sp.getBoolean("onboarded", d.onboarded),
             // The first versions had three sizes.
@@ -112,8 +116,9 @@ object Prefs {
             hideKeyboard = sp.getBoolean("hideKeyboard", d.hideKeyboard),
             languages = sp.getString("languages", null)?.split(',')?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
                 ?: listOf(language),
+            languagesFromKeyboard = sp.getBoolean("languagesFromKeyboard", d.languagesFromKeyboard),
             bubbleOn = sp.getBoolean("bubbleOn", d.bubbleOn),
-            hiddenHintShown = sp.getBoolean("hiddenHintShown", d.hiddenHintShown),
+            dictated = sp.getBoolean("dictated", d.dictated),
             bubbleShow = enumOr(sp.getString("bubbleShow", null), d.bubbleShow),
             idleOpacity = sp.getInt("idleOpacity", d.idleOpacity),
             whenIdle = enumOr(sp.getString("whenIdle", null), d.whenIdle),

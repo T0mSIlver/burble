@@ -87,13 +87,14 @@ class InsertionService : AccessibilityService() {
      */
     private fun setOverlay(on: Boolean) {
         if (on && overlay == null) {
+            snoozed = false
             // Starts hidden when it should, rather than showing until the delayed hide.
             main.removeCallbacks(goAway)
             away = !shouldShow()
             // This service's own WindowManager: the accessibility overlay type is only granted
             // to its token.
             overlay = Overlay(this, getSystemService(WindowManager::class.java),
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY).also {
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, onSnooze = ::snooze).also {
                 it.locked = locked
                 it.away = away
                 it.show()
@@ -108,7 +109,38 @@ class InsertionService : AccessibilityService() {
         set(value) { field = value; overlay?.locked = value }
 
     private fun updateLock() {
+        val was = locked
         locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        if (was && !locked && snoozed) {
+            snoozed = false
+            updateAway()
+        }
+    }
+
+    // ---- snooze ----
+
+    /**
+     * Dropped on ✕: hidden until the next unlock, or, in "only while typing", until the next
+     * text field: another one, or the same one once focus has left it and come back.
+     */
+    private var snoozed = false
+    private var snoozedIn: AccessibilityNodeInfo? = null
+    private var focusLeft = false
+
+    private fun snooze() {
+        snoozed = true
+        snoozedIn = focusedField()
+        focusLeft = snoozedIn == null
+        main.removeCallbacks(goAway)
+        away = true
+    }
+
+    private fun wakeOnField(field: AccessibilityNodeInfo?) {
+        if (!snoozed || Prefs.settings.value.bubbleShow != BubbleShow.TYPING) return
+        when {
+            field == null -> focusLeft = true
+            focusLeft || field != snoozedIn -> snoozed = false
+        }
     }
 
     private var away = false
@@ -121,11 +153,15 @@ class InsertionService : AccessibilityService() {
      */
     private fun updateAway() {
         main.removeCallbacks(goAway)
-        if (shouldShow()) away = false else if (!away) main.postDelayed(goAway, AWAY_MS)
+        val field = focusedField()
+        wakeOnField(field)
+        if (shouldShow(field)) away = false else if (!away) main.postDelayed(goAway, AWAY_MS)
     }
 
-    private fun shouldShow() = Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS ||
-        Dictation.state.value != Dictation.State.Idle || focusedField() != null
+    /** A dictation always shows, snoozed or not: the bubble is all there is to see of it. */
+    private fun shouldShow(field: AccessibilityNodeInfo? = focusedField()) =
+        Dictation.state.value != Dictation.State.Idle ||
+            !snoozed && (Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS || field != null)
 
     private val goAway = Runnable { away = true }
 
@@ -133,7 +169,7 @@ class InsertionService : AccessibilityService() {
         // Not every unlock sends ACTION_USER_PRESENT, but a window always changes when the lock
         // screen goes.
         if (locked) updateLock()
-        if (Dictation.state.value !is Dictation.State.Ready && Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS) return
+        if (Dictation.state.value !is Dictation.State.Ready && Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS && !snoozed) return
         // Focus moves in bursts (a window opens, then a field takes focus): look once it settles.
         main.removeCallbacks(focusCheck)
         main.postDelayed(focusCheck, 120)

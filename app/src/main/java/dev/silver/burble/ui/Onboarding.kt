@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -25,15 +26,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -163,7 +161,7 @@ private fun StepPage(
             Button(
                 onClick = onClick,
                 shapes = ButtonDefaults.shapes(),
-                modifier = Modifier.height(ButtonDefaults.MediumContainerHeight),
+                modifier = Modifier.heightIn(min = ButtonDefaults.MediumContainerHeight),
                 contentPadding = ButtonDefaults.contentPaddingFor(ButtonDefaults.MediumContainerHeight),
             ) {
                 Text(stringResource(label), style = ButtonDefaults.textStyleFor(ButtonDefaults.MediumContainerHeight))
@@ -175,30 +173,28 @@ private fun StepPage(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun Welcome() {
-    ShapeBadge(Icons.Rounded.GraphicEq, MaterialShapes.Cookie9Sided)
+    ShapeBadge(Icons.Rounded.GraphicEq, MaterialShapes.Cookie9Sided, size = BADGE)
     Title(R.string.onb_welcome_title)
     Text(stringResource(R.string.onb_welcome_body), style = MaterialTheme.typography.bodyLarge)
-    Spacer(Modifier.height(32.dp))
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        shape = segmentShape(0, 1),
-    ) {
-        Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                stringResource(R.string.disclaimer_short),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
     Text(
         stringResource(R.string.onb_mic_title),
         style = MaterialTheme.typography.titleLarge,
         modifier = Modifier.padding(top = 32.dp, bottom = 8.dp).semantics { heading() },
     )
     Text(stringResource(R.string.onb_mic_why), style = MaterialTheme.typography.bodyLarge)
+    // The disclosure, last and small: it qualifies everything above.
+    Row(Modifier.padding(top = 32.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Text(
+            stringResource(R.string.disclaimer_short),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
+
+/** Small enough that the unlock's three steps fit above the button on a phone. */
+private val BADGE = 88.dp
 
 @Composable
 private fun Title(res: Int) {
@@ -217,14 +213,15 @@ private fun Title(res: Int) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun Insertion(stage: Int?, actions: List<() -> Unit>) {
-    ShapeBadge(Icons.Rounded.Keyboard, MaterialShapes.SoftBurst)
+    ShapeBadge(Icons.Rounded.Keyboard, MaterialShapes.SoftBurst, size = if (stage == null) BADGE else 64.dp)
     Title(R.string.onb_insert_title)
     Text(stringResource(R.string.onb_insert_why), style = MaterialTheme.typography.bodyLarge)
-    Spacer(Modifier.height(20.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(Icons.Outlined.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-        Text(stringResource(R.string.onb_insert_not), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    Text(
+        stringResource(R.string.onb_insert_not),
+        Modifier.padding(top = 12.dp),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
     if (stage == null) return
     Spacer(Modifier.height(24.dp))
     Text(stringResource(R.string.onb_unlock_why), style = MaterialTheme.typography.bodyLarge)

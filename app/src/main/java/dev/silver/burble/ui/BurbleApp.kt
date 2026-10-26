@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.silver.burble.InsertionService
+import dev.silver.burble.KeyboardLanguages
 import dev.silver.burble.Prefs
 import dev.silver.burble.Report
 import dev.silver.burble.updater.Updater
@@ -30,8 +31,11 @@ fun BurbleApp() {
     val update by Updater.state.collectAsStateWithLifecycle()
     val connected by InsertionService.connected.collectAsStateWithLifecycle()
     var access by remember { mutableStateOf(Permissions.read(context)) }
+    // The keyboard's languages may have changed while the app was away.
+    var keyboard by remember { mutableStateOf(KeyboardLanguages.read(context)) }
     LifecycleResumeEffect(Unit) {
         access = Permissions.read(context)
+        keyboard = KeyboardLanguages.read(context)
         if (Prefs.settings.value.checkUpdates) Updater.checkIfDue(context)
         onPauseOrDispose {}
     }
@@ -70,7 +74,7 @@ fun BurbleApp() {
                 openUrl = { open(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
                 reportProblem = {
                     val version = Updater.installedVersion(context)
-                    val languages = settings.languages
+                    val languages = if (settings.languagesFromKeyboard) KeyboardLanguages.read(context) else settings.languages
                     // Reading logcat spawns a process: keep it off the main thread.
                     Thread {
                         val url = Report.issueUrl(SOURCE, version, languages)
@@ -79,6 +83,7 @@ fun BurbleApp() {
                 },
             ),
             version = Updater.installedVersion(context),
+            keyboard = keyboard,
         )
     }
 }

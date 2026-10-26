@@ -28,18 +28,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.RoundedPolygon
-import dev.silver.burble.BubbleShape
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-val BubbleShape.polygon: RoundedPolygon
-    get() = when (this) {
-        BubbleShape.COOKIE_9 -> MaterialShapes.Cookie9Sided
-        BubbleShape.SUNNY -> MaterialShapes.Sunny
-        BubbleShape.CLOVER_4 -> MaterialShapes.Clover4Leaf
-        BubbleShape.CIRCLE -> MaterialShapes.Circle
-        BubbleShape.PILL -> MaterialShapes.Pill
-        BubbleShape.SOFT_BURST -> MaterialShapes.SoftBurst
-    }
 
 /**
  * An icon on a MaterialShapes container. With [done] the icon turns into a check mark and the

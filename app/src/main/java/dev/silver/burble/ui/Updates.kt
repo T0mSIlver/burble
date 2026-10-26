@@ -2,10 +2,7 @@ package dev.silver.burble.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Update
@@ -26,28 +23,31 @@ import dev.silver.burble.updater.Updater
 import dev.silver.burble.updater.Updater.State
 
 /**
- * The version, how its check went, and the daily check's switch, in one row; turning it on
- * checks at once. A row with the changelog and the install follows only while an update exists.
+ * The daily check's switch, with the version and how its check went under it; turning it on
+ * checks at once. A row with what's new and the install follows only while an update exists.
  */
 @Composable
 fun updateRows(auto: Boolean, state: State, version: String, actions: HomeActions): List<SettingRow> {
+    val release = state.release
     val status = when (state) {
         State.Idle -> null
         State.Checking -> R.string.updates_checking
         State.UpToDate -> R.string.updates_up_to_date
-        is State.Available -> R.string.updates_new
-        is State.Downloading, is State.Installing -> R.string.updates_updating
-        is State.Failed -> if (state.release == null) R.string.updates_not_checked else R.string.updates_new
+        is State.Available, is State.Downloading, is State.Installing -> null
+        is State.Failed -> if (release == null) R.string.updates_not_checked else null
     }
-    val title = status?.let { stringResource(R.string.version_status, version, stringResource(it)) }
-        ?: stringResource(R.string.version, version)
+    val summary = when {
+        release != null -> stringResource(R.string.updates_available, release.version)
+        status != null -> stringResource(R.string.version_status, version, stringResource(status))
+        else -> stringResource(R.string.version, version)
+    }
     return listOfNotNull(
-        switchRow(Icons.Outlined.Update, title, stringResource(R.string.updates_auto_hint), auto) { on ->
+        switchRow(Icons.Outlined.Update, stringResource(R.string.updates_auto), summary, auto) { on ->
             actions.update { it.copy(checkUpdates = on) }
             if (on) actions.checkForUpdate()
         },
-        state.release?.let { release ->
-            contentRow(Icons.Outlined.SystemUpdate, stringResource(R.string.updates_available, release.version)) {
+        release?.let { release ->
+            contentRow(Icons.Outlined.SystemUpdate, stringResource(R.string.updates_whats_new)) {
                 UpdateBody(state, release, actions)
             }
         },
@@ -81,12 +81,11 @@ private fun UpdateBody(state: State, release: Release, actions: HomeActions) {
             )
         }
         if (release.notes.isNotBlank() && state !is State.Failed) {
-            // Release notes as written on GitHub; Markdown stays readable as plain text.
+            // The first three lines of the notes as written on GitHub; the rest is on GitHub.
             Text(
-                release.notes,
+                release.notes.lines().filter { it.isNotBlank() }.take(3).joinToString("\n"),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         when (state) {

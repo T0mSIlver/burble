@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -56,6 +59,35 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
         compose.onRoot().captureRoboImage("screenshots/overlay/$name-$scheme-${if (dark) "dark" else "light"}.png")
     }
 
+    /**
+     * Each state over an app's text, where the bubble lives: idle full, smaller and as a dot at
+     * 60 %, then listening, finishing, inserted, text ready and an error with its label.
+     */
+    @Test fun overContent() = capture("over-content") {
+        val c = MaterialTheme.colorScheme
+        val text = "The meeting moved to Thursday at ten. Can you send the agenda before then, and the notes from last week? " +
+            "I'll book the room on the second floor."
+        val states: List<Pair<String, @Composable () -> Unit>> = listOf(
+            "Idle" to { Bubble(Look.Idle, idleOpacity = 0.6f, alignEnd = true) },
+            "Idle, smaller" to { Bubble(Look.Idle, idleOpacity = 0.6f, rest = true, alignEnd = true) },
+            "Idle, dot" to { Bubble(Look.Idle, idleOpacity = 0.6f, rest = true, whenIdle = WhenIdle.DOT, alignEnd = true) },
+            "Listening" to { Bubble(Look.Listening, level = 0.6f, alignEnd = true) },
+            "Finishing" to { Bubble(Look.Finishing, alignEnd = true) },
+            "Inserted" to { Bubble(Look.Done, alignEnd = true) },
+            "Text ready" to { Bubble(Look.Ready, alignEnd = true) },
+            "Error" to { Bubble(Look.Failed(ErrorKind.QUOTA), alignEnd = true) },
+        )
+        Column(Modifier.width(412.dp).background(c.surface)) {
+            for ((label, bubble) in states) Box(Modifier.fillMaxWidth().height(112.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(label, style = MaterialTheme.typography.labelMedium, color = c.primary)
+                    Text(text, style = MaterialTheme.typography.bodyLarge, color = c.onSurface, maxLines = 3)
+                }
+                Box(Modifier.align(Alignment.CenterEnd)) { bubble() }
+            }
+        }
+    }
+
     @Test fun looks() = capture("looks") {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Labelled("40, 64, 96 dp") {
@@ -85,14 +117,8 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             Row(verticalAlignment = Alignment.Bottom) {
                 DismissTarget(armed = false)
                 DismissTarget(armed = true)
-                DismissTarget(armed = true, hint = "Hidden. Bring it back from Quick Settings or the Burble app.", addTile = {})
             }
         }
-    }
-
-    /** The one-time line under the ✕ after the first close, with its tile action. */
-    @Test fun hiddenHint() = capture("hidden-hint") {
-        DismissTarget(armed = true, hint = "Hidden. Bring it back from Quick Settings or the Burble app.", addTile = {})
     }
 
     /**

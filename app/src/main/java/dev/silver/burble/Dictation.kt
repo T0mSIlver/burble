@@ -92,9 +92,11 @@ object Dictation {
         levelOverride = null
         debug = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val settings = Prefs.settings.value
+        // Read now, before the keyboard hides: the one the user is typing with says the language.
+        val languages = if (settings.languagesFromKeyboard) KeyboardLanguages.read(app) else settings.languages
         val request = S3Request(
-            language = settings.language.ifBlank { Locale.getDefault().toLanguageTag() },
-            extraLanguages = settings.languages.drop(1),
+            language = languages.firstOrNull() ?: Locale.getDefault().toLanguageTag(),
+            extraLanguages = languages.drop(1),
             triggerApp = InsertionService.focusedApp(),
         )
         lateinit var s: DictationSession
@@ -161,7 +163,13 @@ object Dictation {
     /** [State.Ready]'s text went into a field the user focused. */
     internal fun readyInserted() {
         val ready = _state.value as? State.Ready ?: return
+        inserted()
         _state.value = State.Done(ready.text, Output.INSERT, delivered = true)
+    }
+
+    /** Home says how to dictate until this first happens. */
+    private fun inserted() {
+        if (!Prefs.settings.value.dictated) Prefs.update { it.copy(dictated = true) }
     }
 
     fun copy(context: Context, text: String) {
@@ -226,6 +234,7 @@ object Dictation {
             return State.Done(words, Output.CLIPBOARD, delivered = true)
         }
         if (into != null && InsertionService.instance?.insert(into, text) == true) {
+            inserted()
             return State.Done(text, Output.INSERT, delivered = true)
         }
         if (into == null) Log.d(TAG, "insert fell back: no field had input focus at the start")

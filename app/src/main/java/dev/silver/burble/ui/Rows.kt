@@ -11,6 +11,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -91,13 +92,29 @@ fun linkRow(icon: ImageVector, title: String, value: String, onClick: () -> Unit
     ) { Text(title) }
 }
 
-/** A row whose body is arbitrary content under its title, such as a picker. */
+/** One of a few rows to choose between, as Android's settings mark them: a radio button. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-fun contentRow(icon: ImageVector, title: String, body: @Composable () -> Unit): SettingRow = { shapes ->
+fun radioRow(title: String, summary: String?, selected: Boolean, onClick: () -> Unit): SettingRow = { shapes ->
+    SegmentedListItem(
+        selected = selected,
+        onClick = onClick,
+        shapes = shapes,
+        colors = listColors(tintSelected = false),
+        leadingContent = { RadioButton(selected = selected, onClick = null) },
+        supportingContent = summary?.let { { Text(it) } },
+    ) { Text(title) }
+}
+
+/**
+ * A row whose body is arbitrary content under its title, such as a picker. Without an icon the
+ * body spans the card, as a picker needs; without a title it is the whole row.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+fun contentRow(icon: ImageVector?, title: String?, body: @Composable () -> Unit): SettingRow = { shapes ->
     SegmentedListItem(
         shapes = shapes,
         colors = listColors(),
-        leadingContent = { Icon(icon, contentDescription = null) },
-        supportingContent = { Column(Modifier.padding(top = 12.dp)) { body() } },
-    ) { Text(title) }
+        leadingContent = icon?.let { { Icon(it, contentDescription = null) } },
+        supportingContent = title?.let { { Column(Modifier.padding(top = 12.dp)) { body() } } },
+    ) { if (title != null) Text(title) else Column(Modifier.padding(vertical = 4.dp)) { body() } }
 }

@@ -1,5 +1,6 @@
 package dev.silver.burble.overlay
 
+import android.content.Intent
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.animation.AnimatedContent
@@ -44,8 +45,6 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -76,7 +75,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -84,6 +82,7 @@ import androidx.graphics.shapes.RoundedPolygon
 import dev.silver.burble.BubbleShape
 import dev.silver.burble.WhenIdle
 import dev.silver.burble.Dictation
+import dev.silver.burble.MainActivity
 import dev.silver.burble.Dictation.ErrorKind
 import dev.silver.burble.Prefs
 import dev.silver.burble.R
@@ -148,7 +147,11 @@ internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>, away:
     AnimatedVisibility(!away.value, enter = fadeIn() + scaleIn(initialScale = 0.8f), exit = fadeOut() + scaleOut(targetScale = 0.8f)) {
         OverlayContent(look, settings.shape, settings.bubbleSize.dp, alignEnd.value, labelled,
             rest = rest, whenIdle = settings.whenIdle, idleOpacity = settings.idleOpacity / 100f,
-            touching = touching.value, onTap = {
+            touching = touching.value,
+            onOpenApp = {
+                context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            },
+            onTap = {
             when (look) {
                 // Ready: the waiting text stays on the clipboard. Failed: retries the kept audio,
                 // or starts over when there is none.
@@ -210,6 +213,8 @@ internal fun OverlayContent(
     idleOpacity: Float = 1f,
     /** A finger is on the bubble, dragging or not: full size and opacity. */
     touching: Boolean = false,
+    /** The error label's action, for errors only the app can fix. */
+    onOpenApp: () -> Unit = {},
     onTap: () -> Unit,
     wave: WaveSlot,
 ) {
@@ -246,7 +251,7 @@ internal fun OverlayContent(
     val outline = polygon.toShape()
     val keyShadow = remember(outline) { DropShadowPainter(outline, KeyShadow) }
     val ambientShadow = remember(outline) { DropShadowPainter(outline, AmbientShadow) }
-    val label = (look as? Look.Failed)?.takeIf { labelled }?.let { stringResource(it.kind.message()) }
+    val failed = (look as? Look.Failed)?.takeIf { labelled }
 
     // Room for the shadow inside the window.
     Row(
@@ -254,7 +259,7 @@ internal fun OverlayContent(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (alignEnd) Label(label)
+        if (alignEnd) Label(failed, onOpenApp)
         Box(
             Modifier
                 .size(side)
@@ -321,76 +326,68 @@ internal fun OverlayContent(
                 } }
             }
         }
-        if (!alignEnd) Label(label)
+        if (!alignEnd) Label(failed, onOpenApp)
     }
 }
 
 private val KeyShadow = Shadow(radius = 2.dp, offset = DpOffset(0.dp, 1.dp), alpha = 0.3f)
 private val AmbientShadow = Shadow(radius = 6.dp, spread = 2.dp, offset = DpOffset(0.dp, 2.dp), alpha = 0.15f)
 
-/** The reason for an error, beside the bubble: one line, on the inverse surface like a snackbar. */
+/**
+ * An error beside the bubble, never cut short: what happened, then what to do. Errors the app
+ * must fix (the microphone, a refusal) open it when tapped.
+ */
 @Composable
-private fun Label(text: String?) {
-    AnimatedVisibility(text != null, enter = fadeIn() + scaleIn(initialScale = 0.9f), exit = fadeOut()) {
-        Text(
-            text.orEmpty(),
+private fun Label(failed: Look.Failed?, onOpenApp: () -> Unit) {
+    AnimatedVisibility(failed != null, enter = fadeIn() + scaleIn(initialScale = 0.9f), exit = fadeOut()) {
+        // Kept through the exit, when [failed] is already null.
+        val shown = remember { mutableStateOf(failed) }
+        if (failed != null) shown.value = failed
+        val f = shown.value ?: return@AnimatedVisibility
+        val colors = MaterialTheme.colorScheme
+        val opens = f.kind == ErrorKind.NO_MIC || f.kind == ErrorKind.REJECTED
+        Column(
             Modifier
-                .widthIn(max = 260.dp)
-                .graphicsLayer { shadowElevation = 3.dp.toPx(); shape = CircleShape; clip = true }
-                .background(MaterialTheme.colorScheme.inverseSurface)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            color = MaterialTheme.colorScheme.inverseOnSurface,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+                .widthIn(max = 240.dp)
+                .graphicsLayer { shadowElevation = 3.dp.toPx(); shape = RoundedCornerShape(16.dp); clip = true }
+                .background(colors.errorContainer)
+                .then(if (opens) Modifier.clickable(onClick = onOpenApp) else Modifier)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            Text(stringResource(f.kind.message()), color = colors.onErrorContainer, style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(f.action()), color = colors.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+        }
     }
+}
+
+private fun Look.Failed.action() = when (kind) {
+    ErrorKind.NO_MIC -> R.string.overlay_action_allow_mic
+    ErrorKind.REJECTED -> R.string.overlay_action_update
+    ErrorKind.QUOTA -> R.string.overlay_action_later
+    ErrorKind.NOTHING_HEARD -> R.string.overlay_action_speak
+    ErrorKind.NETWORK, ErrorKind.OTHER -> R.string.overlay_action_retry
 }
 
 /**
  * The ✕ at the bottom of the screen while the bubble is dragged: a surface-container circle that
- * grows and turns the error container colour when the bubble is over it. Dropping there closes
- * the bubble. [hint], once ever, says how to bring it back, with [addTile] when Android lets the
- * app offer its tile.
+ * grows and turns the error container colour when the bubble is over it. Dropping there hides
+ * the bubble for now.
  */
 @Composable
-internal fun DismissTarget(armed: Boolean, hint: String? = null, addTile: (() -> Unit)? = null) {
+internal fun DismissTarget(armed: Boolean) {
     val colors = MaterialTheme.colorScheme
     val grow by animateFloatAsState(if (armed) 1.2f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
     val bg by animateColorAsState(if (armed) colors.errorContainer else colors.surfaceContainerHighest)
     val fg by animateColorAsState(if (armed) colors.onErrorContainer else colors.onSurface)
-    Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        if (hint != null) {
-            // A snackbar: the inverse surface, its action in the inverse primary.
-            Row(
-                Modifier
-                    .padding(bottom = 16.dp)
-                    .widthIn(max = 360.dp)
-                    .graphicsLayer { shadowElevation = 3.dp.toPx(); shape = RoundedCornerShape(24.dp); clip = true }
-                    .background(colors.inverseSurface)
-                    .padding(start = 16.dp, end = if (addTile != null) 4.dp else 16.dp, top = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    hint,
-                    Modifier.weight(1f, fill = false).padding(vertical = 6.dp),
-                    color = colors.inverseOnSurface,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                if (addTile != null) TextButton(onClick = addTile, colors = ButtonDefaults.textButtonColors(contentColor = colors.inversePrimary)) {
-                    Text(stringResource(R.string.tile_add))
-                }
-            }
-        }
-        Box(
-            Modifier
-                .size(64.dp)
-                .graphicsLayer { scaleX = grow; scaleY = grow; shadowElevation = 6.dp.toPx(); shape = CircleShape; clip = true }
-                .drawBehind { drawRect(bg) },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Rounded.Close, stringResource(R.string.overlay_close), Modifier.size(28.dp), fg)
-        }
+    Box(
+        Modifier
+            .padding(12.dp)
+            .size(64.dp)
+            .graphicsLayer { scaleX = grow; scaleY = grow; shadowElevation = 6.dp.toPx(); shape = CircleShape; clip = true }
+            .drawBehind { drawRect(bg) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Rounded.Close, stringResource(R.string.overlay_close), Modifier.size(28.dp), fg)
     }
 }
 
@@ -425,6 +422,6 @@ internal fun BubbleShape.polygon(): RoundedPolygon = when (this) {
     BubbleShape.SUNNY -> MaterialShapes.Sunny
     BubbleShape.CLOVER_4 -> MaterialShapes.Clover4Leaf
     BubbleShape.CIRCLE -> MaterialShapes.Circle
-    BubbleShape.PILL -> MaterialShapes.Pill
+    BubbleShape.OVAL -> MaterialShapes.Oval
     BubbleShape.SOFT_BURST -> MaterialShapes.SoftBurst
 }

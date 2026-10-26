@@ -3,9 +3,7 @@ package dev.silver.burble.overlay
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.Configuration
-import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Build
 import android.graphics.Rect
 import android.util.Log
 import android.view.Gravity
@@ -32,10 +30,8 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import android.view.HapticFeedbackConstants
-import dev.silver.burble.AddTileActivity
 import dev.silver.burble.Dictation
 import dev.silver.burble.Prefs
-import dev.silver.burble.R
 import dev.silver.burble.recording
 import dev.silver.burble.ui.theme.AppTheme
 import dev.silver.burble.BubbleShape
@@ -53,8 +49,9 @@ import kotlin.math.roundToInt
  * The bubble: a Compose window outside any activity that renders [Dictation]. Drag it anywhere;
  * on release it springs to the nearest side edge and remembers where it sits. While dragging, a
  * ✕ target shows at the bottom: dropping the bubble there cancels a dictation, drops the audio
- * of an error waiting for retry or text waiting for a field, or else closes the bubble. [windowType] is the host's, TYPE_ACCESSIBILITY_OVERLAY from the
- * accessibility service.
+ * of an error waiting for retry or text waiting for a field, or else hides the bubble until
+ * [onSnooze]'s owner shows it again. [windowType] is the host's, TYPE_ACCESSIBILITY_OVERLAY from
+ * the accessibility service.
  *
  * A configuration change (rotation, fold, dark mode) only re-places the window: the view, its
  * composition and the dictation all carry on.
@@ -63,6 +60,8 @@ class Overlay(
     private val context: Context,
     private val windowManager: WindowManager,
     private val windowType: Int,
+    /** Dropped on ✕ while idle: hidden for now, not turned off. */
+    private val onSnooze: () -> Unit,
 ) {
     /** While true (the lock screen is up) nothing shows; a dictation carries on unseen. */
     var locked: Boolean
@@ -254,39 +253,6 @@ class Overlay(
         armed.value = false
     }
 
-    /**
-     * The first time the bubble is closed, the ✕ stays 5 s with a line saying how to bring it
-     * back and, from Android 13, a button that adds the tile. Its own window and lifecycle: the
-     * bubble's go as the bubble closes.
-     */
-    private fun showHiddenHint() {
-        val o = Owner()
-        val view = ComposeView(context)
-        val close = {
-            if (view.isAttachedToWindow) {
-                runCatching { windowManager.removeView(view) }
-                o.destroy()
-            }
-        }
-        // Android adds a tile only for the app in front: a see-through activity asks.
-        val addTile = if (Build.VERSION.SDK_INT >= 33) ({
-            close()
-            context.startActivity(Intent(context, AddTileActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }) else null
-        view.setViewTreeLifecycleOwner(o)
-        view.setViewTreeSavedStateRegistryOwner(o)
-        view.setViewTreeViewModelStoreOwner(o)
-        view.setContent { AppTheme { DismissTarget(armed = true, hint = context.getString(R.string.overlay_hidden_hint), addTile = addTile) } }
-        // Touchable, unlike the target, for the action.
-        val params = WindowManager.LayoutParams().apply {
-            copyFrom(targetParams)
-            flags = flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-        }
-        if (runCatching { windowManager.addView(view, params) }.isFailure) return
-        o.resume()
-        view.postDelayed({ close() }, HINT_MS)
-    }
-
     /** The target's centre and the bubble's, in screen pixels; arms the target when close. */
     private fun track() {
         val frame = root ?: return
@@ -316,10 +282,7 @@ class Overlay(
             when {
                 st.recording || (st as? Dictation.State.Error)?.waits == true -> Dictation.cancel()
                 st is Dictation.State.Ready -> Dictation.discard()
-                else -> {
-                    if (!Prefs.settings.value.hiddenHintShown) showHiddenHint()
-                    Prefs.update { it.copy(bubbleOn = false, hiddenHintShown = true) }
-                }
+                else -> onSnooze()
             }
             place(animate = true)
             return
@@ -431,7 +394,6 @@ class Overlay(
         const val KEY_RIGHT = "right"
         const val KEY_FRACTION = "fraction"
         const val KEY_DRAWING = "drawing_shape"
-        const val HINT_MS = 5000L
         const val TAG = "Overlay"
         const val BUBBLE_DP = 80
         const val PADDING_DP = 8

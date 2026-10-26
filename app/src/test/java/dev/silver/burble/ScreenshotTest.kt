@@ -20,6 +20,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.ParameterizedRobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -62,7 +63,8 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     @Test fun unlock() = step("unlock", Access.None.copy(microphone = true), Step.INSERTION)
     @Test fun unlockAppInfo() = step("unlock-appinfo", Access.None.copy(microphone = true), Step.INSERTION, unlockStage = 1)
 
-    private val settings = Settings(onboarded = true, languages = listOf("en-US", "fr-FR"))
+    private val keyboard = listOf("en-US", "fr-FR")
+    private val settings = Settings(onboarded = true, dictated = true, languages = listOf("en-US", "fr-FR"))
     private val release = Release(
         version = "0.2.0",
         notes = "- The bubble keeps your words when the screen rotates.\n- Languages: pick several; the first is the main one.\n- Fixes a crash when the network drops mid-dictation.",
@@ -70,14 +72,20 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
         apkSize = 0,
     )
 
-    @Config(qualifiers = "w412dp-h2400dp-xxhdpi")
+    // Tall enough for the whole page: top and bottom of home in one image.
+    @Config(qualifiers = "w412dp-h2600dp-xxhdpi")
     @Test fun home() = capture("home") {
-        Home(settings, Access.All, TestAudio.State.Heard("Hello, this is a test of dictation."), Updater.State.Available(release), HomeActions.None, "0.1.0")
+        Home(settings, Access.All, TestAudio.State.Idle, Updater.State.Available(release), HomeActions.None, "0.1.0")
     }
 
-    @Config(qualifiers = "w412dp-h2200dp-xxhdpi")
+    // Before the first dictation: the main switch says how.
+    @Config(qualifiers = "w412dp-h2600dp-xxhdpi")
     @Test fun homeReady() = capture("home-ready") {
-        Home(settings, Access.All, TestAudio.State.Idle, Updater.State.UpToDate, HomeActions.None, "0.1.0")
+        Home(settings.copy(dictated = false), Access.All, TestAudio.State.Idle, Updater.State.UpToDate, HomeActions.None, "0.1.0")
+    }
+
+    @Test fun homeOff() = capture("home-off") {
+        Home(settings.copy(bubbleOn = false), Access.All, TestAudio.State.Idle, Updater.State.UpToDate, HomeActions.None, "0.1.0")
     }
 
     @Test fun homeSetup() = capture("home-setup") {
@@ -89,17 +97,42 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
         Home(settings, Access.All.copy(stopped = true, battery = false), TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0")
     }
 
-    @Config(qualifiers = "w412dp-h2000dp-xxhdpi")
+    // The idle look in the preview: a dot at 60 %.
+    @Config(qualifiers = "w412dp-h2600dp-xxhdpi")
     @Test fun homeUpdating() = capture("home-updating") {
         Home(
             settings.copy(bubbleSize = 80, shape = BubbleShape.CLOVER_4, idleOpacity = 60, whenIdle = WhenIdle.DOT),
-            Access.All, TestAudio.State.Sending, Updater.State.Downloading(release, 0.4f), HomeActions.None, "0.1.0",
+            Access.All, TestAudio.State.Idle, Updater.State.Downloading(release, 0.4f), HomeActions.None, "0.1.0", previewIdle = true,
         )
+    }
+
+    @Test fun advanced() = capture("advanced") {
+        Home(settings, Access.All, TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, advancedOpen = true)
     }
 
     @OptIn(ExperimentalRoborazziApi::class)
     @Test fun languages() {
-        themed { Home(settings, Access.All, TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0", languagesOpen = true) }
+        themed { Home(settings, Access.All, TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, advancedOpen = true, languagesOpen = true) }
         captureScreenRoboImage("screenshots/home-languages-$name.png")
+    }
+
+    @OptIn(ExperimentalRoborazziApi::class)
+    @Test fun testSheet() {
+        themed { Home(settings, Access.All, TestAudio.State.Heard("Hello, this is a test of dictation."), Updater.State.Idle, HomeActions.None, "0.1.0", keyboard, advancedOpen = true, testOpen = true) }
+        captureScreenRoboImage("screenshots/home-test-$name.png")
+    }
+
+    // Twice the font size: nothing cut, nothing overlapping, the button still on screen.
+    @Config(qualifiers = "w412dp-h2600dp-xxhdpi")
+    @Test fun homeLargeFont() {
+        RuntimeEnvironment.setFontScale(2f)
+        capture("home-font200") {
+            Home(settings, Access.All, TestAudio.State.Idle, Updater.State.Available(release), HomeActions.None, "0.1.0")
+        }
+    }
+
+    @Test fun unlockLargeFont() {
+        RuntimeEnvironment.setFontScale(2f)
+        step("unlock-font200", Access.None.copy(microphone = true), Step.INSERTION)
     }
 }
