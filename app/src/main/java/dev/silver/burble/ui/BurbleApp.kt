@@ -80,8 +80,13 @@ fun BurbleApp() {
                 installUpdate = { Updater.install(context, it) },
                 openUrl = { open(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
                 reportProblem = {
-                    val url = Report.issueUrl(SOURCE, Updater.installedVersion(context), settings.languages)
-                    open(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    val version = Updater.installedVersion(context)
+                    val languages = settings.languages
+                    // Reading logcat spawns a process: keep it off the main thread.
+                    Thread {
+                        val url = Report.issueUrl(SOURCE, version, languages)
+                        context.mainExecutor.execute { open(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    }.start()
                 },
             ),
             version = Updater.installedVersion(context),
