@@ -68,7 +68,6 @@ class InsertionService : AccessibilityService() {
                 .distinctUntilChanged().collect(::setOverlay)
         }
         scope.launch { Dictation.state.collect(::followDictation) }
-        scope.launch { combine(OwnScreens.inFront, OwnScreens.wantsBubble) { a, b -> a && !b }.collect { updateAway() } }
         scope.launch {
             Prefs.settings.map { it.bubbleShow }.distinctUntilChanged().collect { updateAway() }
         }
@@ -178,8 +177,7 @@ class InsertionService : AccessibilityService() {
     }
 
     private fun shouldShow(field: AccessibilityNodeInfo? = focusedField()) =
-        visibility.shows(Dictation.state.value != Dictation.State.Idle, Prefs.settings.value.bubbleShow, field != null,
-            ownScreen = OwnScreens.inFront.value && !OwnScreens.wantsBubble.value)
+        visibility.shows(Dictation.state.value != Dictation.State.Idle, Prefs.settings.value.bubbleShow, field != null)
 
     private val goAway = Runnable { away = true }
 

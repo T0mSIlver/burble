@@ -52,10 +52,4 @@ class VisibilityTest {
         v.focus("a", TYPING)
         assertFalse(v.snoozed)
     }
-
-    @Test fun burblesOwnScreensHideItUnlessDictating() {
-        val v = Visibility<String>()
-        assertFalse(v.shows(dictating = false, ALWAYS, fieldFocused = true, ownScreen = true))
-        assertTrue(v.shows(dictating = true, ALWAYS, fieldFocused = false, ownScreen = true))
-    }
 }

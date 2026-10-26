@@ -62,6 +62,7 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Fields compared across nodes on Android 12 (no `equals` before 13) | Code (`FieldKey`: window, id, bounds) | ✅ |
 | Use Burble off: overlay gone; during Listening it stops so the words land | Code (`InsertionService`); emulator (switch on home) | ✅ |
 | Use Burble on clears a snooze | Code (`setOverlay`) | ✅ |
+| Burble's own screens: shown with Always (home, Bubble look, Advanced, About), clear of the main switch and back at its default place; drags; Bubble look changes it live; no bubble in onboarding before Accessibility is on | Unit `VisibilityTest.eachModeShowsWhereItShould`; emulator (sb66: screenshots of each page, a drag on home, Dot picked on Bubble look) | ✅ |
 | Unsent dictation recovered while Use Burble is off: waits, shows once on | Code (`Dictation.recover`, overlay follows the state) | ✅ |
 | Lock screen hides the bubble; keyboard never kept hidden there | Code (`updateLock`); 👤 2 | 👤 |
 | Password fields: not a target, not a text field for While typing | Code (`focusedField`) | ✅ |

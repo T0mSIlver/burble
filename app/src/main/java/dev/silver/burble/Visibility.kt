@@ -37,8 +37,9 @@ internal class Visibility<F> {
 
     /**
      * A dictation always shows, snoozed or not, since the bubble is all there is to see of it;
-     * otherwise the mode decides, unless snoozed or one of Burble's own screens is in front.
+     * otherwise the mode decides, unless snoozed. Burble's own screens are like any app's: there
+     * the bubble shows what the settings do to it.
      */
-    fun shows(dictating: Boolean, mode: BubbleShow, fieldFocused: Boolean, ownScreen: Boolean = false) =
-        dictating || !snoozed && !ownScreen && (mode == BubbleShow.ALWAYS || fieldFocused)
+    fun shows(dictating: Boolean, mode: BubbleShow, fieldFocused: Boolean) =
+        dictating || !snoozed && (mode == BubbleShow.ALWAYS || fieldFocused)
 }

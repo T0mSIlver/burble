@@ -45,7 +45,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -71,7 +70,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import dev.silver.burble.Dictation
-import dev.silver.burble.OwnScreens
 import dev.silver.burble.R
 
 /** Where the onboarding and home screens send the user to grant what's missing. */
@@ -267,11 +265,6 @@ private fun TryItButton(done: Boolean, onDone: () -> Unit) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun TryIt(field: TextFieldState, dictation: Dictation.State, landed: Boolean) {
-    // The bubble steps aside on Burble's screens, but this one is about it.
-    DisposableEffect(Unit) {
-        OwnScreens.wantsBubble.value = true
-        onDispose { OwnScreens.wantsBubble.value = false }
-    }
     val focus = remember { FocusRequester() }
     // Opened straight on this screen, the window isn't focused yet and the field would stay
     // without focus: wait for it.
