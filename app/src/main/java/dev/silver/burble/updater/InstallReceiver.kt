@@ -5,13 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.util.Log
+import androidx.core.content.IntentCompat
 
 /** Results of the install session: Android's confirmation to show, or how it ended. */
 class InstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                val confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java) ?: return
+                val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java) ?: return
                 context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }
             // On success Android replaces this process; nothing is left to do.
