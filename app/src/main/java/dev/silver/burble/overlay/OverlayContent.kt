@@ -74,6 +74,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -112,7 +113,14 @@ internal fun Dictation.State.look(): Look = when (this) {
 
 /** The bubble wired to [Dictation] and [Prefs]: results time out, haptics mark changes. */
 @Composable
-internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>, away: State<Boolean>, touching: State<Boolean>) {
+internal fun LiveOverlay(
+    alignEnd: State<Boolean>,
+    locked: State<Boolean>,
+    away: State<Boolean>,
+    touching: State<Boolean>,
+    windowShift: State<Float>,
+    onDock: (Float) -> Unit,
+) {
     val context = LocalContext.current
     val state by Dictation.state.collectAsState()
     val settings by Prefs.settings.collectAsState()
@@ -149,6 +157,8 @@ internal fun LiveOverlay(alignEnd: State<Boolean>, locked: State<Boolean>, away:
         OverlayContent(look, settings.shape, settings.bubbleSize.dp, alignEnd.value, labelled,
             rest = rest, whenIdle = settings.whenIdle, idleOpacity = settings.idleOpacity / 100f,
             touching = touching.value,
+            windowShift = { windowShift.value },
+            onDock = onDock,
             onOpenApp = {
                 context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             },
@@ -189,13 +199,22 @@ private const val REST_MS = 3000L
 /** "Shrink" draws the idle bubble at this share of its size. */
 private const val SHRUNK = 0.6f
 private val Dot = 12.dp
+/** A docked bubble's gap to the screen edge. */
+private val DockInset = 4.dp
+/** The least of a docked bubble's touch area left on screen. */
+private val MinTouch = 48.dp
+/** The window's padding around the bubble, room for its shadow. */
+private val Padding = 8.dp
 
 /**
  * The bubble, the only thing Burble draws over other apps. It keeps its shape and size in
  * every state, so nothing it covers changes while you talk: the wave, the loader and the check
  * all play inside it. An error tints it and puts a one-line reason beside it, on the side
- * facing the middle of the screen. Only Idle fades and, once at rest, shrinks; its layout,
- * and so its touch area and centre, keep the full size.
+ * facing the middle of the screen. Only Idle fades and, once at rest, shrinks to the nearest
+ * side edge: smaller or a dot, docked [DockInset] from it. The layout keeps the full size; the
+ * window follows the docked bubble out past the edge, by the shift [onDock] asks for, so the touch
+ * area left on screen hugs the edge. [windowShift] is how far out the window is now: the bubble
+ * is drawn against it, so it moves smoothly whatever the window does.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -214,6 +233,10 @@ internal fun OverlayContent(
     idleOpacity: Float = 1f,
     /** A finger is on the bubble, dragging or not: full size and opacity. */
     touching: Boolean = false,
+    /** How far past its edge position the window sits, outward, in pixels. */
+    windowShift: () -> Float = { 0f },
+    /** Asks for the window's outward shift while docked; 0 to undock. */
+    onDock: (Float) -> Unit = {},
     /** The error label's action, for errors only the app can fix. */
     onOpenApp: () -> Unit = {},
     onTap: () -> Unit,
@@ -241,10 +264,17 @@ internal fun OverlayContent(
     val idle = look == Look.Idle && !touching && !pressed
     val small = idle && rest && whenIdle != WhenIdle.FULL
     val dot = small && whenIdle == WhenIdle.DOT
-    val shrink by animateFloatAsState(
-        if (!small) 1f else if (dot) Dot / side else SHRUNK,
-        MaterialTheme.motionScheme.defaultSpatialSpec(),
-    )
+    val target = if (!small) 1f else if (dot) Dot / side else SHRUNK
+    val shrink by animateFloatAsState(target, MaterialTheme.motionScheme.defaultSpatialSpec())
+    // Docked: the bubble's centre moves out until its edge is DockInset from the screen's.
+    val density = LocalDensity.current
+    val window = with(density) { (side + Padding * 2).toPx() }
+    val dock = if (small) with(density) { window / 2 - DockInset.toPx() - (side * target).toPx() / 2 } else 0f
+    val out by animateFloatAsState(dock, MaterialTheme.motionScheme.defaultSpatialSpec())
+    val outward = if (alignEnd) 1f else -1f
+    LaunchedEffect(dock) {
+        onDock(dock.coerceAtMost(window - with(density) { MinTouch.toPx() }).coerceAtLeast(0f))
+    }
     val opacity by animateFloatAsState(if (idle) idleOpacity else 1f, fadeInSpec)
     // A 12 dp dot has no room for the glyph.
     val glyphs by animateFloatAsState(if (dot) 0f else 1f, fadeInSpec)
@@ -254,9 +284,12 @@ internal fun OverlayContent(
     val ambientShadow = remember(outline) { DropShadowPainter(outline, AmbientShadow) }
     val failed = (look as? Look.Failed)?.takeIf { labelled }
 
-    // Room for the shadow inside the window.
+    // Room for the shadow inside the window. The whole window takes the tap: hit tests follow the
+    // bubble's scale, so a docked dot alone would be a 12 dp target.
     Row(
-        Modifier.padding(8.dp),
+        Modifier
+            .clickable(press, null, onClickLabel = stringResource(look.action())) { onTap() }
+            .padding(Padding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -267,6 +300,7 @@ internal fun OverlayContent(
                 .graphicsLayer {
                     scaleX = scale * shrink
                     scaleY = scale * shrink
+                    translationX = outward * (out - windowShift())
                     alpha = opacity
                     // Offscreen, the fade would crop the shadow to the bubble's square.
                     compositingStrategy = CompositingStrategy.ModulateAlpha
@@ -301,8 +335,7 @@ internal fun OverlayContent(
                         drawContent()
                         drawPath(outside, Color.Black, blendMode = BlendMode.Clear)
                     }
-                }
-                .clickable(press, null, onClickLabel = stringResource(look.action())) { onTap() },
+                },
             contentAlignment = Alignment.Center,
         ) {
             AnimatedContent(

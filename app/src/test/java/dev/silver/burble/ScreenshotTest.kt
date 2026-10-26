@@ -98,12 +98,12 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
         Home(settings, Access.All.copy(stopped = true, battery = false), TestAudio.State.Idle, Updater.State.Idle, HomeActions.None, "0.1.0")
     }
 
-    // The idle look in the preview: a dot at 60 %.
+    // A dot at 60 % in the preview.
     @Config(qualifiers = "w412dp-h2600dp-xxhdpi")
     @Test fun homeUpdating() = capture("home-updating") {
         Home(
             settings.copy(bubbleSize = 80, shape = BubbleShape.CLOVER_4, idleOpacity = 60, whenIdle = WhenIdle.DOT),
-            Access.All, TestAudio.State.Idle, Updater.State.Downloading(release, 0.4f), HomeActions.None, "0.1.0", previewIdle = true,
+            Access.All, TestAudio.State.Idle, Updater.State.Downloading(release, 0.4f), HomeActions.None, "0.1.0",
         )
     }
 

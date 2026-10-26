@@ -15,6 +15,7 @@ import android.widget.FrameLayout
 import androidx.compose.animation.core.Animatable
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MotionScheme
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.ComposeView
@@ -78,6 +79,10 @@ class Overlay(
     /** A finger is on the bubble, dragging or not: it shows at full size and opacity. */
     private val touching = mutableStateOf(false)
 
+    /** How far out past its edge position the window sits while the idle bubble is docked. */
+    private val shift = mutableFloatStateOf(0f)
+    private var dock: Job? = null
+
     private val density = context.resources.displayMetrics.density
     private var target: ComposeView? = null
     private val armed = mutableStateOf(false)
@@ -131,11 +136,13 @@ class Overlay(
         frame.setViewTreeSavedStateRegistryOwner(o)
         frame.setViewTreeViewModelStoreOwner(o)
         frame.addView(ComposeView(context).apply {
-            setContent { AppTheme { LiveOverlay(alignEnd, hidden, awayState, touching) } }
+            setContent { AppTheme { LiveOverlay(alignEnd, hidden, awayState, touching, shift, ::dockTo) } }
         })
         frame.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
             // The error label resized the window: keep it on screen.
             if (r - l != oldR - oldL || b - t != oldB - oldT) place(animate = true)
+            // At the screen's edge, a drag from the bubble moves it rather than going back.
+            frame.systemGestureExclusionRects = listOf(Rect(0, 0, r - l, b - t))
         }
         place(animate = false)
         windowManager.addView(frame, params)
@@ -180,8 +187,29 @@ class Overlay(
         moveTo(edgeX(area, screenW), clampY(y, area, h), animate)
     }
 
-    // The window's own padding, room for the shadow, keeps the bubble off the very edge.
-    private fun edgeX(area: Rect, screenW: Int) = if (onRight) screenW - area.right else area.left
+    // The window's own padding, room for the shadow, keeps the bubble off the very edge; docked,
+    // the window reaches out past it.
+    private fun edgeX(area: Rect, screenW: Int) = baseX(area, screenW) - shift.floatValue.roundToInt()
+
+    private fun baseX(area: Rect, screenW: Int) = if (onRight) screenW - area.right else area.left
+
+    /** Springs the window [target] pixels out past its edge position, or back with 0. */
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    private fun dockTo(target: Float) {
+        val s = scope ?: return
+        if (touching.value || root == null) return
+        dock?.cancel()
+        snap?.cancel()
+        val (area, screenW) = area()
+        val base = baseX(area, screenW)
+        dock = s.launch {
+            Animatable(shift.floatValue).animateTo(target, MotionScheme.expressive().defaultSpatialSpec()) {
+                shift.floatValue = value
+                params.x = base - value.roundToInt()
+                apply()
+            }
+        }
+    }
 
     private fun clampY(y: Int, area: Rect, h: Int) = y.coerceIn(area.top, maxOf(area.top, area.bottom - h))
 
@@ -327,6 +355,14 @@ class Overlay(
                 MotionEvent.ACTION_DOWN -> {
                     touching.value = true
                     snap?.cancel()
+                    // Back to where the full bubble sits: the bubble grows there, drawn against
+                    // the window, so it doesn't jump.
+                    dock?.cancel()
+                    if (shift.floatValue != 0f) {
+                        params.x += shift.floatValue.roundToInt()
+                        shift.floatValue = 0f
+                        apply()
+                    }
                     downX = e.rawX; downY = e.rawY
                     startX = params.x; startY = params.y
                     dragging = false

@@ -83,7 +83,6 @@ fun Home(
     actions: HomeActions,
     version: String,
     keyboard: List<String> = emptyList(),
-    previewIdle: Boolean = false,
     advancedOpen: Boolean = false,
     languagesOpen: Boolean = false,
     testOpen: Boolean = false,
@@ -100,10 +99,7 @@ fun Home(
         return
     }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    var idle by rememberSaveable { mutableStateOf(previewIdle) }
     val set = actions.update
-    // A change to the idle look shows the bubble at rest, where it applies.
-    val setIdle: ((Settings) -> Settings) -> Unit = { change -> idle = true; set(change) }
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
@@ -133,9 +129,7 @@ fun Home(
             item {
                 Group(listOf(
                     contentRow(null, null) {
-                        BubblePreview(settings, idle)
-                        Spacer(Modifier.size(12.dp))
-                        Choices(listOf(false to R.string.preview_active, true to R.string.preview_idle), idle) { idle = it }
+                        BubblePreview(settings)
                     },
                     contentRow(null, stringResource(R.string.bubble_when)) {
                         Choices(listOf(BubbleShow.ALWAYS to R.string.bubble_when_always, BubbleShow.TYPING to R.string.bubble_when_typing),
@@ -157,11 +151,11 @@ fun Home(
                     },
                     contentRow(null, stringResource(R.string.when_idle)) {
                         Choices(listOf(WhenIdle.FULL to R.string.when_idle_full, WhenIdle.SHRINK to R.string.when_idle_shrink,
-                            WhenIdle.DOT to R.string.when_idle_dot), settings.whenIdle) { w -> setIdle { it.copy(whenIdle = w) } }
+                            WhenIdle.DOT to R.string.when_idle_dot), settings.whenIdle) { w -> set { it.copy(whenIdle = w) } }
                     },
                     contentRow(null, stringResource(R.string.idle_opacity)) {
                         Stepped(settings.idleOpacity, 20..100, 10, stringResource(R.string.percent, settings.idleOpacity)) { o ->
-                            setIdle { it.copy(idleOpacity = o) }
+                            set { it.copy(idleOpacity = o) }
                         }
                     },
                 ))

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import dev.silver.burble.BubbleShape
 import dev.silver.burble.R
 import dev.silver.burble.Settings
+import dev.silver.burble.WhenIdle
 import dev.silver.burble.overlay.Look
 import dev.silver.burble.overlay.OverlayContent
 import dev.silver.burble.overlay.polygon
@@ -57,46 +59,65 @@ const val MIN_SIZE = 40
 const val MAX_SIZE = 96
 
 /**
- * The bubble as it will look, drawn by the overlay's own code over a sketch of an app, so shape,
- * size, the idle appearance and its opacity show together. [idle] shows it at rest.
+ * The bubble as it will look, drawn by the overlay's own code against the edge of a sketched
+ * screen: in use, and after 3 s idle, smaller or a dot docked to the edge, at the idle opacity.
+ * Both follow every setting as it changes.
  */
 @Composable
-fun BubblePreview(settings: Settings, idle: Boolean) {
+fun BubblePreview(settings: Settings) {
+    val appearance = stringResource(when (settings.whenIdle) {
+        WhenIdle.FULL -> R.string.when_idle_full
+        WhenIdle.SHRINK -> R.string.when_idle_shrink
+        WhenIdle.DOT -> R.string.when_idle_dot
+    })
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        PreviewHalf(stringResource(R.string.preview_active), stringResource(R.string.preview_active_description)) {
+            OverlayContent(Look.Idle, settings.shape, settings.bubbleSize.dp, alignEnd = true, labelled = false, onTap = {}) { _, _ -> }
+        }
+        PreviewHalf(
+            stringResource(R.string.preview_idle),
+            stringResource(R.string.preview_idle_description, appearance, settings.idleOpacity),
+        ) {
+            OverlayContent(
+                Look.Idle, settings.shape, settings.bubbleSize.dp, alignEnd = true, labelled = false,
+                rest = true, whenIdle = settings.whenIdle, idleOpacity = settings.idleOpacity / 100f, onTap = {},
+            ) { _, _ -> }
+        }
+    }
+}
+
+/** A sketched screen, the bubble at its right edge. A picture: no taps, one TalkBack line. */
+@Composable
+private fun RowScope.PreviewHalf(label: String, description: String, bubble: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val description = stringResource(if (idle) R.string.preview_idle_description else R.string.preview_active_description)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            // Room for the largest bubble and its shadow.
-            .height(MAX_SIZE.dp + 32.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.surfaceContainerLowest)
-            // A picture, not a second bubble: no taps, and one description for TalkBack.
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+    Column(Modifier.weight(1f).clearAndSetSemantics { contentDescription = description }) {
+        Text(label, Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                // Room for the largest bubble and its shadow.
+                .height(MAX_SIZE.dp + 32.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(colors.surfaceContainerLowest)
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                    }
                 }
-            }
-            .clearAndSetSemantics { contentDescription = description }
-            .drawBehind {
-                // Lines of text, so the idle opacity has something to show through.
-                val line = colors.onSurfaceVariant.copy(alpha = 0.18f)
-                val h = 8.dp.toPx()
-                var y = 18.dp.toPx()
-                var i = 0
-                while (y + h < size.height - 12.dp.toPx()) {
-                    val w = size.width * listOf(0.82f, 0.9f, 0.64f, 0.86f, 0.74f)[i++ % 5] - 32.dp.toPx()
-                    drawRoundRect(line, Offset(16.dp.toPx(), y), Size(w, h), CornerRadius(h / 2))
-                    y += 18.dp.toPx()
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        OverlayContent(
-            Look.Idle, settings.shape, settings.bubbleSize.dp, alignEnd = false, labelled = false,
-            rest = idle, whenIdle = settings.whenIdle, idleOpacity = if (idle) settings.idleOpacity / 100f else 1f,
-            onTap = {},
-        ) { _, _ -> }
+                .drawBehind {
+                    // Lines of text, so the idle opacity has something to show through.
+                    val line = colors.onSurfaceVariant.copy(alpha = 0.18f)
+                    val h = 8.dp.toPx()
+                    var y = 18.dp.toPx()
+                    var i = 0
+                    while (y + h < size.height - 12.dp.toPx()) {
+                        val w = size.width * listOf(0.82f, 0.9f, 0.64f, 0.86f, 0.74f)[i++ % 5] - 24.dp.toPx()
+                        drawRoundRect(line, Offset(12.dp.toPx(), y), Size(w, h), CornerRadius(h / 2))
+                        y += 18.dp.toPx()
+                    }
+                },
+            contentAlignment = Alignment.CenterEnd,
+        ) { bubble() }
     }
 }
 
