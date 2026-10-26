@@ -21,6 +21,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.Interests
@@ -94,13 +95,14 @@ class HomeActions(
     val checkForUpdate: () -> Unit,
     val installUpdate: (Release) -> Unit,
     val openUrl: (String) -> Unit,
+    val reportProblem: () -> Unit,
 ) {
     companion object {
-        val None = HomeActions(AccessActions.None, {}, {}, {}, {}, {})
+        val None = HomeActions(AccessActions.None, {}, {}, {}, {}, {}, {})
     }
 }
 
-private const val SOURCE = "https://github.com/T0mSIlver/burble"
+internal const val SOURCE = "https://github.com/T0mSIlver/burble"
 
 /** The bubble's diameter on screen; the overlay draws it at the same sizes. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -189,6 +191,9 @@ fun Home(
                     },
                     linkRow(Icons.Outlined.Code, stringResource(R.string.source), SOURCE.removePrefix("https://")) {
                         actions.openUrl(SOURCE)
+                    },
+                    linkRow(Icons.Outlined.BugReport, stringResource(R.string.report_problem), stringResource(R.string.report_problem_hint)) {
+                        actions.reportProblem()
                     },
                 ))
             }

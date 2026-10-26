@@ -21,6 +21,12 @@ project does not control. The text you get back comes from that service.
 
 **Send test audio** sends a bundled clip the same way and no microphone audio.
 
+**Report a problem** opens a GitHub issue in your browser, prefilled with the
+app version, phone model, Android version, dictation languages and Burble's
+recent log lines. Those lines hold no dictated text, but they name the app
+where an insert fell back. Nothing is sent until you submit the issue, and you
+can edit it first.
+
 ## What does not leave your phone
 
 - No account, sign-in or advertising ID.

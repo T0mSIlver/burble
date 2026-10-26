@@ -119,6 +119,8 @@
     <string name="licence">Licence</string>
     <string name="licence_hint">GNU GPL version 3</string>
     <string name="source">Source code</string>
+    <string name="report_problem">Report a problem</string>
+    <string name="report_problem_hint">Opens a GitHub issue with your phone model and Burble\'s log</string>
     <string name="updates_auto">Check for updates</string>
     <string name="updates_auto_hint">Asks GitHub once a day when you open Burble</string>
     <string name="updates_check">Check now</string>

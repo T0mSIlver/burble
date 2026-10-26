@@ -20,6 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.silver.burble.DictationTile
 import dev.silver.burble.InsertionService
 import dev.silver.burble.Prefs
+import dev.silver.burble.Report
 import dev.silver.burble.updater.Updater
 
 /** Onboarding until the user finishes it, then home. */
@@ -78,6 +79,10 @@ fun BurbleApp() {
                 checkForUpdate = { Updater.check(context) },
                 installUpdate = { Updater.install(context, it) },
                 openUrl = { open(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
+                reportProblem = {
+                    val url = Report.issueUrl(SOURCE, Updater.installedVersion(context), settings.languages)
+                    open(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                },
             ),
             version = Updater.installedVersion(context),
         )
