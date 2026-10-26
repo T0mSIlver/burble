@@ -7,7 +7,6 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
-import android.os.PersistableBundle
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -226,16 +225,9 @@ object Dictation {
         if (!Prefs.settings.value.dictated) Prefs.update { it.copy(dictated = true) }
     }
 
-    /**
-     * Puts [text] on the clipboard marked sensitive, as password managers mark theirs: from
-     * Android 13 its preview and keyboards' clipboard suggestions mask it.
-     */
     fun copy(context: Context, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("dictation", text)
-        // ClipDescription.EXTRA_IS_SENSITIVE, API 33; older versions ignore it.
-        clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
-        cm.setPrimaryClip(clip)
+        cm.setPrimaryClip(ClipData.newPlainText("dictation", text))
     }
 
     /** Replaces the mic level until the dictation ends; for the debug build's test hook. */
