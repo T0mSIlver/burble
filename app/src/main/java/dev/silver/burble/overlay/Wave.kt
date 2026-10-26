@@ -255,8 +255,7 @@ private fun CanvasWave(frame: () -> WaveFrame, colors: WaveColors, surface: Colo
             val core = Array(n + 1) { i ->
                 val u = i * r / n / dp
                 val t = ((band - u) / band).coerceIn(0f, 1f)
-                val ring = exp(-((u - 0.3f * e0) / 0.8f).pow(2)) * 0.3f * (1 - f.glow)
-                i / n.toFloat() to Color.White.copy(alpha = (CORE * t * t * (3 - 2 * t) + ring).coerceAtMost(1f))
+                i / n.toFloat() to Color.White.copy(alpha = CORE * t * t * (3 - 2 * t))
             }
             drawRect(surface)
             drawRect(Brush.radialGradient(*glow, center = c, radius = r))
@@ -421,13 +420,6 @@ half4 main(float2 p) {
     float f = min(BAR / 3.0 * (1.0 + bandsLvl), 0.9 * e0) * dp;
     col = lighten(col, band(u * dp, f, glowColor.rgb, glowColor.rgb) * half(0.9 * shown));
     col = lighten(col, band(u * dp, 0.5 * f, half3(1.0), glowColor.rgb) * half(CORE * shown));
-    // Gboard's thin pale line at the bar's source: a faint ring round the centre that breathes
-    // and wobbles with the glow's noise, fading as the voice comes in.
-    float rr = 0.3 * e0 * (1.0 + 0.25 * (glowNoise(hq * 0.6) - 0.5));
-    // A square, not pow(): pow of a negative base is undefined and drew a filled disc.
-    float d = (u - rr) / 0.8;
-    float ring = exp(-d * d) * (0.75 + 0.25 * sin(morph * 2.1));
-    col = mix(col, half3(1.0), half(0.3 * ring * a * (1.0 - glowLvl)));
     float area = max(0.0, 1.0 - u / BAR) * smoothstep(-1.32 * BAR, 0.0, -min(u, BAR - u));
     float dots = clamp(dotsAlpha * area * diamonds(p, c) * a, 0.0, 1.0);
     return half4(mix(col, dotColor.rgb, half(dots)), 1.0);
