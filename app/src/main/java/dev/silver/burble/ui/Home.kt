@@ -149,7 +149,7 @@ fun Home(
 
                 item("bubble header") { SectionHeader(stringResource(R.string.section_bubble), listItemMotion()) }
                 item("bubble") {
-                    Group(listOf(
+                    Box(listItemMotion()) { Group(listOf(
                         contentRow(null, stringResource(R.string.bubble_when)) {
                             Choices(listOf(BubbleShow.ALWAYS to R.string.bubble_when_always, BubbleShow.TYPING to R.string.bubble_when_typing),
                                 settings.bubbleShow) { w -> set { it.copy(bubbleShow = w) } }
@@ -170,15 +170,15 @@ fun Home(
                             }
                         },
                         lookRow(settings) { open(Page.LOOK) },
-                    ))
+                    )) }
                 }
 
-                item { Spacer(Modifier.size(24.dp)) }
-                item {
-                    Group(listOf(
+                item("gap") { Spacer(listItemMotion().size(24.dp)) }
+                item("pages") {
+                    Box(listItemMotion()) { Group(listOf(
                         linkRow(Icons.Outlined.Tune, stringResource(R.string.advanced), stringResource(R.string.advanced_hint)) { open(Page.ADVANCED) },
                         linkRow(Icons.Outlined.Info, stringResource(R.string.section_about), stringResource(R.string.version, version)) { open(Page.ABOUT) },
-                    ))
+                    )) }
                 }
             }
         }
