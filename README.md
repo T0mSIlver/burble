@@ -2,7 +2,7 @@
 
 # Burble
 
-Google's Rambler dictation on any Android phone, under any keyboard, from a floating bubble like Wispr Flow's. Free and open source.
+Google's Rambler dictation on any Android phone, under any keyboard, from a floating bubble. Free and open source.
 
 <!-- Demo video or GIF: reviewing a website while talking, keyboard hidden, then a tap and the whole review lands in the field. -->
 
