@@ -26,6 +26,8 @@ class DictationSession(
     private val onResult: (Result<Heard>) -> Unit,
     /** The wave's level every 32 ms, 0..1: the voice against the room ([VoiceLevel]). */
     private val onLevel: (Float) -> Unit = {},
+    /** The recording ended, by [stop], silence or a broken microphone; on the recording thread. */
+    private val onAudioEnd: () -> Unit = {},
     /** Stops after this long without voice; 0 never does. */
     private val silenceMs: Long = 30_000,
     private val newEncoder: () -> AudioEncoder = { OggOpusEncoder() },
@@ -103,6 +105,7 @@ class DictationSession(
                 if (more && fill > 0) audio(pcm.copyOf(fill), SystemClock.elapsedRealtime())
                 stopping = true
                 endAudio()
+                if (!cancelled) onAudioEnd()
             } catch (e: Exception) {
                 stopping = true
                 // Audio already captured is kept: end it like a stop. A failure before any audio
@@ -110,7 +113,10 @@ class DictationSession(
                 val none = synchronized(lock) {
                     segments.isEmpty().also { if (it) { reported = true; audioEnded = true } }
                 }
-                if (none) onResult(Result.failure(e)) else endAudio()
+                if (none) onResult(Result.failure(e)) else {
+                    endAudio()
+                    if (!cancelled) onAudioEnd()
+                }
             } finally {
                 runCatching { record?.stop() }
                 runCatching { record?.release() }

@@ -107,6 +107,15 @@ object Dictation {
                 if (debug) Log.d(TAG, "level %.2f".format(l))
             },
             onResult = { r -> main.post { finish(app, s, r) } },
+            // A stop after silence: the bubble shows it's getting the text, not still listening.
+            onAudioEnd = {
+                main.post {
+                    if (session === s && _state.value == State.Listening) {
+                        _level.value = 0f
+                        _state.value = State.Finishing
+                    }
+                }
+            },
         )
         session = s
         MicService.start(app)
