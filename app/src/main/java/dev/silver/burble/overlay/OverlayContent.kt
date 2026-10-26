@@ -108,6 +108,7 @@ import dev.silver.burble.Dictation.ErrorKind
 import dev.silver.burble.Prefs
 import dev.silver.burble.R
 import dev.silver.burble.ui.theme.LocalWallpaperColors
+import dev.silver.burble.ui.theme.Motion
 import kotlinx.coroutines.delay
 
 /** What the bubble draws; several [Dictation.State]s share one. */
@@ -362,16 +363,8 @@ internal typealias WaveSlot = @Composable (color: Color, modifier: Modifier) -> 
 
 internal const val REST_MS = 3000L
 
-/**
- * Between full (0) and at rest (1): the expressive scheme's spatial spring, moving size, dock,
- * shape and opacity as one. It overshoots by about 2 %, which [Geometry] keeps on screen. It
- * runs until under a pixel from the end: the default stop, at 1 %, snapped a 96 dp bubble by
- * 2 px in its last frame.
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-internal val RestSpec: FiniteAnimationSpec<Float> =
-    (MotionScheme.expressive().defaultSpatialSpec<Float>() as SpringSpec<Float>)
-        .let { spring(it.dampingRatio, it.stiffness, visibilityThreshold = 0.002f) }
+/** Between full (0) and at rest (1): [Motion.rest], moving size, dock, shape and opacity as one. */
+internal val RestSpec: FiniteAnimationSpec<Float> get() = Motion.rest
 
 /** Finds the bubble in tests. */
 internal const val BUBBLE_TAG = "bubble"
