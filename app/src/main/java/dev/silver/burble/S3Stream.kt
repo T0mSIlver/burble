@@ -87,23 +87,17 @@ class S3Stream(
     override fun start() {
         val t0 = System.nanoTime()
         fun elapsedMs() = (System.nanoTime() - t0) / 1_000_000
+        // Duplex: the response is read while the audio still goes out, so a server that refuses
+        // the session says so at once, not after the last word.
         val body = object : RequestBody() {
             override fun contentType() = "application/grpc".toMediaType()
             override fun isOneShot() = true
+            override fun isDuplex() = true
 
+            // OkHttp leaves a duplex body's sink open: the writer owns it, and closing it ends
+            // the request.
             override fun writeTo(sink: BufferedSink) {
-                sink.write(grpcFrame(s3Header(request, elapsedMs())))
-                val chunks = Chunker(Identity.CHUNK)
-                while (true) {
-                    val bytes = queue.poll(120, TimeUnit.SECONDS)
-                        ?: throw IOException("no audio within 120 s")
-                    val end = bytes === END
-                    for (c in if (end) chunks.drain() else chunks.add(bytes)) {
-                        sink.write(grpcFrame(s3Audio(c, elapsedMs())))
-                    }
-                    if (end) break
-                }
-                sink.write(grpcFrame(S3_END))
+                Thread({ write(sink, ::elapsedMs) }, "S3Stream writer").start()
             }
         }
         val req = Request.Builder()
@@ -135,6 +129,37 @@ class S3Stream(
                 }
             }
         })
+    }
+
+    /** The header, the audio as it is fed and the end, each batch flushed to the network at once. */
+    private fun write(sink: BufferedSink, elapsedMs: () -> Long) {
+        try {
+            sink.use { out ->
+                out.write(grpcFrame(s3Header(request, elapsedMs()))).flush()
+                val chunks = Chunker(Identity.CHUNK)
+                while (!finished) {
+                    val bytes = queue.poll(120, TimeUnit.SECONDS)
+                        ?: throw IOException("no audio within 120 s")
+                    val end = bytes === END
+                    for (c in if (end) chunks.drain() else chunks.add(bytes)) {
+                        out.write(grpcFrame(s3Audio(c, elapsedMs())))
+                    }
+                    if (end) {
+                        if (!finished) out.write(grpcFrame(S3_END))
+                        out.flush()
+                        break
+                    }
+                    out.flush()
+                }
+            }
+        } catch (e: IOException) {
+            // A session already answered or cancelled stops writing; otherwise the response side
+            // reports the failure once the call is gone.
+            if (!finished) {
+                android.util.Log.w("S3Stream", "audio upload failed", e)
+                call?.cancel()
+            }
+        }
     }
 
     private fun readResponses(resp: Response) {
@@ -210,6 +235,7 @@ class S3Stream(
     private fun complete(r: Result<Heard>) {
         if (finished) return
         finished = true
+        queue.put(END) // wakes the writer, which stops
         onDone(r)
     }
 
