@@ -1,5 +1,14 @@
 package dev.silver.burble.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -70,17 +79,19 @@ fun BubblePreview(settings: Settings) {
         WhenIdle.SHRINK -> R.string.when_idle_shrink
         WhenIdle.DOT -> R.string.when_idle_dot
     })
+    // The size eases to the slider's value, as the bubble on screen does.
+    val side by animateDpAsState(settings.bubbleSize.dp, MaterialTheme.motionScheme.defaultSpatialSpec())
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         PreviewHalf(stringResource(R.string.preview_active), stringResource(R.string.preview_active_description)) {
-            OverlayContent(Look.Idle, settings.shape, settings.bubbleSize.dp, alignEnd = true, labelled = false, onTap = {}) { _, _ -> }
+            OverlayContent(Look.Idle, settings.shape, side, alignEnd = true, labelled = false) { _, _ -> }
         }
         PreviewHalf(
             stringResource(R.string.preview_idle),
             stringResource(R.string.preview_idle_description, appearance, settings.idleOpacity),
         ) {
             OverlayContent(
-                Look.Idle, settings.shape, settings.bubbleSize.dp, alignEnd = true, labelled = false,
-                rest = true, whenIdle = settings.whenIdle, idleOpacity = settings.idleOpacity / 100f, onTap = {},
+                Look.Idle, settings.shape, side, alignEnd = true, labelled = false,
+                rest = true, whenIdle = settings.whenIdle, idleOpacity = settings.idleOpacity / 100f,
             ) { _, _ -> }
         }
     }
@@ -136,12 +147,16 @@ fun ShapePicker(selected: BubbleShape, onPick: (BubbleShape) -> Unit) {
                 row.forEach { shape ->
                     val on = shape == selected
                     val tile = MaterialTheme.shapes.large
+                    val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Color>()
+                    val fill by animateColorAsState(if (on) colors.surfaceContainerHighest else colors.surfaceContainerHigh, effects)
+                    val ring by animateColorAsState(if (on) colors.primary else colors.primary.copy(alpha = 0f), effects)
+                    val label by animateColorAsState(if (on) colors.primary else colors.onSurfaceVariant, effects)
                     Box(
                         Modifier
                             .weight(1f)
                             .clip(tile)
-                            .background(if (on) colors.surfaceContainerHighest else colors.surfaceContainerHigh)
-                            .then(if (on) Modifier.border(2.dp, colors.primary, tile) else Modifier)
+                            .background(fill)
+                            .border(2.dp, ring, tile)
                             .selectable(selected = on, role = Role.RadioButton, onClick = { onPick(shape) }),
                     ) {
                         Column(
@@ -158,13 +173,18 @@ fun ShapePicker(selected: BubbleShape, onPick: (BubbleShape) -> Unit) {
                                 stringResource(shape.label),
                                 Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (on) colors.primary else colors.onSurfaceVariant,
+                                color = label,
                                 textAlign = TextAlign.Center,
                             )
                         }
-                        if (on) {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = on,
+                            modifier = Modifier.align(Alignment.TopEnd),
+                            enter = scaleIn(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()),
+                            exit = scaleOut(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
+                        ) {
                             Box(
-                                Modifier.align(Alignment.TopEnd).padding(6.dp).size(20.dp).background(colors.primary, CircleShape),
+                                Modifier.padding(6.dp).size(20.dp).background(colors.primary, CircleShape),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.onPrimary, modifier = Modifier.size(14.dp))

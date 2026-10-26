@@ -183,7 +183,7 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
         shader: Boolean = true,
         labelled: Boolean = true,
     ) {
-        OverlayContent(look, shape, size.dp, alignEnd, labelled, rest, whenIdle, idleOpacity, onTap = {}) { color, modifier ->
+        OverlayContent(look, shape, size.dp, alignEnd, labelled, rest, whenIdle, idleOpacity) { color, modifier ->
             Wave({ frame ?: WaveFrame.steady(level, time) }, color, modifier, shader = shader)
         }
     }

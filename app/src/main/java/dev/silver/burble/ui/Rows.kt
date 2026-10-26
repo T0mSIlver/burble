@@ -53,6 +53,16 @@ fun Group(rows: List<SettingRow>) {
     }
 }
 
+/** Row [index] of a group of [count], drawn on its own, for groups split across list items. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun GroupRow(row: SettingRow, index: Int, count: Int, modifier: Modifier = Modifier) {
+    val shape = segmentShape(index, count)
+    Column(modifier.padding(top = if (index > 0) GroupGap else 0.dp)) {
+        row(ListItemShapes(shape, shape, shape, shape, shape, shape))
+    }
+}
+
 // Segmented items default to the surface colour, which vanishes on a surface background.
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

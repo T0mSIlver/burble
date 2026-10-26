@@ -114,11 +114,7 @@ fun Onboarding(
             )
             AnimatedContent(
                 targetState = index,
-                transitionSpec = {
-                    val forward = targetState > initialState
-                    (slideInHorizontally { if (forward) it / 4 else -it / 4 } + fadeIn()) togetherWith
-                        (slideOutHorizontally { if (forward) -it / 4 else it / 4 } + fadeOut())
-                },
+                transitionSpec = { pageTransition(forward = targetState > initialState) },
                 modifier = Modifier.weight(1f),
                 label = "step",
             ) { i ->

@@ -12,12 +12,16 @@ import android.view.ViewConfiguration
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.view.View
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.provider.Settings
+import androidx.compose.ui.MotionDurationScale
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.animation.core.Animatable
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MotionScheme
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.AndroidUiDispatcher
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -47,14 +51,21 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * The bubble: a Compose window outside any activity that renders [Dictation]. Drag it anywhere;
+ * The bubble: Compose windows outside any activity that render [Dictation]. Drag it anywhere;
  * on release it springs to the nearest side edge and remembers where it sits. While dragging, a
  * ✕ target shows at the bottom: dropping the bubble there cancels a dictation, drops the audio
  * of an error waiting for retry or text waiting for a field, or else hides the bubble until
  * [onSnooze]'s owner shows it again. [windowType] is the host's, TYPE_ACCESSIBILITY_OVERLAY from
  * the accessibility service.
  *
- * A configuration change (rotation, fold, dark mode) only re-places the window: the view, its
+ * Three windows, so that nothing seen ever moves because a window changed size: Android applies a
+ * window's new size and its new position on different frames, and a bubble drawn in a window that
+ * grows or shrinks jumps for a frame. The bubble's own window has one size, the bubble's, and only
+ * ever moves whole; it takes no touches. An invisible window over it takes them, as wide as the
+ * bubble or, docked, as the strip by the edge. The error's label has a window of its own beside
+ * the bubble.
+ *
+ * A configuration change (rotation, fold, dark mode) only re-places the windows: the views, their
  * composition and the dictation all carry on.
  */
 class Overlay(
@@ -64,27 +75,22 @@ class Overlay(
     /** Dropped on ✕ while idle: hidden for now, not turned off. */
     private val onSnooze: () -> Unit,
 ) {
+    private val ui = OverlayUi()
+
     /** While true (the lock screen is up) nothing shows; a dictation carries on unseen. */
     var locked: Boolean
-        get() = hidden.value
-        set(value) { hidden.value = value }
-    private val hidden = mutableStateOf(false)
+        get() = ui.locked.value
+        set(value) { ui.locked.value = value; touchable() }
 
-    /** While true (no field has focus, in "only while typing") the bubble fades out. */
+    /** While true (no field has focus, in "while typing", or snoozed) the bubble fades out. */
     var away: Boolean
-        get() = awayState.value
-        set(value) { awayState.value = value }
-    private val awayState = mutableStateOf(false)
-
-    /** A finger is on the bubble, dragging or not: it shows at full size and opacity. */
-    private val touching = mutableStateOf(false)
-
-    /** How far out past its edge position the window sits while the idle bubble is docked. */
-    private val shift = mutableFloatStateOf(0f)
-    private var dock: Job? = null
+        get() = ui.away.value
+        set(value) { ui.away.value = value; touchable() }
 
     private val density = context.resources.displayMetrics.density
     private var target: ComposeView? = null
+    /** The current target's: it shows while true, and leaves on its own animation. */
+    private var targetShown = mutableStateOf(false)
     private val armed = mutableStateOf(false)
     private val targetParams = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT,
@@ -100,139 +106,170 @@ class Overlay(
     }
 
     private val prefs = context.getSharedPreferences("overlay", Context.MODE_PRIVATE)
-    private var root: DragFrame? = null
+    private var bubble: ComposeView? = null
+    private var touch: TouchFrame? = null
+    private var pill: ComposeView? = null
     private var owner: Owner? = null
     private var scope: CoroutineScope? = null
     private var snap: Job? = null
 
-    private val params = WindowManager.LayoutParams(
+    private fun overlayParams(title: String, flags: Int) = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT,
         WindowManager.LayoutParams.WRAP_CONTENT,
         windowType,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or flags,
         PixelFormat.TRANSLUCENT,
-    ).apply { title = "Burble" }
+    ).apply { this.title = title }
 
-    /** Pinned to the right edge; then [WindowManager.LayoutParams.x] counts from the right, so
-     * the error label grows towards the middle of the screen whichever side it sits on. */
-    private val alignEnd = mutableStateOf(prefs.getBoolean(KEY_RIGHT, true))
-    private var onRight
-        get() = alignEnd.value
-        set(value) { alignEnd.value = value }
-    /** Vertical centre as a fraction of the usable height, so it survives rotation. */
-    private var fraction = prefs.getFloat(KEY_FRACTION, 0.4f)
+    /** The bubble's window: the bubble's size, never touched. Its x and y place all three. */
+    private val params = overlayParams("Burble", WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+    private val touchParams = overlayParams("Burble touch", 0)
+    private val pillParams = overlayParams("Burble label", 0)
 
-    val isShown get() = root != null
+    init {
+        // The side edge and the centre's share of the usable height, so it survives rotation.
+        ui.anchor.value = Anchor(if (prefs.getBoolean(KEY_RIGHT, true)) Edge.RIGHT else Edge.LEFT, prefs.getFloat(KEY_FRACTION, 0.4f))
+    }
+
+    val isShown get() = bubble != null
 
     fun show() {
-        if (root != null) return
+        if (bubble != null) return
         dropShapeThatHung()
         val o = Owner().also { owner = it }
-        scope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main)
-        val frame = DragFrame(context)
-        frame.setViewTreeLifecycleOwner(o)
-        frame.setViewTreeSavedStateRegistryOwner(o)
-        frame.setViewTreeViewModelStoreOwner(o)
-        frame.addView(ComposeView(context).apply {
-            setContent { AppTheme { LiveOverlay(alignEnd, hidden, awayState, touching, shift, ::dockTo) } }
-        })
-        frame.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
-            // The error label resized the window: keep it on screen.
-            if (r - l != oldR - oldL || b - t != oldB - oldT) place(animate = true)
-            // At the screen's edge, a drag from the bubble moves it rather than going back.
-            frame.systemGestureExclusionRects = listOf(Rect(0, 0, r - l, b - t))
+        scope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main + DurationScale(context))
+        val view = ComposeView(context).apply {
+            owned(o)
+            // The touch window speaks for the bubble.
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            setContent {
+                AppTheme {
+                    LiveBubble(ui, onGone = ::removeAll)
+                }
+            }
         }
-        place(animate = false)
-        windowManager.addView(frame, params)
-        root = frame
+        val label = ComposeView(context).apply {
+            owned(o)
+            setContent { AppTheme { LivePill(ui) } }
+        }
+        val frame = TouchFrame(context)
+        ui.screen.value = screen()
+        apply()
+        windowManager.addView(view, params)
+        windowManager.addView(label, pillParams)
+        windowManager.addView(frame, touchParams)
+        bubble = view; pill = label; touch = frame
+        touchable()
         o.resume()
         scope?.launch {
-            Prefs.settings.map { it.shape }.distinctUntilChanged().collect { guard(it, frame) }
+            Prefs.settings.map { it.shape }.distinctUntilChanged().collect { guard(it, view) }
         }
-    }
-
-    fun hide() {
-        val frame = root ?: return
-        hideTarget()
-        root = null
-        scope?.cancel()
-        scope = null
-        runCatching { windowManager.removeView(frame) }
-        owner?.destroy()
-        owner = null
-    }
-
-    // ---- position ----
-
-    /** The screen area clear of system bars and cutouts, in screen coordinates. */
-    private fun area(): Pair<Rect, Int> {
-        val m = windowManager.currentWindowMetrics
-        val i = m.windowInsets.getInsetsIgnoringVisibility(
-            WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-        val b = m.bounds
-        return Rect(b.left + i.left, b.top + i.top, b.right - i.right, b.bottom - i.bottom) to
-            b.width()
-    }
-
-    private fun width() = root?.width?.takeIf { it > 0 } ?: (BUBBLE_DP * density).roundToInt()
-    private fun height() = root?.height?.takeIf { it > 0 } ?: width()
-
-    /** Puts the window at its remembered side and height, clamped to the current screen. */
-    private fun place(animate: Boolean) {
-        val (area, screenW) = area()
-        val h = height()
-        val y = (area.top + fraction * area.height() - h / 2f).roundToInt()
-        moveTo(edgeX(area, screenW), clampY(y, area, h), animate)
-    }
-
-    // The window's own padding, room for the shadow, keeps the bubble off the very edge; docked,
-    // the window reaches out past it.
-    private fun edgeX(area: Rect, screenW: Int) = baseX(area, screenW) - shift.floatValue.roundToInt()
-
-    private fun baseX(area: Rect, screenW: Int) = if (onRight) screenW - area.right else area.left
-
-    /** Springs the window [target] pixels out past its edge position, or back with 0. */
-    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-    private fun dockTo(target: Float) {
-        val s = scope ?: return
-        if (touching.value || root == null) return
-        dock?.cancel()
-        snap?.cancel()
-        val (area, screenW) = area()
-        val base = baseX(area, screenW)
-        dock = s.launch {
-            Animatable(shift.floatValue).animateTo(target, MotionScheme.expressive().defaultSpatialSpec()) {
-                shift.floatValue = value
-                params.x = base - value.roundToInt()
-                apply()
+        // Docking narrows the touch window; size and look change where it lies.
+        scope?.launch { snapshotFlow { ui.docked.value }.collect { apply() } }
+        scope?.launch { Prefs.settings.collect { apply() } }
+        scope?.launch {
+            Dictation.state.collect { st ->
+                frame.contentDescription = context.getString(st.look().action())
+                // Only a label that opens the app takes touches; others let them through.
+                val opens = (st as? Dictation.State.Error)?.kind.let { it == Dictation.ErrorKind.NO_MIC || it == Dictation.ErrorKind.REJECTED }
+                setFlag(pillParams, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, !opens)
+                pill?.let { runCatching { windowManager.updateViewLayout(it, pillParams) } }
             }
         }
     }
 
-    private fun clampY(y: Int, area: Rect, h: Int) = y.coerceIn(area.top, maxOf(area.top, area.bottom - h))
-
-    private fun apply() {
-        params.gravity = Gravity.TOP or if (onRight) Gravity.END else Gravity.START
-        root?.let { runCatching { windowManager.updateViewLayout(it, params) } }
+    /** Fades the bubble out, then takes its windows away. */
+    fun hide() {
+        if (bubble == null) return
+        hideTarget()
+        ui.closing.value = true
+        touchable()
     }
 
-    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-    private fun moveTo(x: Int, y: Int, animate: Boolean) {
-        snap?.cancel()
-        val s = scope
-        if (!animate || s == null || root == null) {
-            params.x = x; params.y = y
-            apply()
-            return
+    private fun removeAll() {
+        val view = bubble ?: return
+        bubble = null
+        scope?.cancel()
+        scope = null
+        for (v in listOfNotNull(view, touch, pill)) runCatching { windowManager.removeView(v) }
+        touch = null; pill = null
+        owner?.destroy()
+        owner = null
+    }
+
+    private fun View.owned(o: Owner) {
+        setViewTreeLifecycleOwner(o)
+        setViewTreeSavedStateRegistryOwner(o)
+        setViewTreeViewModelStoreOwner(o)
+    }
+
+    // ---- position ----
+
+    /** The screen and the area clear of system bars and cutouts, for [Geometry]. */
+    private fun screen(): Screen {
+        val m = windowManager.currentWindowMetrics
+        val i = m.windowInsets.getInsetsIgnoringVisibility(
+            WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+        val b = m.bounds
+        return Screen(b.width().toFloat(), b.height().toFloat(),
+            Box(i.left.toFloat(), i.top.toFloat(), (b.width() - i.right).toFloat(), (b.height() - i.bottom).toFloat()), density)
+    }
+
+    /** The geometry now, full or docked: the drawn bubble's own progress lives in its window. */
+    private fun layout(progress: Float = if (ui.docked.value) 1f else 0f): BubbleLayout {
+        val s = Prefs.settings.value
+        return Geometry.layout(ui.screen.value, ui.anchor.value, s.bubbleSize, s.whenIdle, progress, s.idleOpacity / 100f, ui.drag.value)
+    }
+
+    /** Puts the three windows where [Geometry] says; only the invisible touch window resizes. */
+    private fun apply() {
+        val l = layout()
+        fun WindowManager.LayoutParams.at(b: Box, sized: Boolean) {
+            gravity = Gravity.TOP or Gravity.START
+            x = b.left.roundToInt(); y = b.top.roundToInt()
+            if (sized) { width = b.width.roundToInt(); height = b.height.roundToInt() }
         }
+        params.at(l.window, sized = true)
+        touchParams.at(l.touch, sized = true)
+        pillParams.at(l.pill, sized = true)
+        bubble?.let { runCatching { windowManager.updateViewLayout(it, params) } }
+        applyTouch()
+        pill?.let { runCatching { windowManager.updateViewLayout(it, pillParams) } }
+    }
+
+    private fun applyTouch() {
+        touch?.let { runCatching { windowManager.updateViewLayout(it, touchParams) } }
+    }
+
+    /** The touch window takes touches only while the bubble shows. */
+    private fun touchable() {
+        setFlag(touchParams, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, ui.locked.value || ui.away.value || ui.closing.value)
+        applyTouch()
+    }
+
+    private fun setFlag(p: WindowManager.LayoutParams, flag: Int, on: Boolean) {
+        p.flags = if (on) p.flags or flag else p.flags and flag.inv()
+    }
+
+    /** Springs the drag offset back to 0: the bubble settles at its anchor. */
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    private fun settle() {
+        snap?.cancel()
+        val s = scope ?: return
         val spec = MotionScheme.expressive().defaultSpatialSpec<Float>()
         snap = s.launch {
-            val ax = Animatable(params.x.toFloat())
-            val ay = Animatable(params.y.toFloat())
-            launch { ax.animateTo(x.toFloat(), spec) { params.x = value.roundToInt(); apply() } }
-            launch { ay.animateTo(y.toFloat(), spec) { params.y = value.roundToInt(); apply() } }
+            ui.moving.value = true
+            val (x0, y0) = ui.drag.value
+            val ax = Animatable(x0)
+            val ay = Animatable(y0)
+            val jobs = listOf(
+                launch { ax.animateTo(0f, spec) { ui.drag.value = value to ui.drag.value.second; apply() } },
+                launch { ay.animateTo(0f, spec) { ui.drag.value = ui.drag.value.first to value; apply() } },
+            )
+            jobs.forEach { it.join() }
+            ui.moving.value = false
         }
     }
 
@@ -242,12 +279,12 @@ class Overlay(
     // A mark left at the next start means the app hung or died drawing it (Skia's shadow once hung
     // on SoftBurst at every launch): that shape is dropped for the cookie, so a bad choice can't
     // lock the user out of the app.
-    private fun guard(shape: BubbleShape, frame: FrameLayout) {
+    private fun guard(shape: BubbleShape, view: View) {
         prefs.edit().putString(KEY_DRAWING, shape.name).commit()
-        frame.viewTreeObserver.registerFrameCommitCallback {
+        view.viewTreeObserver.registerFrameCommitCallback {
             if (prefs.getString(KEY_DRAWING, null) == shape.name) prefs.edit().remove(KEY_DRAWING).apply()
         }
-        frame.invalidate()
+        view.invalidate()
     }
 
     private fun dropShapeThatHung() {
@@ -261,38 +298,38 @@ class Overlay(
 
     private fun showTarget() {
         if (target != null) return
-        val (area, _) = area()
-        targetParams.y = windowManager.currentWindowMetrics.bounds.bottom - area.bottom +
-            (TARGET_MARGIN_DP * density).roundToInt()
+        val screen = ui.screen.value
+        targetParams.y = (screen.height - screen.safe.bottom + TARGET_MARGIN_DP * density).roundToInt()
         armed.value = false
+        val shown = mutableStateOf(true).also { targetShown = it }
         val view = ComposeView(context).apply {
-            setViewTreeLifecycleOwner(owner)
-            setViewTreeSavedStateRegistryOwner(owner)
-            setViewTreeViewModelStoreOwner(owner)
-            setContent { AppTheme { DismissTarget(armed.value) } }
+            owner?.let { owned(it) }
+            setContent { AppTheme { LiveTarget(shown, armed) { removeTarget(this) } } }
         }
         runCatching { windowManager.addView(view, targetParams) }
         target = view
     }
 
+    /** The target leaves on its own animation; [removeTarget] takes its window once it's gone. */
     private fun hideTarget() {
-        target?.let { runCatching { windowManager.removeView(it) } }
-        target = null
+        targetShown.value = false
         armed.value = false
+        target = null
+    }
+
+    private fun removeTarget(view: View) {
+        runCatching { windowManager.removeView(view) }
     }
 
     /** The target's centre and the bubble's, in screen pixels; arms the target when close. */
-    private fun track() {
-        val frame = root ?: return
+    private fun track(frame: View) {
         val b = windowManager.currentWindowMetrics.bounds
         val tx = b.width() / 2f
         val half = TARGET_DP * density / 2
         val ty = b.bottom - targetParams.y - half
-        val pad = PADDING_DP * density
-        val bubble = frame.height - 2 * pad
-        val left = if (onRight) b.width() - params.x - frame.width else params.x
-        val cx = left + if (onRight) frame.width - pad - bubble / 2 else pad + bubble / 2
-        val cy = params.y + frame.height / 2f
+        val bubble = layout(0f).bubble
+        val cx = bubble.centerX
+        val cy = bubble.centerY
         val near = kotlin.math.hypot(cx - tx, cy - ty) < ARM_DP * density
         if (near != armed.value) {
             armed.value = near
@@ -301,11 +338,11 @@ class Overlay(
     }
 
     /** After a drag: drop on ✕, or pick the nearer side, spring to it, remember it. */
-    private fun release() {
+    private fun release(frame: View) {
         val drop = armed.value
         hideTarget()
         if (drop) {
-            root?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            frame.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
             val st = Dictation.state.value
             when {
                 st.recording || (st as? Dictation.State.Error)?.waits == true -> Dictation.cancel()
@@ -317,54 +354,51 @@ class Overlay(
                     onSnooze()
                 }
             }
-            place(animate = true)
+            settle()
             return
         }
-        val (area, screenW) = area()
-        val w = width()
-        val h = height()
-        val left = if (onRight) screenW - params.x - w else params.x
-        val toRight = left + w / 2 > (area.left + area.right) / 2
-        if (toRight != onRight) {
-            // Re-express the current spot from the other edge before springing to it.
-            onRight = toRight
-            params.x = if (onRight) screenW - left - w else left
-            apply()
-        }
-        val y = clampY(params.y, area, h)
-        fraction = ((y + h / 2f - area.top) / area.height()).coerceIn(0f, 1f)
-        prefs.edit().putBoolean(KEY_RIGHT, onRight).putFloat(KEY_FRACTION, fraction).apply()
-        moveTo(edgeX(area, screenW), y, animate = true)
+        // To the nearer side edge, at the height it was dropped, from where it is now.
+        val now = layout(0f).bubble
+        val anchor = Geometry.anchorAt(ui.screen.value, now.centerX, now.centerY)
+        ui.anchor.value = anchor
+        ui.drag.value = 0f to 0f
+        val home = layout(0f).bubble
+        ui.drag.value = (now.centerX - home.centerX) to (now.centerY - home.centerY)
+        prefs.edit().putBoolean(KEY_RIGHT, anchor.edge == Edge.RIGHT).putFloat(KEY_FRACTION, anchor.fraction).apply()
+        settle()
     }
 
     /**
-     * Moves the window under the finger once a touch passes the slop, and cancels the touch for
-     * the buttons inside; shorter touches reach them untouched.
+     * The touch window: invisible, over the bubble. A touch that passes the slop drags all three
+     * windows; a shorter one is a tap. TalkBack reads and clicks it as the bubble.
      */
-    @SuppressLint("ViewConstructor")
-    private inner class DragFrame(context: Context) : FrameLayout(context) {
+    @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
+    private inner class TouchFrame(context: Context) : FrameLayout(context) {
         private val slop = ViewConfiguration.get(context).scaledTouchSlop
         private var downX = 0f
         private var downY = 0f
-        private var startX = 0
-        private var startY = 0
+        private var start = 0f to 0f
         private var dragging = false
 
-        override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        init {
+            isClickable = true
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            setOnClickListener { tapBubble(context) }
+            addOnLayoutChangeListener { _, l, t, r, b, _, _, _, _ ->
+                // At the screen's edge, a drag from the bubble moves it rather than going back.
+                systemGestureExclusionRects = listOf(Rect(0, 0, r - l, b - t))
+            }
+        }
+
+        override fun onTouchEvent(e: MotionEvent): Boolean {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    touching.value = true
+                    ui.touching.value = true
+                    ui.pressed.value = true
                     snap?.cancel()
-                    // Back to where the full bubble sits: the bubble grows there, drawn against
-                    // the window, so it doesn't jump.
-                    dock?.cancel()
-                    if (shift.floatValue != 0f) {
-                        params.x += shift.floatValue.roundToInt()
-                        shift.floatValue = 0f
-                        apply()
-                    }
+                    ui.moving.value = false
                     downX = e.rawX; downY = e.rawY
-                    startX = params.x; startY = params.y
+                    start = ui.drag.value
                     dragging = false
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -372,38 +406,47 @@ class Overlay(
                     val dy = e.rawY - downY
                     if (!dragging && abs(dx) + abs(dy) > slop) {
                         dragging = true
+                        ui.dragging.value = true
+                        ui.pressed.value = false
                         showTarget()
-                        val cancel = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }
-                        super.dispatchTouchEvent(cancel)
-                        cancel.recycle()
                     }
                     if (dragging) {
-                        params.x = startX + ((if (onRight) -1 else 1) * dx).roundToInt()
-                        params.y = startY + dy.roundToInt()
+                        ui.drag.value = (start.first + dx) to (start.second + dy)
                         apply()
-                        track()
-                        return true
+                        track(this)
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    touching.value = false
+                    val tap = !dragging && e.actionMasked == MotionEvent.ACTION_UP
+                    ui.touching.value = false
+                    ui.pressed.value = false
                     if (dragging) {
                         dragging = false
-                        release()
-                        return true
+                        ui.dragging.value = false
+                        release(this)
                     }
+                    if (tap) performClick()
                 }
             }
-            return super.dispatchTouchEvent(e)
+            return true
         }
 
         override fun onConfigurationChanged(newConfig: Configuration) {
             super.onConfigurationChanged(newConfig)
             dragging = false
-            touching.value = false
+            ui.dragging.value = false
+            ui.touching.value = false
+            ui.pressed.value = false
             hideTarget()
-            // The new window metrics land after this callback.
-            post { place(animate = false) }
+            // The new window metrics land after this callback. The anchor keeps its side and its
+            // share of the height.
+            post {
+                snap?.cancel()
+                ui.moving.value = false
+                ui.drag.value = 0f to 0f
+                ui.screen.value = screen()
+                apply()
+            }
         }
     }
 
@@ -431,13 +474,22 @@ class Overlay(
         }
     }
 
+    /**
+     * The system's animator duration scale for the windows' own springs, as Compose applies it
+     * inside them: 0, with animations removed, puts them straight at their end.
+     */
+    private class DurationScale(context: Context) : MotionDurationScale {
+        override val scaleFactor = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+    }
+
     private companion object {
         const val KEY_RIGHT = "right"
         const val KEY_FRACTION = "fraction"
         const val KEY_DRAWING = "drawing_shape"
         const val TAG = "Overlay"
-        const val BUBBLE_DP = 80
         const val PADDING_DP = 8
+        /** The label's window: its tallest, two lines and padding, with room for its shadow. */
+        const val PILL_DP = 72
         const val TARGET_DP = 64
         const val TARGET_MARGIN_DP = 32
         /** How close the bubble's centre must come to the target's to drop there. */

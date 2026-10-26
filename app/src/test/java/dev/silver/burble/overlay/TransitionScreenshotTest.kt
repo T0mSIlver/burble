@@ -42,7 +42,7 @@ class TransitionScreenshotTest {
                         looks.value.forEach { look ->
                             Box {
                                 OverlayContent(look, BubbleShape.COOKIE_9, 64.dp, alignEnd = false,
-                                    labelled = false, onTap = {}) { color, modifier ->
+                                    labelled = false) { color, modifier ->
                                     Wave({ WaveFrame.steady(0.7f, 0.4f) }, color, modifier, shader = shader)
                                 }
                             }

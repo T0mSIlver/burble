@@ -233,15 +233,38 @@ object Dictation {
     /** Replaces the mic level until the dictation ends; for the debug build's test hook. */
     internal fun fakeLevel(level: Float) {
         levelOverride = level
+        // No session to report it: show it straight away.
+        if (session == null) _level.value = level
+    }
+
+    /**
+     * Keeps listening without a real session, so a silent microphone can't end it; for the debug
+     * build's test hook, before [fakeResult] or [fakeError].
+     */
+    internal fun fakeListening() {
+        session?.cancel()
+        session = null
+        _state.value = State.Listening
+    }
+
+    /** Ends the dictation with [kind], as if it had failed; for the debug build's test hook. */
+    internal fun fakeError(kind: ErrorKind, afterMs: Long = 0) {
+        session?.cancel()
+        session = null
+        target = null
+        _level.value = 0f
+        if (afterMs > 0) _state.value = State.Finishing
+        main.postDelayed({ _state.value = State.Error(kind) }, afterMs)
     }
 
     /** Delivers [text] as if the server had sent it; for the debug build's test hook. */
-    internal fun fakeResult(context: Context, text: String) {
+    internal fun fakeResult(context: Context, text: String, afterMs: Long = 0) {
         if (_state.value != State.Listening) target = InsertionService.instance?.captureTarget()
         session?.cancel()
         session = null
+        _level.value = 0f
         _state.value = State.Finishing
-        finish(context.applicationContext, null, Result.success(text))
+        main.postDelayed({ finish(context.applicationContext, null, Result.success(text)) }, afterMs)
     }
 
     private fun finish(context: Context, from: DictationSession?, r: Result<String>) {

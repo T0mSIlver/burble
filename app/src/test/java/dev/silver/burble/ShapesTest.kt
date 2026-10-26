@@ -49,7 +49,7 @@ class ShapesTest(private val shape: BubbleShape) {
             AppTheme(dynamic = false) {
                 Column {
                     for (look in looks) for (size in listOf(40, 64, 96)) {
-                        OverlayContent(look, shape, size.dp, alignEnd = false, labelled = true, onTap = {}) { color, modifier ->
+                        OverlayContent(look, shape, size.dp, alignEnd = false, labelled = true) { color, modifier ->
                             Wave({ WaveFrame.steady(0.6f, 0.3f) }, color, modifier)
                         }
                     }

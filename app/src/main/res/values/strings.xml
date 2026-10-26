@@ -142,4 +142,5 @@
     <string name="preview_active_description">The bubble in use</string>
     <string name="preview_idle_description">The bubble after 3 seconds: %1$s, at %2$d %% opacity</string>
     <string name="onb_disclosure">Not affiliated with Google. Audio goes to Google.</string>
+    <string name="section_appearance">Appearance</string>
 </resources>

@@ -53,8 +53,10 @@ class InsertionService : AccessibilityService() {
         }, RECEIVER_NOT_EXPORTED)
         scope.launch {
             Prefs.settings.map { it.bubbleOn }.distinctUntilChanged().collect { on ->
-                // Switched off mid-dictation: the words so far still land.
+                // Switched off mid-dictation: the words so far still land. Text waiting for a
+                // field stays on the clipboard, and the keyboard comes back.
                 if (!on && Dictation.state.value == Dictation.State.Listening) Dictation.stop()
+                if (!on && Dictation.state.value is Dictation.State.Ready) Dictation.discard()
             }
         }
         // The bubble stays until a dictation ends, so the microphone never runs without it.
@@ -103,7 +105,7 @@ class InsertionService : AccessibilityService() {
      */
     private fun setOverlay(on: Boolean) {
         if (on && overlay == null) {
-            snoozed = false
+            visibility.wake()
             // Starts hidden when it should, rather than showing until the delayed hide.
             main.removeCallbacks(goAway)
             away = !shouldShow()
@@ -127,21 +129,19 @@ class InsertionService : AccessibilityService() {
     private fun updateLock() {
         val was = locked
         locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
-        if (was && !locked && snoozed) {
-            snoozed = false
-            updateAway()
+        if (was == locked) return
+        if (locked) {
+            // The lock screen's password may need the keyboard: never keep it hidden there.
+            showKeyboard()
+        } else {
+            visibility.wake()
+            followDictation(Dictation.state.value)
         }
     }
 
     // ---- snooze ----
 
-    /**
-     * Dropped on ✕: hidden until the next unlock, or, in "only while typing", until the next
-     * text field: another one, or the same one once focus has left it and come back.
-     */
-    private var snoozed = false
-    private var snoozedIn: FieldKey? = null
-    private var focusLeft = false
+    private val visibility = Visibility<FieldKey>()
 
     /**
      * A field, as compared across nodes: AccessibilityNodeInfo.equals is identity before
@@ -152,19 +152,9 @@ class InsertionService : AccessibilityService() {
     private fun AccessibilityNodeInfo.key() = FieldKey(windowId, viewIdResourceName, Rect().also(::getBoundsInScreen))
 
     private fun snooze() {
-        snoozed = true
-        snoozedIn = focusedField()?.key()
-        focusLeft = snoozedIn == null
+        visibility.snooze(focusedField()?.key())
         main.removeCallbacks(goAway)
         away = true
-    }
-
-    private fun wakeOnField(field: AccessibilityNodeInfo?) {
-        if (!snoozed || Prefs.settings.value.bubbleShow != BubbleShow.TYPING) return
-        when {
-            field == null -> focusLeft = true
-            focusLeft || field.key() != snoozedIn -> snoozed = false
-        }
     }
 
     private var away = false
@@ -178,14 +168,13 @@ class InsertionService : AccessibilityService() {
     private fun updateAway() {
         main.removeCallbacks(goAway)
         val field = focusedField()
-        wakeOnField(field)
+        val mode = Prefs.settings.value.bubbleShow
+        visibility.focus(field?.key(), mode)
         if (shouldShow(field)) away = false else if (!away) main.postDelayed(goAway, AWAY_MS)
     }
 
-    /** A dictation always shows, snoozed or not: the bubble is all there is to see of it. */
     private fun shouldShow(field: AccessibilityNodeInfo? = focusedField()) =
-        Dictation.state.value != Dictation.State.Idle ||
-            !snoozed && (Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS || field != null)
+        visibility.shows(Dictation.state.value != Dictation.State.Idle, Prefs.settings.value.bubbleShow, field != null)
 
     private val goAway = Runnable { away = true }
 
@@ -197,7 +186,7 @@ class InsertionService : AccessibilityService() {
         if (!Prefs.settings.value.bubbleOn) return
         if (Dictation.state.value is Dictation.State.Ready && event?.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED &&
             event.source?.isEditable == true) readyTapped = true
-        if (Dictation.state.value !is Dictation.State.Ready && Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS && !snoozed) return
+        if (Dictation.state.value !is Dictation.State.Ready && Prefs.settings.value.bubbleShow == BubbleShow.ALWAYS && !visibility.snoozed) return
         // Focus moves in bursts (a window opens, then a field takes focus): look once it settles.
         main.removeCallbacks(focusCheck)
         main.postDelayed(focusCheck, 120)
@@ -242,8 +231,9 @@ class InsertionService : AccessibilityService() {
     private fun FieldKey.sameField(other: FieldKey) =
         window == other.window && id == other.id && bounds.left == other.bounds.left && bounds.right == other.bounds.right
 
+    /** The text field with input focus. Never a password field: no words go there, spoken aloud. */
     private fun focusedField(): AccessibilityNodeInfo? =
-        rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }
+        rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable && !it.isPassword }
 
     override fun onInterrupt() = Unit
 

@@ -1,5 +1,7 @@
 package dev.silver.burble.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -89,100 +91,116 @@ fun Home(
     licencesOpen: Boolean = false,
 ) {
     var advanced by rememberSaveable { mutableStateOf(advancedOpen) }
-    if (advanced) {
-        Advanced(settings, keyboard, test, actions, onBack = { advanced = false }, languagesOpen, testOpen)
-        return
-    }
     var licences by rememberSaveable { mutableStateOf(licencesOpen) }
-    if (licences) {
-        Licences(onBack = { licences = false })
-        return
-    }
-    val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val set = actions.update
-    Scaffold(
-        modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
-        topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(stringResource(R.string.app_name)) },
-                scrollBehavior = scroll,
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
-        },
-    ) { padding ->
-        LazyColumn(
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp),
-        ) {
-            // Until setup is done the switch would switch nothing.
-            if (!access.ready) item { Setup(access, actions.access) }
-            else item { MainSwitch(settings.bubbleOn) { on -> set { it.copy(bubbleOn = on) } } }
-            if (access.ready && settings.bubbleOn && !settings.dictated) item {
-                Text(
-                    stringResource(R.string.how_to),
-                    Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    @Composable fun HomeMain() {
+        val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+        val set = actions.update
+        Scaffold(
+            modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
+            topBar = {
+                LargeFlexibleTopAppBar(
+                    title = { Text(stringResource(R.string.app_name)) },
+                    scrollBehavior = scroll,
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 )
-            }
+            },
+        ) { padding ->
+            val looks = listOf(
+                contentRow(null, stringResource(R.string.bubble_shape)) {
+                    ShapePicker(settings.shape) { s -> set { it.copy(shape = s) } }
+                },
+                contentRow(null, stringResource(R.string.bubble_size)) {
+                    Stepped(settings.bubbleSize, MIN_SIZE..MAX_SIZE, 8, stringResource(R.string.dp, settings.bubbleSize)) { s ->
+                        set { it.copy(bubbleSize = s) }
+                    }
+                },
+                contentRow(null, stringResource(R.string.when_idle)) {
+                    Choices(listOf(WhenIdle.FULL to R.string.when_idle_full, WhenIdle.SHRINK to R.string.when_idle_shrink,
+                        WhenIdle.DOT to R.string.when_idle_dot), settings.whenIdle) { w -> set { it.copy(whenIdle = w) } }
+                },
+                contentRow(null, stringResource(R.string.idle_opacity)) {
+                    Stepped(settings.idleOpacity, 20..100, 10, stringResource(R.string.percent, settings.idleOpacity)) { o ->
+                        set { it.copy(idleOpacity = o) }
+                    }
+                },
+            )
+            LazyColumn(
+                // Below the app bar rather than under it, so the pinned preview sticks beneath it.
+                Modifier.padding(top = padding.calculateTopPadding()),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = padding.calculateBottomPadding() + 24.dp),
+            ) {
+                // Until setup is done the switch would switch nothing.
+                if (!access.ready) item { Setup(access, actions.access) }
+                else item { MainSwitch(settings.bubbleOn) { on -> set { it.copy(bubbleOn = on) } } }
+                if (access.ready && settings.bubbleOn && !settings.dictated) item {
+                    Text(
+                        stringResource(R.string.how_to),
+                        Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
-            item { SectionHeader(stringResource(R.string.section_bubble)) }
-            item {
-                Group(listOf(
-                    contentRow(null, null) {
-                        BubblePreview(settings)
-                    },
-                    contentRow(null, stringResource(R.string.bubble_when)) {
-                        Choices(listOf(BubbleShow.ALWAYS to R.string.bubble_when_always, BubbleShow.TYPING to R.string.bubble_when_typing),
-                            settings.bubbleShow) { w -> set { it.copy(bubbleShow = w) } }
-                        Text(
-                            stringResource(if (settings.bubbleShow == BubbleShow.ALWAYS) R.string.snooze_always else R.string.snooze_typing),
-                            Modifier.padding(top = 12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    contentRow(null, stringResource(R.string.bubble_shape)) {
-                        ShapePicker(settings.shape) { s -> set { it.copy(shape = s) } }
-                    },
-                    contentRow(null, stringResource(R.string.bubble_size)) {
-                        Stepped(settings.bubbleSize, MIN_SIZE..MAX_SIZE, 8, stringResource(R.string.dp, settings.bubbleSize)) { s ->
-                            set { it.copy(bubbleSize = s) }
-                        }
-                    },
-                    contentRow(null, stringResource(R.string.when_idle)) {
-                        Choices(listOf(WhenIdle.FULL to R.string.when_idle_full, WhenIdle.SHRINK to R.string.when_idle_shrink,
-                            WhenIdle.DOT to R.string.when_idle_dot), settings.whenIdle) { w -> set { it.copy(whenIdle = w) } }
-                    },
-                    contentRow(null, stringResource(R.string.idle_opacity)) {
-                        Stepped(settings.idleOpacity, 20..100, 10, stringResource(R.string.percent, settings.idleOpacity)) { o ->
-                            set { it.copy(idleOpacity = o) }
-                        }
-                    },
-                ))
-            }
+                item { SectionHeader(stringResource(R.string.section_bubble)) }
+                item {
+                    Group(listOf(
+                        contentRow(null, stringResource(R.string.bubble_when)) {
+                            Choices(listOf(BubbleShow.ALWAYS to R.string.bubble_when_always, BubbleShow.TYPING to R.string.bubble_when_typing),
+                                settings.bubbleShow) { w -> set { it.copy(bubbleShow = w) } }
+                            Text(
+                                stringResource(if (settings.bubbleShow == BubbleShow.ALWAYS) R.string.snooze_always else R.string.snooze_typing),
+                                Modifier.padding(top = 12.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                    ))
+                }
 
-            item { Spacer(Modifier.size(24.dp)) }
-            item {
-                Group(listOf(
-                    linkRow(Icons.Outlined.Tune, stringResource(R.string.advanced), stringResource(R.string.advanced_hint)) { advanced = true },
-                ))
-            }
+                // The look, in one card: the preview stays pinned above its controls while they
+                // scroll, so every change shows as it's made.
+                item { SectionHeader(stringResource(R.string.section_appearance)) }
+                stickyHeader(key = "preview") {
+                    // Opaque round the card, so the controls scrolling under it don't show through.
+                    GroupRow(contentRow(null, null) { BubblePreview(settings) }, 0, looks.size + 1,
+                        Modifier.background(MaterialTheme.colorScheme.surface))
+                }
+                looks.forEachIndexed { i, row -> item { GroupRow(row, i + 1, looks.size + 1) } }
+                // Ends the preview's pin with the card.
+                stickyHeader(key = "preview-end") {}
 
-            item { SectionHeader(stringResource(R.string.section_about)) }
-            item {
-                Group(updateRows(settings.checkUpdates, update, version, actions) + listOf(
-                    linkRow(Icons.Outlined.BugReport, stringResource(R.string.report_problem), stringResource(R.string.report_problem_hint)) {
-                        actions.reportProblem()
-                    },
-                    linkRow(Icons.Outlined.PrivacyTip, stringResource(R.string.privacy), stringResource(R.string.privacy_hint)) {
-                        actions.openUrl("$SOURCE#what-leaves-your-phone")
-                    },
-                    linkRow(Icons.Outlined.Gavel, stringResource(R.string.licence), stringResource(R.string.licence_hint)) { licences = true },
-                    linkRow(Icons.Outlined.Code, stringResource(R.string.source), SOURCE.removePrefix("https://")) {
-                        actions.openUrl(SOURCE)
-                    },
-                ))
+                item { Spacer(Modifier.size(24.dp)) }
+                item {
+                    Group(listOf(
+                        linkRow(Icons.Outlined.Tune, stringResource(R.string.advanced), stringResource(R.string.advanced_hint)) { advanced = true },
+                    ))
+                }
+
+                item { SectionHeader(stringResource(R.string.section_about)) }
+                item {
+                    Group(updateRows(settings.checkUpdates, update, version, actions) + listOf(
+                        linkRow(Icons.Outlined.BugReport, stringResource(R.string.report_problem), stringResource(R.string.report_problem_hint)) {
+                            actions.reportProblem()
+                        },
+                        linkRow(Icons.Outlined.PrivacyTip, stringResource(R.string.privacy), stringResource(R.string.privacy_hint)) {
+                            actions.openUrl("$SOURCE#what-leaves-your-phone")
+                        },
+                        linkRow(Icons.Outlined.Gavel, stringResource(R.string.licence), stringResource(R.string.licence_hint)) { licences = true },
+                        linkRow(Icons.Outlined.Code, stringResource(R.string.source), SOURCE.removePrefix("https://")) {
+                            actions.openUrl(SOURCE)
+                        },
+                    ))
+                }
             }
+        }
+    }
+    // Pages under home slide in from the end, on the motion scheme's springs, and back.
+    val page = when { advanced -> 1; licences -> 2; else -> 0 }
+    AnimatedContent(page, transitionSpec = { pageTransition(forward = targetState > initialState) }, label = "page") { p ->
+        when (p) {
+            1 -> Advanced(settings, keyboard, test, actions, onBack = { advanced = false }, languagesOpen, testOpen)
+            2 -> Licences(onBack = { licences = false })
+            else -> HomeMain()
         }
     }
 }
