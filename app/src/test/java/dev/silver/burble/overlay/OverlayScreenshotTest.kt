@@ -122,10 +122,6 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             }
             Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), alignEnd = true)
             for (kind in ErrorKind.entries) Bubble(Look.Failed(kind, waits = kind != ErrorKind.NOTHING_HEARD && kind != ErrorKind.NO_MIC))
-            Row(verticalAlignment = Alignment.Bottom) {
-                DismissTarget(armed = false)
-                DismissTarget(armed = true)
-            }
         }
     }
 
@@ -133,6 +129,14 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
      * The wave over 1.2 s at 10 fps, as the live overlay runs it: silence, a word's onset,
      * speech, then the fall after it stops, as in the Gboard study's motion strip.
      */
+    /** The ✕ target at rest and with the bubble over it, as it sits over an app. */
+    @Test fun dismissTarget() = capture("dismiss-target") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            DismissTarget(armed = false)
+            DismissTarget(armed = true)
+        }
+    }
+
     @Test fun waveStudy() = capture("wave-study") { WaveStudy(shader = true) }
 
     /** The wave at the smallest, default and largest sizes: its glow scales with the bubble. */

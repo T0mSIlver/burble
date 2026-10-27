@@ -34,10 +34,10 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import android.os.Build
 import android.os.SystemClock
-import android.view.HapticFeedbackConstants
 import dev.silver.burble.Dictation
+import dev.silver.burble.Haptic
+import dev.silver.burble.Haptics
 import dev.silver.burble.Prefs
 import dev.silver.burble.recording
 import dev.silver.burble.ui.theme.AppTheme
@@ -365,27 +365,16 @@ class Overlay(
         }
     }
 
-    /**
-     * Snapping onto ✕ clicks, and Android 14+ marks letting go of it too; Android 12 and 13 have
-     * no threshold effects, so a clock tick marks the snap alone.
-     */
-    private fun snapHaptic(frame: View, near: Boolean) {
-        val effect = when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-                if (near) HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
-                else HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE
-            near -> HapticFeedbackConstants.CLOCK_TICK
-            else -> return
-        }
-        frame.performHapticFeedback(effect)
-    }
+    /** Reaching ✕ ticks; leaving it is marked where Android has an effect for it. */
+    private fun snapHaptic(frame: View, near: Boolean) = Haptics.play(frame, if (near) Haptic.ARMED else Haptic.DISARMED)
 
     /** After a drag: drop on ✕, or pick the nearer side, spring to it, remember it. */
     private fun release(frame: View) {
         val drop = armed.value
         hideTarget()
         if (drop) {
-            frame.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            // Even mid-dictation: the drop ends it, so the microphone has nothing left to hear.
+            Haptics.play(frame, Haptic.DROPPED, listening = false)
             val st = Dictation.state.value
             when {
                 st.recording || (st as? Dictation.State.Error)?.waits == true -> Dictation.cancel()
@@ -407,6 +396,7 @@ class Overlay(
         val home = layout(0f).bubble
         ui.drag.value = (now.centerX - home.centerX) to (now.centerY - home.centerY)
         prefs.edit().putBoolean(KEY_RIGHT, anchor.edge == Edge.RIGHT).putFloat(KEY_FRACTION, anchor.fraction).apply()
+        Haptics.play(frame, Haptic.DOCKED)
         settle()
     }
 

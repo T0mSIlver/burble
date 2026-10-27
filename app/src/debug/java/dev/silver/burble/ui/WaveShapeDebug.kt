@@ -38,6 +38,8 @@ fun LazyListScope.debugRows() {
     if (Build.FINGERPRINT == "robolectric") return
     item { SectionHeader("Wave shape (temporary)") }
     item { WaveShapeDebug() }
+    item { SectionHeader("Haptics test (temporary)") }
+    item { HapticsDebug() }
 }
 
 /**

@@ -1,5 +1,6 @@
 package dev.silver.burble.overlay
 
+import androidx.compose.ui.graphics.compositeOver
 import android.content.Intent
 import android.animation.ValueAnimator
 import androidx.compose.animation.core.CubicBezierEasing
@@ -19,7 +20,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import kotlin.math.exp
-import android.view.HapticFeedbackConstants
+import dev.silver.burble.Haptic
+import dev.silver.burble.Haptics
 import android.view.View
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.TransformOrigin
@@ -340,14 +342,15 @@ internal fun tapBubble(context: Context) {
 }
 
 private fun haptic(view: View, look: Look) {
-    val effect = when (look) {
-        Look.Listening -> HapticFeedbackConstants.GESTURE_START
-        Look.Finishing -> HapticFeedbackConstants.GESTURE_END
-        Look.Done, Look.Copied -> HapticFeedbackConstants.CONFIRM
-        is Look.Failed -> HapticFeedbackConstants.REJECT
+    val event = when (look) {
+        Look.Listening -> Haptic.START
+        Look.Finishing -> Haptic.STOP
+        Look.Done -> Haptic.INSERTED
+        Look.Copied -> Haptic.COPIED
+        is Look.Failed -> if (look.kind == ErrorKind.NOTHING_HEARD) Haptic.NOTHING_HEARD else Haptic.ERROR
         Look.Idle -> return
     }
-    view.performHapticFeedback(effect)
+    Haptics.play(view, event)
 }
 
 /**
@@ -753,17 +756,18 @@ internal fun ErrorPanel(failed: Look.Failed?, towardsStart: Boolean, onOpenApp: 
 }
 
 /**
- * The ✕ at the bottom of the screen while the bubble is dragged: a surface-container circle that
- * grows and turns the error container colour when the bubble is over it. Dropping there hides
- * the bubble for now.
+ * The ✕ at the bottom of the screen while the bubble is dragged: a quiet tonal circle. With the
+ * bubble over it, it grows a little and deepens by the pressed state layer, as M3 marks a
+ * target under a finger; never red, since hiding the bubble for now is no danger. Dropping there
+ * hides the bubble for now.
  */
 @Composable
 internal fun DismissTarget(armed: Boolean) {
     val colors = MaterialTheme.colorScheme
-    val grow by animateFloatAsState(if (armed) 1.2f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
-    val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Color>()
-    val bg by animateColorAsState(if (armed) colors.errorContainer else colors.surfaceContainerHighest, effects)
-    val fg by animateColorAsState(if (armed) colors.onErrorContainer else colors.onSurface, effects)
+    val grow by animateFloatAsState(if (armed) 1.15f else 1f, Motion.fastSpatial())
+    val deep = colors.onSurface.copy(alpha = 0.12f).compositeOver(colors.surfaceContainerHighest)
+    val bg by animateColorAsState(if (armed) deep else colors.surfaceContainerHighest, Motion.effects())
+    val fg by animateColorAsState(if (armed) colors.onSurface else colors.onSurfaceVariant, Motion.effects())
     Box(
         Modifier
             .padding(12.dp)

@@ -29,6 +29,10 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Dictation ends with a finger on the bubble: result at full size, 3 s count from release | Code (`LiveBubble` rest timer keyed on touch); emulator | ✅ |
 | Every state over light and dark apps, every shape, three sizes | Screenshot `OverlayScreenshotTest.overContent`, `looks`; `ShapesTest` | ✅ |
 | Real dictation to Google, end to end | 👤 1 | 👤 |
+| Haptics: a composition per event (start, stop, inserted, copied, error, nothing heard, ✕, snap to the edge); a missing primitive falls back to the system effect; THUD missing → two low ticks; Android 12's ✕ is a clock tick | Unit `HapticsTest`; debug row "Haptics test (temporary)" under Advanced | ✅ |
+| Haptics off in the system's touch feedback: none plays | Code (`Haptics.play`: USAGE_TOUCH on 13+, the setting read on 12); 👤 11 | 👤 |
+| Nothing vibrates while listening but the start (the drop on ✕ ends the dictation, so it plays) | Code (`Haptics.play`) | ✅ |
+| ✕ target: tonal at rest, grows 15 % and deepens with the bubble over it, never red, light and dark | Screenshot `OverlayScreenshotTest.dismissTarget` | ✅ |
 
 ## Geometry, docking, motion
 
@@ -117,3 +121,4 @@ Status: ✅ covered and passing, 👤 needs the phone.
 8. Start a dictation in Chrome's address bar, tap a text box on the page, stop: the words land in the text box.
 9. Dictate a short sentence and tap to stop as you finish: the words land in about half a second, as fast as in Gboard's own dictation.
 10. Open a chat in the Claude app without tapping its message box, tap the bubble, say a sentence, tap again: the words land in the box. If they go to the clipboard, send a report from About: its log says why ("insert fell back: …").
+11. Feel each event in the debug build's "Haptics test (temporary)" row under Advanced; then turn Touch feedback off in Settings and check none plays.
