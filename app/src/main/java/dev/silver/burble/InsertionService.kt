@@ -173,11 +173,40 @@ class InsertionService : AccessibilityService() {
         val field = focusedField()
         val mode = Prefs.settings.value.bubbleShow
         visibility.focus(field?.key(), mode)
-        if (shouldShow(field)) away = false else if (!away) main.postDelayed(goAway, AWAY_MS)
+        val handsOff = keyboardHandsOff()
+        when {
+            shouldShow(field, handsOff) -> away = false
+            // The keyboard's mic key takes over as it comes up: no fade lagging behind it.
+            handsOff -> away = true
+            !away -> main.postDelayed(goAway, AWAY_MS)
+        }
     }
 
-    private fun shouldShow(field: AccessibilityNodeInfo? = focusedField()) =
-        visibility.shows(Dictation.state.value != Dictation.State.Idle, Prefs.settings.value.bubbleShow, field != null)
+    private fun shouldShow(field: AccessibilityNodeInfo? = focusedField(), handsOff: Boolean = keyboardHandsOff()) =
+        visibility.shows(Dictation.state.value != Dictation.State.Idle, Prefs.settings.value.bubbleShow, field != null, handsOff)
+
+    // ---- handoff ----
+
+    /** A keyboard that hands off to Burble (it said hello, and is the default one) is up. */
+    private fun keyboardHandsOff() = Handoff.activeFor(this) && keyboardShown()
+
+    private var handsOff = false
+
+    /** Hides the bubble as a keyboard that hands off comes up, shows it again once it's gone. */
+    fun followKeyboard() {
+        val now = keyboardHandsOff()
+        if (now == handsOff) return
+        handsOff = now
+        updateAway()
+    }
+
+    /**
+     * The keyboard's mic key started a dictation ([HandoffProvider]): the bubble comes out of
+     * [key], in screen px, and waits just above [keyboardTop], where the keyboard's top edge was.
+     */
+    fun emergeFrom(key: dev.silver.burble.overlay.Box, keyboardTop: Float) {
+        overlay?.emergeFrom(key, keyboardTop)
+    }
 
     private val goAway = Runnable { away = true }
 
@@ -191,6 +220,8 @@ class InsertionService : AccessibilityService() {
             event.source?.takeIf(::isField)?.let { appFocused = it }
         }
         if (event != null && Dictation.state.value.recording && tappedField(event)) noteTap(event)
+        // The keyboard came or went: with a keyboard that hands off, the bubble steps aside.
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) return followKeyboard()
         // A scroll in another app: the user has moved on, the idle bubble rests now. Not a focus
         // change, so nothing more to look at.
         if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {

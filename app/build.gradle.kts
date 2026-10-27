@@ -65,7 +65,14 @@ android {
     }
 
     buildTypes {
+        // The Gboard → Burble handoff (Handoff.kt): on in debug builds only until Tom approves it.
+        debug {
+            buildConfigField("boolean", "HANDOFF", "true")
+            resValue("bool", "handoff", "true")
+        }
         release {
+            buildConfigField("boolean", "HANDOFF", "false")
+            resValue("bool", "handoff", "false")
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Only with the release key's environment (release.yml's); without it packageRelease
@@ -77,6 +84,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 
     testOptions {

@@ -87,6 +87,21 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Field that drops focus when the keyboard hides | Emulator (`DebugFieldsActivity`) | ✅ |
 | Claude app, Messages with hide-keyboard on, on the phone | 👤 1 | 👤 |
 
+## Gboard handoff (debug builds only)
+
+A patched Gboard's mic key starts Burble's dictation (Burble's design notes spec/handoff.md). Emulator runs use `HandoffDebug`, which lets adb's shell stand in for the keyboard.
+
+| Case | Coverage | Status |
+|---|---|---|
+| Only the default keyboard may start, only with a text field focused; any other app, a keyboard that isn't the default, or no field is refused | Unit `HandoffTest` | ✅ |
+| `start` is a bubble tap: same dictation, same insertion, keyboard hidden; accepted only if a dictation is under way after it (stops one listening, retries one whose audio waits); no microphone → refused, so the keyboard falls back to its own | Code (`HandoffProvider.start`); emulator `content call … start` (accepted, `state` says listening, words land) | ✅ |
+| Release builds: the provider is disabled (`@bool/handoff` false), so the keyboard finds no Burble and keeps its own mic | Code (`BuildConfig.HANDOFF`, `resValue`) | ✅ |
+| After `hello` from the default keyboard, the bubble hides while the keyboard is up and shows once it's gone; a dictation always shows | Unit `VisibilityTest.aKeyboardThatHandsOffHidesItButNotADictation`; emulator screenshots | ✅ |
+| The bubble comes out of the key at its size and shape, rises to 16 dp above where the keyboard's top was, the wave starting mid-flight | Emulator recording (material/images/handoff-motion/app-flow.*) | ✅ |
+| On the words landing it waits full size for the keyboard, flies into the key as the keyboard slides up, and stays hidden while it's up; no keyboard in 3 s → home | Emulator recording; code (`Overlay.flyOn`, `flyBack`) | ✅ |
+| Dragged mid-flight, or the screen turns: the flight ends where it is; the bubble docks as after any drag | Code (`Overlay.endFlight`) | ✅ |
+| With the patched Gboard on the phone | 👤 12 | 👤 |
+
 ## Settings, onboarding, languages
 
 | Case | Coverage | Status |
@@ -122,3 +137,4 @@ Status: ✅ covered and passing, 👤 needs the phone.
 9. Dictate a short sentence and tap to stop as you finish: the words land in about half a second, as fast as in Gboard's own dictation.
 10. Open a chat in the Claude app without tapping its message box, tap the bubble, say a sentence, tap again: the words land in the box. If they go to the clipboard, send a report from About: its log says why ("insert fell back: …").
 11. Feel each event in the debug build's "Haptics test (temporary)" row under Advanced; then turn Touch feedback off in Settings and check none plays.
+12. With the patched Gboard (debug Burble): tap its mic key in Messages. The bubble rises out of the key as the keyboard goes; speak; tap the bubble. The words land, the bubble flies back into the key as the keyboard returns, and no bubble shows while the keyboard is up.

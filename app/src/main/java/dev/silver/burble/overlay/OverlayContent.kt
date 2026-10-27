@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.animation.core.MutableTransitionState
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -161,6 +162,8 @@ internal class OverlayUi {
     val rest = mutableStateOf(false)
     /** When a finger last left the bubble, in [android.os.SystemClock.uptimeMillis]. */
     var releasedAt = 0L
+    /** Out of a keyboard's mic key or back into it ([Overlay.emergeFrom]). */
+    val flight = mutableStateOf<Flight?>(null)
 }
 
 /**
@@ -215,7 +218,8 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
     // 3 s untouched in Idle, counted again after every touch and every dictation, and only once
     // an error's words have gone, so they stay beside the bubble; sooner when the user touches or
     // scrolls the app underneath ([Overlay.elsewhere]).
-    val idle = shown is Look.Idle && !ui.touching.value && !ui.labelled.value
+    // Nor while a keyboard's key started it: it waits full size for the keyboard to come back.
+    val idle = shown is Look.Idle && !ui.touching.value && !ui.labelled.value && ui.flight.value == null
     LaunchedEffect(idle) {
         ui.idle.value = idle
         ui.rest.value = false
@@ -237,7 +241,9 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
     val docked = atRest && settled && settings.whenIdle != WhenIdle.FULL
     LaunchedEffect(docked) { ui.docked.value = docked }
     val visible = remember { MutableTransitionState(false) }
-    visible.targetState = !(ui.locked.value || ui.away.value || ui.closing.value)
+    // Flying back into the keyboard's key, it shows until it lands there.
+    val homing = ui.flight.value?.homing?.value == true
+    visible.targetState = !(ui.locked.value || (ui.away.value && !homing) || ui.closing.value)
     LaunchedEffect(visible.isIdle, visible.currentState, ui.closing.value) {
         if (ui.closing.value && visible.isIdle && !visible.currentState) onGone()
     }
@@ -249,18 +255,25 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
             settings.idleOpacity / 100f, ui.drag.value)
     }
     val motion = MaterialTheme.motionScheme
+    // Out of a keyboard's mic key: the flight is its entrance, and it starts full size.
+    val flight = ui.flight.value
+    LaunchedEffect(flight) { if (flight != null) progress.snapTo(0f) }
     // It shows and hides from its centre, full or at rest.
     val origin = placement(layout(if (atRest) 1f else 0f), sizePx, settings.whenIdle, 0f).centre
         .let { TransformOrigin(it.x / side, it.y / side) }
     Box(Modifier.size(with(density) { side.toDp() })) {
         AnimatedVisibility(
             visible,
-            enter = fadeIn(motion.defaultEffectsSpec()) + scaleIn(motion.defaultSpatialSpec(), initialScale = 0.6f, transformOrigin = origin),
+            enter = if (flight != null) EnterTransition.None
+                else fadeIn(motion.defaultEffectsSpec()) + scaleIn(motion.defaultSpatialSpec(), initialScale = 0.6f, transformOrigin = origin),
             exit = fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec(), targetScale = 0.6f, transformOrigin = origin),
         ) {
             BubbleBody(
                 shown, settings.shape, settings.bubbleSize.dp,
-                place = { placement(layout(progress.value), sizePx, settings.whenIdle, progress.value) },
+                place = {
+                    val at = placement(layout(progress.value), sizePx, settings.whenIdle, progress.value)
+                    ui.flight.value?.place(at, sizePx) ?: at
+                },
                 pressed = ui.pressed.value,
             ) { color, modifier ->
                 LiveWave(Dictation.level, color, modifier, finishing = { Dictation.state.value == Dictation.State.Finishing })
@@ -280,6 +293,10 @@ internal class Placement(
     val alpha: Float = 1f,
     val glyphs: Float = 1f,
     val round: Float = 0f,
+    /** Its height over its width, stretched to a keyboard key's ([Flight]). */
+    val squash: Float = 1f,
+    /** How far its shape has morphed into a key's ([HandoffMotion.keyPolygon]). */
+    val key: Float = 0f,
 )
 
 /**
@@ -464,6 +481,8 @@ internal fun BubbleBody(
     val ambientShadow = remember(outline) { DropShadowPainter(outline, AmbientShadow) }
     // Towards the dot: the shape morphs into a circle, its shadow fades into a circle's.
     val rounding = remember(shape) { Rounding(shape.polygon()) }
+    // Out of a keyboard's mic key and back: the shape morphs from the key's.
+    val keying = remember(shape) { Rounding(shape.polygon(), HandoffMotion.keyPolygon) }
     val roundKeyShadow = remember { DropShadowPainter(CircleShape, KeyShadow) }
     val roundAmbientShadow = remember { DropShadowPainter(CircleShape, AmbientShadow) }
     val density = LocalDensity.current
@@ -479,7 +498,7 @@ internal fun BubbleBody(
                 translationX = at.centre.x - half
                 translationY = at.centre.y - half
                 scaleX = at.scale * press.value
-                scaleY = at.scale * press.value
+                scaleY = at.scale * at.squash * press.value
                 this.alpha = at.alpha
                 // Offscreen, the fade would crop the shadow to the bubble's square.
                 compositingStrategy = CompositingStrategy.ModulateAlpha
@@ -497,15 +516,24 @@ internal fun BubbleBody(
                         addOutline(outline.createOutline(this@drawWithCache.size, layoutDirection, this@drawWithCache))
                     }
                     onDrawBehind {
-                        val round = place().round
-                        clipPath(if (round == 0f) inside else rounding.path(round, size), ClipOp.Difference) {
+                        val at = place()
+                        val round = at.round
+                        // A key casts no shadow: the bubble's grows as it leaves the key's shape.
+                        val lift = 1f - at.key
+                        if (lift <= 0f) return@onDrawBehind
+                        val clip = when {
+                            at.key > 0f -> keying.path(at.key, size)
+                            round == 0f -> inside
+                            else -> rounding.path(round, size)
+                        }
+                        clipPath(clip, ClipOp.Difference) {
                             if (round < 1f) {
-                                with(keyShadow) { draw(this@onDrawBehind.size, alpha = 1f - round) }
-                                with(ambientShadow) { draw(this@onDrawBehind.size, alpha = 1f - round) }
+                                with(keyShadow) { draw(this@onDrawBehind.size, alpha = (1f - round) * lift) }
+                                with(ambientShadow) { draw(this@onDrawBehind.size, alpha = (1f - round) * lift) }
                             }
                             if (round > 0f) {
-                                with(roundKeyShadow) { draw(this@onDrawBehind.size, alpha = round) }
-                                with(roundAmbientShadow) { draw(this@onDrawBehind.size, alpha = round) }
+                                with(roundKeyShadow) { draw(this@onDrawBehind.size, alpha = round * lift) }
+                                with(roundAmbientShadow) { draw(this@onDrawBehind.size, alpha = round * lift) }
                             }
                         }
                     }
@@ -525,11 +553,12 @@ internal fun BubbleBody(
                     onDrawWithContent {
                         drawRect(bg)
                         drawContent()
-                        val round = place().round
-                        val mask = if (round == 0f) outside else morphing.apply {
+                        val at = place()
+                        val round = at.round
+                        val mask = if (round == 0f && at.key == 0f) outside else morphing.apply {
                             rewind()
                             addRect(square)
-                            addPath(rounding.path(round, size))
+                            addPath(if (at.key > 0f) keying.path(at.key, size) else rounding.path(round, size))
                         }
                         drawPath(mask, Color.Black, blendMode = BlendMode.Clear)
                     }
@@ -628,10 +657,10 @@ private val SWEEP_EASE = arrayOf(Motion.standard, Motion.standard, Motion.standa
 internal fun BubbleBody(look: Look, shape: BubbleShape, side: Dp, centre: Offset, wave: WaveSlot) =
     BubbleBody(look, shape, side, place = { Placement(centre) }, wave = wave)
 
-/** [polygon] part of the way to a circle, as a path for a [Size] box. */
-private class Rounding(polygon: RoundedPolygon) {
-    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-    private val morph = Morph(polygon, MaterialShapes.Circle)
+/** [polygon] part of the way to [to], a circle unless said, as a path for a [Size] box. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+private class Rounding(polygon: RoundedPolygon, to: RoundedPolygon = MaterialShapes.Circle) {
+    private val morph = Morph(polygon, to)
     private val path = android.graphics.Path()
     private val matrix = android.graphics.Matrix()
 

@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -114,6 +115,7 @@ class Overlay(
     private var owner: Owner? = null
     private var scope: CoroutineScope? = null
     private var snap: Job? = null
+    private var flying: Job? = null
 
     private fun overlayParams(title: String, flags: Int) = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT,
@@ -188,6 +190,16 @@ class Overlay(
         scope?.launch { Prefs.settings.collect { apply() } }
         scope?.launch {
             Dictation.state.collect { st -> frame.contentDescription = context.getString(st.look().action()) }
+        }
+        scope?.launch { Dictation.state.collect(::flyOn) }
+        // The keyboard comes back as the words land: the bubble flies into its key. Once there, it
+        // stays, unseen, until the keyboard goes, then fades in at home: moved home while fading
+        // out, it flashed there.
+        scope?.launch {
+            snapshotFlow { ui.away.value }.collect { away ->
+                val f = ui.flight.value?.takeIf { it.returning } ?: return@collect
+                if (away) flyBack(f) else land()
+            }
         }
         // Only a label that shows and opens the app takes touches; otherwise touches go through.
         scope?.launch {
@@ -299,6 +311,100 @@ class Overlay(
             jobs.forEach { it.join() }
             ui.moving.value = false
         }
+    }
+
+    // ---- handoff ----
+
+    /**
+     * A keyboard's mic key started a dictation: the bubble comes out of [key] (screen px) at its
+     * size and shape and rises to just above [keyboardTop] as the keyboard slides away
+     * ([HandoffMotion]). It stays there for the dictation and flies back into the key on finish.
+     */
+    fun emergeFrom(key: Box, keyboardTop: Float) {
+        val s = scope ?: return
+        snap?.cancel()
+        flying?.cancel()
+        ui.moving.value = false
+        val size = Prefs.settings.value.bubbleSize * density
+        val home = Geometry.layout(ui.screen.value, ui.anchor.value, Prefs.settings.value.bubbleSize, Prefs.settings.value.whenIdle, 0f, 1f).bubble
+        val (sx, sy) = HandoffMotion.spot(ui.screen.value, key, keyboardTop, size)
+        // No larger than the bubble's window.
+        val max = Geometry.MAX_DP * density
+        val k = Box.centred(key.centerX, key.centerY, key.width.coerceAtMost(max), key.height.coerceAtMost(max))
+        val f = Flight(k, (k.centerX - home.centerX) to (k.centerY - home.centerY), (sx - home.centerX) to (sy - home.centerY))
+        ui.flight.value = f
+        ui.drag.value = f.offset(0f)
+        apply()
+        flying = s.launch {
+            f.p.animateTo(1f, HandoffMotion.out) { ui.drag.value = f.offset(value); apply() }
+        }
+    }
+
+    /**
+     * Follows a dictation the keyboard started: on the words landing, back into the key as the
+     * keyboard slides up; once an error is resolved, home.
+     */
+    private fun flyOn(st: Dictation.State) {
+        val f = ui.flight.value ?: return
+        val s = scope ?: return
+        when (st) {
+            is Dictation.State.Done -> if (!f.returning) {
+                f.returning = true
+                flying?.cancel()
+                // Kept up (Hide keyboard during dictation off): into the key at once.
+                if (ui.away.value) flyBack(f)
+                else flying = s.launch {
+                    // No keyboard came back (no field to bring it to): home, as after a drag.
+                    delay(HandoffMotion.HOLD_MS)
+                    ui.flight.value = null
+                    settle()
+                }
+            }
+            Dictation.State.Idle -> if (!f.returning) {
+                flying?.cancel()
+                ui.flight.value = null
+                settle()
+            }
+            else -> Unit
+        }
+    }
+
+    /** Into the key as the keyboard slides up, shown until it lands there. */
+    private fun flyBack(f: Flight) {
+        if (f.homing.value || f.p.value <= 0f) return
+        flying?.cancel()
+        f.homing.value = true
+        flying = scope?.launch {
+            try {
+                f.p.animateTo(0f, HandoffMotion.back) { ui.drag.value = f.offset(value); apply() }
+            } finally {
+                f.homing.value = false
+            }
+        }
+    }
+
+    /** Back in the key, and the keyboard is gone again: the bubble fades in at home. */
+    private fun land() {
+        val f = ui.flight.value ?: return
+        if (ui.away.value) return
+        flying?.cancel()
+        snap?.cancel()
+        ui.drag.value = 0f to 0f
+        apply()
+        flying = scope?.launch {
+            f.p.snapTo(1f)
+            f.fade.snapTo(0f)
+            f.fade.animateTo(1f, HandoffMotion.fadeIn)
+            ui.flight.value = null
+        }
+    }
+
+    /** A finger drags the bubble away, or the screen turns: the flight ends where it is. */
+    private fun endFlight() {
+        val f = ui.flight.value ?: return
+        flying?.cancel()
+        ui.drag.value = f.offset()
+        ui.flight.value = null
     }
 
     // ---- shape guard ----
@@ -442,6 +548,8 @@ class Overlay(
                     val dx = e.rawX - downX
                     val dy = e.rawY - downY
                     if (!dragging && abs(dx) + abs(dy) > slop) {
+                        endFlight()
+                        start = ui.drag.value
                         dragging = true
                         ui.dragging.value = true
                         ui.pressed.value = false
@@ -479,6 +587,7 @@ class Overlay(
             // The new window metrics land after this callback. The anchor keeps its side and its
             // share of the height.
             post {
+                endFlight()
                 snap?.cancel()
                 ui.moving.value = false
                 ui.drag.value = 0f to 0f
