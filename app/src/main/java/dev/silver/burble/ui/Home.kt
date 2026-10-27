@@ -176,7 +176,7 @@ fun Home(
                 item("gap") { Spacer(listItemMotion().size(24.dp)) }
                 item("pages") {
                     Box(listItemMotion()) { Group(listOf(
-                        linkRow(Icons.Outlined.Tune, stringResource(R.string.advanced), stringResource(R.string.advanced_hint)) { open(Page.ADVANCED) },
+                        linkRow(Icons.Outlined.Tune, stringResource(R.string.advanced), null) { open(Page.ADVANCED) },
                         linkRow(Icons.Outlined.Info, stringResource(R.string.section_about), stringResource(R.string.version, version)) { open(Page.ABOUT) },
                     )) }
                 }

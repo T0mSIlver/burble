@@ -26,7 +26,7 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Tap during Finishing does nothing; right after Inserted or Copied it starts listening | Code (`tapBubble`); emulator | ✅ |
 | Finishing: the light settles; Gboard's sweep only from 700 ms, so a quick finish shows none; with Remove animations, the settled light dimmed, no sweep | Screenshot `OverlayScreenshotTest.looks` (0.3, 1.2, 2.2 s; reduced motion) | ✅ |
 | ✕ during Listening or Finishing cancels; Error drops the audio; Inserted or Copied ends and snoozes | Code (`Overlay.release`); emulator | ✅ |
-| Dictation ends with a finger on the bubble: result at full size, 3 s count from release | Code (`LiveBubble` rest timer keyed on touch); emulator | ✅ |
+| Dictation ends with a finger on the bubble: result at full size, 2 s count from release | Code (`LiveBubble` rest timer keyed on touch); emulator | ✅ |
 | Every state over light and dark apps, every shape, three sizes | Screenshot `OverlayScreenshotTest.overContent`, `looks`; `ShapesTest` | ✅ |
 | Real dictation to Google, end to end | 👤 1 | 👤 |
 | Haptics: a composition per event (start, stop, inserted, copied, error, nothing heard, ✕, snap to the edge); a missing primitive falls back to the system effect; THUD missing → two low ticks; Android 12's ✕ is a clock tick | Unit `HapticsTest`; debug row "Haptics test (temporary)" under Advanced | ✅ |

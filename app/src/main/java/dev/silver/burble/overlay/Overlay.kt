@@ -151,7 +151,7 @@ class Overlay(
 
     /**
      * The user touched or scrolled the app underneath: they've moved on, so an idle bubble rests
-     * now rather than after 3 s. Once on its way, more of these change nothing.
+     * now rather than after 2 s. Once on its way, more of these change nothing.
      */
     fun elsewhere() {
         if (!ui.rest.value && restsEarly(ui.idle.value, ui.touching.value, SystemClock.uptimeMillis(), ui.releasedAt)) {

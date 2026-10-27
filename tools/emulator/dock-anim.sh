@@ -5,7 +5,7 @@
 #
 #   tools/emulator/dock-anim.sh SHRINK|DOT right|left [out-dir]
 #   TRIGGER=scroll tools/emulator/dock-anim.sh ...   scrolls the page 1 s in, four times, rather
-#                                                    than waiting the 3 s out
+#                                                    than waiting the 2 s out
 #
 # Out: <out-dir>/dock.mp4, frames.txt (t left top right bottom), gfxinfo.txt.
 # Needs: a booted emulator with no lock screen, the debug APK built, Chrome, ffmpeg, python3.
@@ -44,7 +44,7 @@ $ADB shell input motionevent DOWN $(( W - 8 )) $cy; sleep 0.6; $ADB shell input 
 if [ "$side" = left ]; then
   $ADB shell input swipe $(( (l+r)/2 )) $cy 150 $cy 600; sleep 1
 fi
-# Full again, with the 3 s count starting now: a touch that isn't a tap.
+# Full again, with the 2 s count starting now: a touch that isn't a tap.
 x=$([ "$side" = left ] && echo 60 || echo $(( W - 60 )))
 $ADB shell input motionevent DOWN $x $cy; sleep 0.3; $ADB shell input motionevent CANCEL $x $cy
 $ADB shell dumpsys gfxinfo dev.silver.burble reset >/dev/null

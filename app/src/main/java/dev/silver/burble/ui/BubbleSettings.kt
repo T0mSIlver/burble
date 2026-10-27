@@ -108,14 +108,9 @@ fun BubbleLook(settings: Settings, set: ((Settings) -> Settings) -> Unit, onBack
     }
 }
 
-/** The row on home that opens [BubbleLook]: what it looks like now, and the bubble itself. */
+/** The row on home that opens [BubbleLook], with the bubble itself as it looks now. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 fun lookRow(settings: Settings, onClick: () -> Unit): SettingRow = { shapes ->
-    val inactive = stringResource(when (settings.whenIdle) {
-        WhenIdle.FULL -> R.string.look_full
-        WhenIdle.SHRINK -> R.string.look_smaller
-        WhenIdle.DOT -> R.string.look_dot
-    })
     SegmentedListItem(
         onClick = onClick,
         shapes = shapes,
@@ -127,13 +122,12 @@ fun lookRow(settings: Settings, onClick: () -> Unit): SettingRow = { shapes ->
                 BubbleBody(Look.Idle, settings.shape, 32.dp, Offset(half, half)) { _, _ -> }
             }
         },
-        supportingContent = { Text(stringResource(R.string.look_summary, stringResource(settings.shape.label), inactive)) },
     ) { Text(stringResource(R.string.bubble_look)) }
 }
 
 /**
  * The bubble as it will look, drawn by the overlay's own code against the edge of a sketched
- * screen: in use, and after 3 s idle, smaller or a dot docked to the edge, at the idle opacity.
+ * screen: in use, and after 2 s idle, smaller or a dot docked to the edge, at the idle opacity.
  * Both follow every setting as it changes.
  */
 @Composable

@@ -189,7 +189,7 @@ internal const val OWN_TOUCH_MS = 500L
 
 /**
  * The bubble in its own window, wired to [Dictation] and [Prefs]: results time out, haptics mark
- * changes, 3 s untouched in Idle bring the idle look. Its place comes from [Geometry] only.
+ * changes, 2 s untouched in Idle bring the idle look. Its place comes from [Geometry] only.
  * [onGone] runs once it has faded out for good.
  */
 @Composable
@@ -225,7 +225,7 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
         }
     }
     val shown = look.shown()
-    // 3 s untouched in Idle, counted again after every touch and every dictation, and only once
+    // 2 s untouched in Idle, counted again after every touch and every dictation, and only once
     // an error's words have gone, so they stay beside the bubble; sooner when the user touches or
     // scrolls the app underneath ([Overlay.elsewhere]).
     // Nor while a keyboard's key started it: it waits full size for the keyboard to come back.
@@ -436,7 +436,7 @@ internal fun ColorScheme.waveColor(wallpaper: Boolean): Color = primary
 /** Draws the wave; the live overlay passes the mic's, screenshot tests a frozen one. */
 internal typealias WaveSlot = @Composable (color: Color, modifier: Modifier) -> Unit
 
-internal const val REST_MS = 3000L
+internal const val REST_MS = 2000L
 
 /** Between full (0) and at rest (1): [Motion.rest], moving size, dock, shape and opacity as one. */
 internal val RestSpec: FiniteAnimationSpec<Float> get() = Motion.rest

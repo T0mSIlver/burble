@@ -22,7 +22,7 @@ enum class Trigger { BUBBLE, ACCESSIBILITY_BUTTON, QUICK_SETTINGS }
 /** The bubble's shape, by MaterialShapes name. */
 enum class BubbleShape { COOKIE_9, SUNNY, CLOVER_4, CIRCLE, OVAL, SOFT_BURST }
 
-/** What the bubble becomes after 3 s untouched in Idle. */
+/** What the bubble becomes after 2 s untouched in Idle. */
 enum class WhenIdle { FULL, SHRINK, DOT }
 
 /** When the bubble shows. */
