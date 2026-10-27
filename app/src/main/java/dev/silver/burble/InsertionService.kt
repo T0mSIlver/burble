@@ -18,6 +18,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import dev.silver.burble.overlay.Key
 import dev.silver.burble.overlay.Overlay
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -202,11 +203,18 @@ class InsertionService : AccessibilityService() {
 
     /**
      * The keyboard's mic key started a dictation ([HandoffProvider]): the bubble comes out of
-     * [key], in screen px, and waits just above [keyboardTop], where the keyboard's top edge was.
+     * [key] and waits just above [keyboardTop], where the keyboard's top edge was. [onDrawn] once
+     * its first frame is on screen.
      */
-    fun emergeFrom(key: dev.silver.burble.overlay.Box, keyboardTop: Float) {
-        overlay?.emergeFrom(key, keyboardTop)
+    internal fun emergeFrom(key: Key, keyboardTop: Float, onDrawn: () -> Unit) {
+        overlay?.emergeFrom(key, keyboardTop, onDrawn) ?: onDrawn()
     }
+
+    /**
+     * The keyboard that started the dictation is coming back, its mic key at [key]: the bubble
+     * flies back into it. When, in uptimeMillis, the keyboard should show its key again.
+     */
+    internal fun keyboardBack(key: Key?): Long = overlay?.keyboardBack(key) ?: 0L
 
     private val goAway = Runnable { away = true }
 
@@ -356,6 +364,8 @@ class InsertionService : AccessibilityService() {
         if (node == null) {
             Log.d(TAG, "keyboard: no field on screen to bring it back to")
             softKeyboardController.setShowMode(SHOW_MODE_AUTO)
+            // A bubble waiting to fly back into the keyboard's key goes home instead.
+            overlay?.noKeyboard()
             return
         }
         val show = {

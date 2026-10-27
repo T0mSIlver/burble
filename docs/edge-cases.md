@@ -97,8 +97,9 @@ A patched Gboard's mic key starts Burble's dictation (Burble's design notes spec
 | `start` is a bubble tap: same dictation, same insertion, keyboard hidden; accepted only if a dictation is under way after it (stops one listening, retries one whose audio waits); no microphone → refused, so the keyboard falls back to its own | Code (`HandoffProvider.start`); emulator `content call … start` (accepted, `state` says listening, words land) | ✅ |
 | Release builds: the provider is disabled (`@bool/handoff` false), so the keyboard finds no Burble and keeps its own mic | Code (`BuildConfig.HANDOFF`, `resValue`) | ✅ |
 | After `hello` from the default keyboard, the bubble hides while the keyboard is up and shows once it's gone; a dictation always shows | Unit `VisibilityTest.aKeyboardThatHandsOffHidesItButNotADictation`; emulator screenshots | ✅ |
-| The bubble comes out of the key at its size and shape, rises to 16 dp above where the keyboard's top was, the wave starting mid-flight | Emulator recording (material/images/handoff-motion/app-flow.*) | ✅ |
-| On the words landing it waits full size for the keyboard, flies into the key as the keyboard slides up, and stays hidden while it's up; no keyboard in 3 s → home | Emulator recording; code (`Overlay.flyOn`, `flyBack`) | ✅ |
+| The bubble comes out of the key as a copy of its disc (fill, glyph, no shadow), rises to the corner 8 dp from the edge and above where the keyboard's top was, the light fading in mid-flight (material/images/handoff-motion/handoff-motion.md) | Emulator recording (material/images/handoff-motion/app-flow.*); the key's glyph needs the patch's `keyIcon` | ✅ |
+| The words land: the light goes out, no mic; the bubble waits at its spot, and 60 ms after the keyboard comes (its window or its hello) flies back into the key, takes its fill and glyph, and hands over at 400 ms (`hello` returns `holdKeyUntil`); hidden while the keyboard stays up, fades in at home once it goes | Emulator recording; code (`Overlay.keyboardBack`, `land`) | ✅ |
+| No keyboard comes back: copied, or no field to bring it to → home at once; otherwise home after 2 s | Code (`Overlay.flyOn`, `noKeyboard`) | ✅ |
 | Dragged mid-flight, or the screen turns: the flight ends where it is; the bubble docks as after any drag | Code (`Overlay.endFlight`) | ✅ |
 | With the patched Gboard on the phone | 👤 12 | 👤 |
 

@@ -79,6 +79,10 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.shadow.DropShadowPainter
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.ClipOp
@@ -295,8 +299,14 @@ internal class Placement(
     val round: Float = 0f,
     /** Its height over its width, stretched to a keyboard key's ([Flight]). */
     val squash: Float = 1f,
-    /** How far its shape has morphed into a key's ([HandoffMotion.keyPolygon]). */
+    /** How far its shape has morphed into a keyboard key's disc, a circle. */
     val key: Float = 0f,
+    /** How far it has taken the key's [fill] and lost its shadow. */
+    val skin: Float = 0f,
+    val fill: Color = Color.Unspecified,
+    /** The key's glyph, drawn unscaled at its centre, at [iconAlpha]. */
+    val icon: ImageBitmap? = null,
+    val iconAlpha: Float = 0f,
 )
 
 /**
@@ -481,8 +491,6 @@ internal fun BubbleBody(
     val ambientShadow = remember(outline) { DropShadowPainter(outline, AmbientShadow) }
     // Towards the dot: the shape morphs into a circle, its shadow fades into a circle's.
     val rounding = remember(shape) { Rounding(shape.polygon()) }
-    // Out of a keyboard's mic key and back: the shape morphs from the key's.
-    val keying = remember(shape) { Rounding(shape.polygon(), HandoffMotion.keyPolygon) }
     val roundKeyShadow = remember { DropShadowPainter(CircleShape, KeyShadow) }
     val roundAmbientShadow = remember { DropShadowPainter(CircleShape, AmbientShadow) }
     val density = LocalDensity.current
@@ -517,15 +525,12 @@ internal fun BubbleBody(
                     }
                     onDrawBehind {
                         val at = place()
-                        val round = at.round
-                        // A key casts no shadow: the bubble's grows as it leaves the key's shape.
-                        val lift = 1f - at.key
+                        // Out of a keyboard's mic key, a disc, the shape morphs from a circle.
+                        val round = maxOf(at.round, at.key)
+                        // A key casts no shadow: the bubble's comes as it takes its own colour.
+                        val lift = 1f - at.skin
                         if (lift <= 0f) return@onDrawBehind
-                        val clip = when {
-                            at.key > 0f -> keying.path(at.key, size)
-                            round == 0f -> inside
-                            else -> rounding.path(round, size)
-                        }
+                        val clip = if (round == 0f) inside else rounding.path(round, size)
                         clipPath(clip, ClipOp.Difference) {
                             if (round < 1f) {
                                 with(keyShadow) { draw(this@onDrawBehind.size, alpha = (1f - round) * lift) }
@@ -551,14 +556,22 @@ internal fun BubbleBody(
                     }
                     val morphing = Path().apply { fillType = PathFillType.EvenOdd }
                     onDrawWithContent {
-                        drawRect(bg)
-                        drawContent()
                         val at = place()
-                        val round = at.round
-                        val mask = if (round == 0f && at.key == 0f) outside else morphing.apply {
+                        drawRect(if (at.skin > 0f && at.fill.isSpecified) lerp(bg, at.fill, at.skin) else bg)
+                        drawContent()
+                        // The key's own glyph, at its own size: the bubble around it is scaled.
+                        val icon = at.icon
+                        if (icon != null && at.iconAlpha > 0f) {
+                            val sx = at.scale * press.value
+                            scale(1f / sx, 1f / (sx * at.squash)) {
+                                drawImage(icon, Offset((size.width - icon.width) / 2, (size.height - icon.height) / 2), alpha = at.iconAlpha)
+                            }
+                        }
+                        val round = maxOf(at.round, at.key)
+                        val mask = if (round == 0f) outside else morphing.apply {
                             rewind()
                             addRect(square)
-                            addPath(if (at.key > 0f) keying.path(at.key, size) else rounding.path(round, size))
+                            addPath(rounding.path(round, size))
                         }
                         drawPath(mask, Color.Black, blendMode = BlendMode.Clear)
                     }
@@ -657,10 +670,10 @@ private val SWEEP_EASE = arrayOf(Motion.standard, Motion.standard, Motion.standa
 internal fun BubbleBody(look: Look, shape: BubbleShape, side: Dp, centre: Offset, wave: WaveSlot) =
     BubbleBody(look, shape, side, place = { Placement(centre) }, wave = wave)
 
-/** [polygon] part of the way to [to], a circle unless said, as a path for a [Size] box. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private class Rounding(polygon: RoundedPolygon, to: RoundedPolygon = MaterialShapes.Circle) {
-    private val morph = Morph(polygon, to)
+/** [polygon] part of the way to a circle, as a path for a [Size] box. */
+private class Rounding(polygon: RoundedPolygon) {
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    private val morph = Morph(polygon, MaterialShapes.Circle)
     private val path = android.graphics.Path()
     private val matrix = android.graphics.Matrix()
 
