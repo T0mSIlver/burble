@@ -3,7 +3,9 @@ package dev.silver.burble.overlay
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.silver.burble.ui.theme.Motion
@@ -77,10 +79,10 @@ internal class Flight(var key: Key, var fromKey: Pair<Float, Float>, private val
     val icon = Animatable(1f)
     /** What the bubble shows inside: the listening light, or after it the mic. */
     val light = Animatable(0f)
-    /** Once back home after the keyboard covered the key: the bubble fades in there. */
-    val fade = Animatable(1f)
+    /** Unseen until its window is at the key; fades in at home after the keyboard covered the key. */
+    val fade = Animatable(0f)
     /** The dictation is over: the bubble goes back into the key once the keyboard comes. */
-    var returning = false
+    var returning by mutableStateOf(false)
     /** Flying into the key: shown, though the keyboard that hands off is up. */
     val homing = mutableStateOf(false)
     /** When the bubble hands over to the key, in uptimeMillis; 0 until a flight back starts. */

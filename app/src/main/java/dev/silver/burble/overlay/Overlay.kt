@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -335,8 +336,13 @@ class Overlay(
         ui.flight.value = f
         ui.drag.value = f.offset(0f)
         apply()
-        bubble?.viewTreeObserver?.registerFrameCommitCallback(onDrawn) ?: onDrawn()
         flying = s.launch {
+            // Android moves the window a frame or two after it draws the new look: unseen until
+            // then, or the key's copy flashes where the bubble was.
+            withFrameNanos {}
+            withFrameNanos {}
+            f.fade.snapTo(1f)
+            bubble?.viewTreeObserver?.registerFrameCommitCallback(onDrawn) ?: onDrawn()
             launch { f.p.animateTo(1f, HandoffMotion.spatial) { ui.drag.value = f.offset(value); apply() } }
             launch { f.skin.animateTo(0f, HandoffMotion.skin) }
             launch { f.icon.animateTo(0f, HandoffMotion.icon) }

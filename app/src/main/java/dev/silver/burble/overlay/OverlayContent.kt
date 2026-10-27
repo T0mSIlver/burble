@@ -272,8 +272,10 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
                 else fadeIn(motion.defaultEffectsSpec()) + scaleIn(motion.defaultSpatialSpec(), initialScale = 0.6f, transformOrigin = origin),
             exit = fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec(), targetScale = 0.6f, transformOrigin = origin),
         ) {
+            // On its way back into the keyboard's key, its light goes out with no mic showing.
+            val drawn = if (flight?.returning == true && shown == Look.Idle) Look.Finishing else shown
             BubbleBody(
-                shown, settings.shape, settings.bubbleSize.dp,
+                drawn, settings.shape, settings.bubbleSize.dp,
                 place = {
                     val at = placement(layout(progress.value), sizePx, settings.whenIdle, progress.value)
                     ui.flight.value?.place(at, sizePx) ?: at
