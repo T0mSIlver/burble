@@ -10,5 +10,10 @@
         <activity
             android:name=".DebugFieldsActivity"
             android:exported="true" />
+        <!-- The keyboard stays down on opening, as in a chat app that focuses its box. -->
+        <activity
+            android:name=".DebugAutoFocusActivity"
+            android:exported="true"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
     </application>
 </manifest>

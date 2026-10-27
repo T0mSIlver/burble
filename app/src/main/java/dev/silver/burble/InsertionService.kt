@@ -187,6 +187,9 @@ class InsertionService : AccessibilityService() {
         if (locked) updateLock()
         // Switched off, Burble doesn't follow focus at all.
         if (!Prefs.settings.value.bubbleOn) return
+        if (event?.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED) {
+            event.source?.takeIf(::isField)?.let { appFocused = it }
+        }
         if (event != null && Dictation.state.value.recording && tappedField(event)) noteTap(event)
         // A scroll in another app: the user has moved on, the idle bubble rests now. Not a focus
         // change, so nothing more to look at.
@@ -236,8 +239,37 @@ class InsertionService : AccessibilityService() {
     }
 
     /** The text field with input focus. Never a password field: no words go there, spoken aloud. */
-    private fun focusedField(): AccessibilityNodeInfo? =
-        (restoring ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT))?.takeIf { it.isEditable && !it.isPassword }
+    /**
+     * The text field with input focus, wherever it is on screen, tapped or focused by its app;
+     * never a password field. Some apps' focus doesn't sit in the active window, or sits on a
+     * container around the field: those are looked for too.
+     */
+    private fun focusedField(): AccessibilityNodeInfo? {
+        restoring?.let { return it.takeIf(::isField) }
+        val active = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        return startField(sequence {
+            yield(active)
+            val any = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            yield(any)
+            yield(any?.let(::focusedFieldIn) ?: active?.let(::focusedFieldIn))
+            yield(appFocused?.takeIf { it.refresh() && it.isFocused && it.isVisibleToUser })
+        }, ::isField)
+    }
+
+    private fun isField(n: AccessibilityNodeInfo) = n.isEditable && !n.isPassword
+
+    /** A focused text field under [container], a few levels down. */
+    private fun focusedFieldIn(container: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
+        if (depth > 0 && container.isFocused && isField(container)) return container
+        if (depth >= 8) return null
+        for (i in 0 until container.childCount) {
+            container.getChild(i)?.let { focusedFieldIn(it, depth + 1) }?.let { return it }
+        }
+        return null
+    }
+
+    /** The last text field that took focus, by a tap or its app's own doing. */
+    private var appFocused: AccessibilityNodeInfo? = null
 
     /** The field whose window [blipFocus] took focus from: it still counts as focused. */
     private var restoring: AccessibilityNodeInfo? = null
@@ -424,11 +456,12 @@ class InsertionService : AccessibilityService() {
      * never goes into a field that merely has focus now.
      */
     private fun current(target: Target): AccessibilityNodeInfo? {
-        // Only into the window on screen now: a field in an app the user left gets nothing, now
-        // or later; the words go to the clipboard.
-        val root = rootInActiveWindow
-        if (root == null || root.windowId != target.windowId || root.packageName?.toString() != target.packageName) {
-            Log.d(TAG, "insert fell back: ${target.packageName}'s window is no longer in front")
+        // Only into a window on screen now: a field in an app the user left gets nothing, now or
+        // later; the words go to the clipboard. On screen, not only the active window: an app's
+        // popup or a split screen leaves its field in view.
+        val root = windows.firstOrNull { it.id == target.windowId }?.root
+        if (root == null || root.packageName?.toString() != target.packageName) {
+            Log.d(TAG, "insert fell back: ${target.packageName}'s window is no longer on screen")
             return null
         }
         val node = target.node

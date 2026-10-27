@@ -4,8 +4,16 @@
 #           tapped field, none in the first.
 #   switch  start in the first field, switch to Settings, stop: the words go to the clipboard;
 #           back in the first app, nothing lands in the field.
+#   autofocus-edit, autofocus-compose
+#           open a screen whose field takes focus on its own (an EditText in onCreate, or a
+#           Compose field through a FocusRequester, as chat apps do), keyboard down, never
+#           tapped; tap the bubble, stop: the words land in that field.
+#   autofocus-late
+#           start on the home screen, then open the Compose screen: its field took focus after
+#           the start and wasn't tapped, so the words go to the clipboard; a second dictation
+#           there lands in the field.
 #
-#   tools/emulator/where-text-goes.sh tap|switch
+#   tools/emulator/where-text-goes.sh tap|switch|autofocus-edit|autofocus-compose|autofocus-late
 #
 # Needs: a booted emulator with no lock screen and the debug APK built. Prints PASS or FAIL.
 set -e
@@ -28,6 +36,44 @@ $ADB shell settings put secure enabled_accessibility_services null; $ADB shell a
 $ADB shell "run-as dev.silver.burble rm -rf no_backup/pending shared_prefs/overlay.xml"
 $ADB push $OUT/settings.xml /data/local/tmp/settings.xml >/dev/null
 $ADB shell "run-as dev.silver.burble cp /data/local/tmp/settings.xml shared_prefs/settings.xml"
+frame() { $ADB shell dumpsys window windows | grep -A30 "u0 Burble}" | grep -m1 -o "frame=\[-\?[0-9]*,[0-9]*\]\[-\?[0-9]*,[0-9]*\]" | tr -c '0-9-' ' '; }
+# A dictation as the user starts it: a tap on the bubble, kept listening, then the words.
+dictate() {
+  read l t r b <<<$(frame)
+  $ADB shell input tap $(( (l+r)/2 )) $(( (t+b)/2 )); sleep 0.5
+  send --es do fake; sleep 1
+  send --es text $1 --ei after 300; sleep 2.5
+}
+went() { $ADB logcat -d -s Dictation:D Insert:D | grep -o "delivered: [a-z]*\|insert fell back.*" | tr '\n' ';'; }
+if [[ "$mode" == autofocus-* ]]; then
+  kind=${mode#autofocus-}; [ "$kind" = late ] && kind=compose
+  $ADB shell settings put secure enabled_accessibility_services dev.silver.burble/dev.silver.burble.InsertionService
+  for i in $(seq 10); do sleep 1; [ -n "$(frame)" ] && break; done
+  $ADB shell input keyevent KEYCODE_HOME; sleep 1
+  words=Auto$RANDOM; late=""
+  $ADB logcat -c
+  if [ "$mode" = autofocus-late ]; then
+    read l t r b <<<$(frame)
+    $ADB shell input tap $(( (l+r)/2 )) $(( (t+b)/2 )); sleep 0.5
+    send --es do fake; sleep 0.5
+    $ADB shell am start -W -n dev.silver.burble/.DebugAutoFocusActivity --es kind $kind >/dev/null; sleep 2.5
+    send --es text Late$RANDOM --ei after 300; sleep 2.5
+    late=$(went); $ADB logcat -c
+  else
+    $ADB shell am start -W -n dev.silver.burble/.DebugAutoFocusActivity --es kind $kind >/dev/null; sleep 2.5
+  fi
+  dictate $words
+  now=$(went)
+  $ADB shell settings put secure enabled_accessibility_services null; sleep 1
+  $ADB shell uiautomator dump /sdcard/where.xml >/dev/null
+  text=$($ADB shell cat /sdcard/where.xml | grep -o '<node[^>]*class="android.widget.EditText"[^>]*>' | grep -o ' text="[^"]*"' | head -1)
+  echo "log: ${late:+late: $late }$now"; echo "field:$text"
+  ok=0
+  [[ "$now" == *"delivered: inserted"* && "$text" == *$words* ]] && ok=1
+  [ "$mode" = autofocus-late ] && [[ "$late" != *"delivered: clipboard"* ]] && ok=0
+  [ $ok = 1 ] && echo PASS || { echo FAIL; exit 1; }
+  exit 0
+fi
 $ADB shell am start -W -n dev.silver.burble/.DebugFieldsActivity >/dev/null; sleep 2
 mapfile -t before < <(fields)
 first=$(centre "${before[0]}"); compose=$(centre "${before[1]}")

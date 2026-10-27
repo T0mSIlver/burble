@@ -75,6 +75,9 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | The last field tapped during the dictation gets the words, else the start field | Unit `TargetsTest`; emulator `tools/emulator/where-text-goes.sh tap` (EditText start, Compose field tapped) | ✅ |
 | Focus an app moves by itself isn't a tap; a first tap sends only focus, so focus within 1.5 s of a touch outside the bubble counts | Code (`InsertionService.tappedField`); emulator `where-text-goes.sh tap` | ✅ |
 | Started in app A, switched to B, stopped → clipboard; back in A, nothing lands | Emulator `tools/emulator/where-text-goes.sh switch` | ✅ |
+| A field the app focused on opening, never tapped (EditText in onCreate, Compose FocusRequester as in chat apps), keyboard down: the start field; found in the active window, any window, inside a focused container, or from the app's focus event | Unit `TargetsTest.anAppFocusedFieldIsTheStartField` and three more; emulator `tools/emulator/where-text-goes.sh autofocus-edit`, `autofocus-compose` | ✅ |
+| A field the app focused after the start, not tapped: clipboard; the next dictation there lands in it | Emulator `where-text-goes.sh autofocus-late` | ✅ |
+| The Claude app's message box focused on opening a chat | 👤 10 | 👤 |
 | Tapping a Chrome web field during a dictation | 👤 8 | 👤 |
 | Field rebuilt when the keyboard hides: found again by focus, id, only field, or edges at or below | Unit `FindAgainTest`; emulator | ✅ |
 | Field that drops focus when the keyboard hides | Emulator (`DebugFieldsActivity`) | ✅ |
@@ -113,3 +116,4 @@ Status: ✅ covered and passing, 👤 needs the phone.
 7. On a fresh install, finish onboarding to Try it: tap the bubble, say a sentence, tap again; it lands in the field. Rotate the phone mid-sentence once.
 8. Start a dictation in Chrome's address bar, tap a text box on the page, stop: the words land in the text box.
 9. Dictate a short sentence and tap to stop as you finish: the words land in about half a second, as fast as in Gboard's own dictation.
+10. Open a chat in the Claude app without tapping its message box, tap the bubble, say a sentence, tap again: the words land in the box. If they go to the clipboard, send a report from About: its log says why ("insert fell back: …").
