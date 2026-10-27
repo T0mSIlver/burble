@@ -5,7 +5,8 @@ Every shipped feature's cases, how each is covered, and its status. **Unit**: a 
 in `tools/emulator` or a scripted run on the `sb36` emulator with the debug build's hooks
 (`DebugReceiver`). **Pixel**: by hand on a phone; the list at the end.
 
-Status: ✅ covered and passing, 👤 needs the phone.
+Status: ✅ covered and passing, 👤 needs the phone, ❌ fails, open. **Lab**: an instrumented test in
+`app/src/androidTest` (docs/testlab.md), on an emulator and Firebase Test Lab's phones.
 
 ## Bubble states
 
@@ -85,6 +86,9 @@ Status: ✅ covered and passing, 👤 needs the phone.
 | Tapping a Chrome web field during a dictation | 👤 8 | 👤 |
 | Field rebuilt when the keyboard hides: found again by focus, id, only field, or edges at or below | Unit `FindAgainTest`; emulator | ✅ |
 | Field that drops focus when the keyboard hides | Emulator (`DebugFieldsActivity`) | ✅ |
+| Rotation mid-dictation over an app that keeps its window | Lab `DictationTest.survivesRotationMidDictation` | ✅ |
+| Rotation mid-dictation over an app recreated on rotation (most apps): its field is in a new window, which `InsertionService.current` refuses, so the words go to the clipboard | Lab `DictationTest.survivesRotationOfARecreatedApp` (`@Ignore` until decided, RMB-29) | ❌ |
+| Another app's field, the stock messaging or contacts app with the phone's own keyboard | Lab `DictationTest` | ✅ emulator, Test Lab waits on Tom |
 | Claude app, Messages with hide-keyboard on, on the phone | 👤 1 | 👤 |
 
 ## Gboard handoff (debug builds only)
