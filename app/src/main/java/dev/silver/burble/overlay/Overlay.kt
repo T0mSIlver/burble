@@ -16,6 +16,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.provider.Settings
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.animation.core.Animatable
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -230,8 +231,8 @@ class Overlay(
         scope?.cancel()
         scope = null
         // The target too, should Burble go mid-drag before its own exit ran.
-        for (v in listOfNotNull(view, touch, pill, target)) runCatching { windowManager.removeView(v) }
-        touch = null; pill = null; target = null
+        for (v in listOfNotNull(view, touch, pill, target, flightView)) runCatching { windowManager.removeView(v) }
+        touch = null; pill = null; target = null; flightView = null
         owner?.destroy()
         owner = null
     }
@@ -317,38 +318,84 @@ class Overlay(
 
     // ---- handoff ----
 
+    /** The flight's own window, while one draws the bubble between the key and the spot. */
+    private var flightView: ComposeView? = null
+
+    private val reducedMotion get() = DurationScale(context).scaleFactor == 0f
+
     /**
      * A keyboard's mic key started a dictation: the bubble comes out of [key], a copy of it at
      * first, and rises to the corner just above [keyboardTop] as the keyboard slides away
      * ([HandoffMotion]). It stays there for the dictation and flies back into the key once the
-     * words land. [onDrawn] runs once its first frame is on screen.
+     * words land. [onDrawn] runs once its first frame is on screen. With animations removed, it
+     * appears at the spot.
      */
     internal fun emergeFrom(key: Key, keyboardTop: Float, onDrawn: () -> Unit = {}) {
         val s = scope ?: return onDrawn()
         snap?.cancel()
         flying?.cancel()
+        removeFlightView()
         ui.moving.value = false
         val k = fitted(key)
         val size = Prefs.settings.value.bubbleSize * density
-        val (sx, sy) = HandoffMotion.spot(ui.screen.value, k.bounds, keyboardTop, size)
-        val home = home()
-        val f = Flight(k, fromHome(k), (sx - home.first) to (sy - home.second))
+        val f = Flight(k, HandoffMotion.spot(ui.screen.value, k.bounds, keyboardTop, size), home())
         ui.flight.value = f
-        ui.drag.value = f.offset(0f)
+        // The bubble's own window waits at the spot; the flight's draws the way there.
+        ui.drag.value = f.offset()
         apply()
+        if (reducedMotion) {
+            flying = s.launch {
+                f.p.snapTo(1f); f.skin.snapTo(0f); f.icon.snapTo(0f); f.light.snapTo(1f); f.fade.snapTo(1f)
+                f.inWindow = false
+                onDrawn()
+            }
+            return
+        }
+        val view = addFlightView(f)
         flying = s.launch {
-            // Android moves the window a frame or two after it draws the new look: unseen until
-            // then, or the key's copy flashes where the bubble was.
-            withFrameNanos {}
-            withFrameNanos {}
+            // Its first frame is the key's copy, where the key is.
             f.fade.snapTo(1f)
-            bubble?.viewTreeObserver?.registerFrameCommitCallback(onDrawn) ?: onDrawn()
-            launch { f.p.animateTo(1f, HandoffMotion.spatial) { ui.drag.value = f.offset(value); apply() } }
+            view.viewTreeObserver.registerFrameCommitCallback(onDrawn)
             launch { f.skin.animateTo(0f, HandoffMotion.skin) }
             launch { f.icon.animateTo(0f, HandoffMotion.icon) }
-            delay(HandoffMotion.LIGHT_AFTER_MS)
-            f.light.animateTo(1f, HandoffMotion.light)
+            launch { delay(HandoffMotion.LIGHT_AFTER_MS); f.light.animateTo(1f, HandoffMotion.light) }
+            f.p.animateTo(1f, HandoffMotion.spatial)
+            // At rest at the spot: the bubble's own window takes over, then the flight's goes.
+            toOwnWindow(f)
         }
+    }
+
+    /** A window over the whole way between the key and the spot, drawing [f]; never moves. */
+    private fun addFlightView(f: Flight): ComposeView {
+        val size = Prefs.settings.value.bubbleSize * density
+        val box = f.window(size, Geometry.PAD_DP * density)
+        val params = overlayParams("Burble flight", WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = box.left.roundToInt(); y = box.top.roundToInt()
+            width = box.width.roundToInt(); height = box.height.roundToInt()
+        }
+        val origin = Offset(params.x.toFloat(), params.y.toFloat())
+        val view = ComposeView(context).apply {
+            owner?.let { owned(it) }
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            setContent { AppTheme { FlightBubble(f, origin) } }
+        }
+        runCatching { windowManager.addView(view, params) }
+        flightView = view
+        return view
+    }
+
+    /** The bubble's own window shows it, the frame after which the flight's window goes. */
+    private suspend fun toOwnWindow(f: Flight) {
+        f.inWindow = false
+        withFrameNanos {}
+        withFrameNanos {}
+        removeFlightView()
+    }
+
+    private fun removeFlightView() {
+        flightView?.let { runCatching { windowManager.removeView(it) } }
+        flightView = null
     }
 
     /** The bubble's full centre at its anchor, in screen px. */
@@ -365,34 +412,60 @@ class Overlay(
         return Key(Box.centred(b.centerX, b.centerY, b.width.coerceAtMost(max), b.height.coerceAtMost(max)), key.fill, key.icon)
     }
 
-    private fun fromHome(key: Key) = home().let { (x, y) -> (key.bounds.centerX - x) to (key.bounds.centerY - y) }
-
     /**
-     * Follows a dictation the keyboard started. The words land: the bubble waits at its spot for
-     * the keyboard ([keyboardBack]), or goes home at once when they went to the clipboard or no
-     * field takes the keyboard back ([noKeyboard]), or after [HandoffMotion.WAIT_MS] when none
-     * comes. An error stays at the spot; once
-     * resolved, home.
+     * Follows a dictation the keyboard started. The words land, or nothing-heard's words go: the
+     * bubble waits at its spot for the keyboard ([keyboardBack]), or goes home at once when they
+     * went to the clipboard or no field takes the keyboard back ([noKeyboard]), or after
+     * [HandoffMotion.WAIT_MS] when none comes. An error whose audio waits stays at the spot.
      */
     private fun flyOn(st: Dictation.State) {
         val f = ui.flight.value ?: return
         val s = scope ?: return
-        when (st) {
-            is Dictation.State.Done -> if (!f.returning) {
-                f.returning = true
-                flying?.cancel()
-                if (st.output == Output.CLIPBOARD) return goHome()
-                // The light goes out, with no mic: the bubble is about to become the key.
-                flying = s.launch {
-                    launch { f.light.animateTo(0f, HandoffMotion.lightOut) }
-                    delay(HandoffMotion.WAIT_MS)
-                    goHome()
-                }
-                // Kept up (Hide keyboard during dictation off): into the key at once.
-                if (ui.away.value) keyboardBack(null)
-            }
-            Dictation.State.Idle -> if (!f.returning) goHome()
-            else -> Unit
+        if (f.returning || (st !is Dictation.State.Done && st != Dictation.State.Idle)) return
+        f.returning = true
+        if (st is Dictation.State.Done && st.output == Output.CLIPBOARD) return goHome()
+        flying?.cancel()
+        flying = s.launch {
+            // Out of the flight's window, should the words land before it reached the spot.
+            if (f.inWindow) { f.p.snapTo(1f); toOwnWindow(f) }
+        }
+        // Kept up (Hide keyboard during dictation off): into the key at once.
+        if (ui.away.value) keyboardBack(null)
+        else waitForKeyboard(f, sinceAsked = SystemClock.uptimeMillis() - keyboardAskedAt)
+    }
+
+    /** When Burble last asked for the keyboard back, in uptimeMillis. */
+    private var keyboardAskedAt = 0L
+    private var waiting: Job? = null
+
+    /** How long after [keyboardAskedAt] Burble asks again if no keyboard came; 0: it won't. */
+    private var retryInMs = 0L
+
+    /**
+     * Burble has just asked the app for the keyboard back (InsertionService.showKeyboard), and
+     * asks again in [retryInMs] if none comes: the bubble waiting at its spot gives the keyboard
+     * [HandoffMotion.WAIT_MS] after the last ask. It may ask a few frames before the words' state
+     * lands.
+     */
+    fun keyboardAsked(retryInMs: Long = 0) {
+        keyboardAskedAt = SystemClock.uptimeMillis()
+        this.retryInMs = retryInMs
+        val f = ui.flight.value?.takeIf { it.returning && !it.homing.value && it.handoverAt == 0L } ?: return
+        waitForKeyboard(f, sinceAsked = 0)
+    }
+
+    /**
+     * Home [HandoffMotion.WAIT_MS] after the last ask, [sinceAsked] ago, unless the keyboard
+     * comes; an ask still to come (Burble first takes the window's focus for a frame) gets its
+     * own wait, and with none at all, home after [HandoffMotion.NO_ASK_MS].
+     */
+    private fun waitForKeyboard(f: Flight, sinceAsked: Long) {
+        waiting?.cancel()
+        val wait = retryInMs + HandoffMotion.WAIT_MS
+        val left = if (sinceAsked in 0 until wait) wait - sinceAsked else HandoffMotion.NO_ASK_MS
+        waiting = scope?.launch {
+            delay(left)
+            if (ui.flight.value === f && !f.homing.value && f.handoverAt == 0L) goHome()
         }
     }
 
@@ -402,10 +475,16 @@ class Overlay(
         if (f.returning && !f.homing.value && f.handoverAt == 0L) goHome()
     }
 
-    /** No keyboard to go back into: home, as after a drag, with the idle look. */
+    /**
+     * No keyboard to go back into: home, docked at once, place and size on the spatial spring,
+     * with the idle look.
+     */
     private fun goHome() {
         flying?.cancel()
+        waiting?.cancel()
+        removeFlightView()
         ui.flight.value = null
+        ui.restNow = true
         settle()
     }
 
@@ -413,33 +492,45 @@ class Overlay(
      * The keyboard is coming back after a dictation it started (its window showed, or it said
      * hello with [key], its mic key's final place): the bubble flies back into the key, and hands
      * over to it [HandoffMotion.HANDOVER_MS] into the flight. Returns when, in uptimeMillis, the
-     * keyboard should show its key again; 0 when no bubble is coming.
+     * keyboard should show its key again; 0 when no bubble is coming. With animations removed,
+     * the bubble goes at once and the key shows at once.
      */
     internal fun keyboardBack(key: Key?): Long {
         val f = ui.flight.value?.takeIf { it.returning } ?: return 0
-        if (key != null) {
-            f.key = fitted(key)
-            f.fromKey = fromHome(f.key)
-        }
+        if (key != null && !f.homing.value) f.key = fitted(key)
         if (f.homing.value) return f.handoverAt
         if (f.handoverAt != 0L) return 0 // landed already
         val s = scope ?: return 0
         flying?.cancel()
+        waiting?.cancel()
+        if (reducedMotion) {
+            f.handoverAt = SystemClock.uptimeMillis()
+            flying = s.launch { f.fade.snapTo(0f) }
+            return 0
+        }
         f.homing.value = true
         f.handoverAt = SystemClock.uptimeMillis() + HandoffMotion.RETURN_AFTER_MS + HandoffMotion.HANDOVER_MS
         flying = s.launch {
             launch { f.light.animateTo(0f, HandoffMotion.lightOut) }
             delay(HandoffMotion.RETURN_AFTER_MS)
+            // The flight's window draws the same frame first, then the bubble's own lets it go.
+            f.p.snapTo(1f)
+            addFlightView(f)
+            withFrameNanos {}
+            withFrameNanos {}
+            f.inWindow = true
             val parts = listOf(
-                launch { f.p.animateTo(0f, HandoffMotion.spatial) { ui.drag.value = f.offset(value); apply() } },
+                launch { f.p.animateTo(0f, HandoffMotion.spatial) },
                 launch { delay(HandoffMotion.SKIN_BACK_AFTER_MS); f.skin.animateTo(1f, HandoffMotion.skin) },
                 launch { delay(HandoffMotion.ICON_BACK_AFTER_MS); f.icon.animateTo(1f, HandoffMotion.icon) },
             )
-            delay(HandoffMotion.HANDOVER_MS)
+            delay((f.handoverAt - SystemClock.uptimeMillis()).coerceAtLeast(0))
             // The key shows this frame; the bubble goes the next, so no frame has neither.
-            delay(FRAME_MS)
+            withFrameNanos {}
+            withFrameNanos {}
             parts.forEach { it.cancel() }
             f.fade.snapTo(0f)
+            removeFlightView()
             f.homing.value = false
             // The keyboard went again meanwhile, or never came: home.
             if (!ui.away.value) land()
@@ -453,9 +544,11 @@ class Overlay(
         if (ui.away.value || f.homing.value) return
         flying?.cancel()
         snap?.cancel()
+        removeFlightView()
         ui.drag.value = 0f to 0f
         apply()
         flying = scope?.launch {
+            f.inWindow = false
             f.p.snapTo(1f)
             f.skin.snapTo(0f)
             f.icon.snapTo(0f)
@@ -466,11 +559,12 @@ class Overlay(
         }
     }
 
-    /** A finger drags the bubble away, or the screen turns: the flight ends where it is. */
+    /** A finger drags the bubble away, or the screen turns: the flight ends, the bubble at its spot. */
     private fun endFlight() {
-        val f = ui.flight.value ?: return
+        if (ui.flight.value == null) return
         flying?.cancel()
-        ui.drag.value = f.offset()
+        waiting?.cancel()
+        removeFlightView()
         ui.flight.value = null
     }
 
@@ -708,6 +802,5 @@ class Overlay(
         const val TARGET_MARGIN_DP = 32
         /** How close the bubble's centre must come to the target's to drop there. */
         const val ARM_DP = 72
-        const val FRAME_MS = 16L
     }
 }

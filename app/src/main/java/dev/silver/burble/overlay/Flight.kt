@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.silver.burble.ui.theme.Motion
@@ -42,12 +43,13 @@ internal object HandoffMotion {
     const val HANDOVER_MS = 400L
 
     /**
-     * After the words land, how long the bubble waits for the keyboard (its window, or its
-     * hello) before going home instead, when Burble is bringing it back to a field. The design
-     * says 250 ms; a keyboard that ignores the first click comes back after 1 to 2 s on an
-     * emulator (InsertionService.showKeyboard). With no field to bring it to, it goes at once.
+     * After Burble asks for the keyboard back, how long the bubble waits for it (its window, or
+     * its hello) before going home, docked at once: the keyboard was dismissed mid-dictation and
+     * isn't coming back. With nothing to bring it back to, or the words copied, it goes at once.
      */
-    const val WAIT_MS = 2000L
+    const val WAIT_MS = 250L
+    /** No ask for the keyboard yet after the words land (it waits on the window's focus): home after this. */
+    const val NO_ASK_MS = 1000L
 
     /**
      * Where the bubble's centre waits during the dictation, for a bubble [size] px across: in its
@@ -67,11 +69,13 @@ internal object HandoffMotion {
 internal class Key(val bounds: Box, val fill: Color? = null, val icon: ImageBitmap? = null)
 
 /**
- * One flight between a keyboard's [key] and the dictation spot. [fromKey] and [toSpot] are the
- * window's offsets from the bubble's home for each end; [p] goes from 0 at the key to 1 at the
- * spot. Everything is read while drawing.
+ * One flight between a keyboard's [key] and [spot], the bubble's centre during the dictation, in
+ * screen px; [home] is the bubble's full centre at its anchor. [p] goes from 0 at the key to 1 at
+ * the spot. The motion itself is drawn in a window of its own that covers the whole way
+ * ([inWindow]), since Android moves a window a frame or so after it draws; the bubble's own window
+ * waits at the spot, unseen meanwhile. Everything is read while drawing.
  */
-internal class Flight(var key: Key, var fromKey: Pair<Float, Float>, private val toSpot: Pair<Float, Float>) {
+internal class Flight(var key: Key, val spot: Pair<Float, Float>, val home: Pair<Float, Float>) {
     val p = Animatable(0f)
     /** 1: the key's fill and no shadow; 0: the bubble's. */
     val skin = Animatable(1f)
@@ -81,22 +85,29 @@ internal class Flight(var key: Key, var fromKey: Pair<Float, Float>, private val
     val light = Animatable(0f)
     /** Unseen until its window is at the key; fades in at home after the keyboard covered the key. */
     val fade = Animatable(0f)
+    /** The flight's window draws the bubble; its own window shows nothing. */
+    var inWindow by mutableStateOf(true)
     /** The dictation is over: the bubble goes back into the key once the keyboard comes. */
     var returning by mutableStateOf(false)
-    /** Flying into the key: shown, though the keyboard that hands off is up. */
+    /** Flying into the key. */
     val homing = mutableStateOf(false)
     /** When the bubble hands over to the key, in uptimeMillis; 0 until a flight back starts. */
     var handoverAt = 0L
 
-    /** The window's offset from home at [p]. */
-    fun offset(p: Float = this.p.value) =
-        (fromKey.first + (toSpot.first - fromKey.first) * p) to (fromKey.second + (toSpot.second - fromKey.second) * p)
+    /** The bubble's centre at [p], in screen px. */
+    fun centre(p: Float = this.p.value): Pair<Float, Float> {
+        val b = key.bounds
+        return (b.centerX + (spot.first - b.centerX) * p) to (b.centerY + (spot.second - b.centerY) * p)
+    }
+
+    /** The bubble's own window's offset from home: at the spot. */
+    fun offset() = (spot.first - home.first) to (spot.second - home.second)
 
     /**
-     * [at], the bubble at home, as it is [p] of the way from the key: the size overshoots with
-     * the spring, the shape doesn't.
+     * [at], the bubble full size at [centre] in its window, as it is [p] of the way from the key:
+     * the size overshoots with the spring, the shape doesn't. Unseen unless [shown].
      */
-    fun place(at: Placement, sizePx: Float): Placement {
+    fun place(at: Placement, sizePx: Float, centre: Offset = at.centre, shown: Boolean = true): Placement {
         val p = p.value
         val q = p.coerceIn(0f, 1f)
         val b = key.bounds
@@ -105,10 +116,10 @@ internal class Flight(var key: Key, var fromKey: Pair<Float, Float>, private val
         val sx = w + (1f - w) * p
         val sy = h + (1f - h) * p
         return Placement(
-            centre = at.centre,
+            centre = centre,
             scale = at.scale * sx,
             squash = sy / sx,
-            alpha = at.alpha * fade.value,
+            alpha = if (shown) at.alpha * fade.value else 0f,
             glyphs = at.glyphs * light.value,
             round = at.round,
             key = 1f - q,
@@ -116,6 +127,16 @@ internal class Flight(var key: Key, var fromKey: Pair<Float, Float>, private val
             fill = key.fill ?: Color.Unspecified,
             icon = key.icon,
             iconAlpha = icon.value,
+        )
+    }
+
+    /** The flight's window, in screen px: the key and the spot's bubble [size] across, and [pad]. */
+    fun window(size: Float, pad: Float): Box {
+        val b = key.bounds
+        val half = size / 2
+        return Box(
+            minOf(b.left, spot.first - half) - pad, minOf(b.top, spot.second - half) - pad,
+            maxOf(b.right, spot.first + half) + pad, maxOf(b.bottom, spot.second + half) + pad,
         )
     }
 }

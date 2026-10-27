@@ -372,6 +372,8 @@ class InsertionService : AccessibilityService() {
             if (!keyboardHidden) {
                 softKeyboardController.setShowMode(SHOW_MODE_AUTO)
                 askForKeyboard(node)
+                // Asked again once if no keyboard comes: that's how long it may take.
+                overlay?.keyboardAsked(retryInMs = KEYBOARD_WAIT_MS + BLIP_TIMEOUT_MS)
                 watchKeyboard(node)
             }
         }
@@ -387,7 +389,12 @@ class InsertionService : AccessibilityService() {
         main.postDelayed({
             if (keyboardHidden || keyboardShown() || !canTakeKeyboard(node)) return@postDelayed
             Log.d(TAG, "keyboard didn't come back from a click: taking focus for a frame")
-            blipFocus(node) { if (!keyboardHidden) askForKeyboard(node) }
+            blipFocus(node) {
+                if (!keyboardHidden) {
+                    askForKeyboard(node)
+                    overlay?.keyboardAsked()
+                }
+            }
         }, KEYBOARD_WAIT_MS)
     }
 

@@ -168,6 +168,8 @@ internal class OverlayUi {
     var releasedAt = 0L
     /** Out of a keyboard's mic key or back into it ([Overlay.emergeFrom]). */
     val flight = mutableStateOf<Flight?>(null)
+    /** The next rest comes at once rather than after [REST_MS]: no keyboard came back to go into. */
+    var restNow = false
 }
 
 /**
@@ -228,7 +230,8 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
         ui.idle.value = idle
         ui.rest.value = false
         if (idle) {
-            delay(REST_MS)
+            if (!ui.restNow) delay(REST_MS)
+            ui.restNow = false
             ui.rest.value = true
         }
     }
@@ -245,9 +248,7 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
     val docked = atRest && settled && settings.whenIdle != WhenIdle.FULL
     LaunchedEffect(docked) { ui.docked.value = docked }
     val visible = remember { MutableTransitionState(false) }
-    // Flying back into the keyboard's key, it shows until it lands there.
-    val homing = ui.flight.value?.homing?.value == true
-    visible.targetState = !(ui.locked.value || (ui.away.value && !homing) || ui.closing.value)
+    visible.targetState = !(ui.locked.value || ui.away.value || ui.closing.value)
     LaunchedEffect(visible.isIdle, visible.currentState, ui.closing.value) {
         if (ui.closing.value && visible.isIdle && !visible.currentState) onGone()
     }
@@ -278,12 +279,36 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
                 drawn, settings.shape, settings.bubbleSize.dp,
                 place = {
                     val at = placement(layout(progress.value), sizePx, settings.whenIdle, progress.value)
-                    ui.flight.value?.place(at, sizePx) ?: at
+                    ui.flight.value?.let { it.place(at, sizePx, shown = !it.inWindow) } ?: at
                 },
                 pressed = ui.pressed.value,
             ) { color, modifier ->
                 LiveWave(Dictation.level, color, modifier, finishing = { Dictation.state.value == Dictation.State.Finishing })
             }
+        }
+    }
+}
+
+/**
+ * The bubble on its way out of a keyboard's mic key and back, in the flight's own window, whose
+ * top left is at [origin] on screen: as [LiveBubble] draws it, placed by [flight].
+ */
+@Composable
+internal fun FlightBubble(flight: Flight, origin: Offset) {
+    val state by Dictation.state.collectAsState()
+    val settings by Prefs.settings.collectAsState()
+    val shown = state.look().shown()
+    val drawn = if (flight.returning && shown == Look.Idle) Look.Finishing else shown
+    val sizePx = with(LocalDensity.current) { settings.bubbleSize.dp.toPx() }
+    Box(Modifier.fillMaxSize()) {
+        BubbleBody(
+            drawn, settings.shape, settings.bubbleSize.dp,
+            place = {
+                val (x, y) = flight.centre()
+                flight.place(Placement(Offset.Zero), sizePx, Offset(x - origin.x, y - origin.y), shown = flight.inWindow)
+            },
+        ) { color, modifier ->
+            LiveWave(Dictation.level, color, modifier, finishing = { Dictation.state.value == Dictation.State.Finishing })
         }
     }
 }
