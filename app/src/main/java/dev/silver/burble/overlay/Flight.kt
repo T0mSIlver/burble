@@ -26,6 +26,8 @@ internal object HandoffMotion {
      * layer makes the flight's first frame cheap. 1/255, under what an eye tells apart.
      */
     const val WAITING_ALPHA = 1f / 255f
+    /** The key's copy holds over the key at most this long for `start` to answer, then goes. */
+    const val HOLD_MAX_MS = 1500L
     /** Place, size and shape, both ways: tracks the keyboard's own 285 ms slide closely. */
     val spatial: FiniteAnimationSpec<Float> get() = Motion.spatial()
     /** The key's fill into the bubble's tonal colour, and its shadow; back again. */

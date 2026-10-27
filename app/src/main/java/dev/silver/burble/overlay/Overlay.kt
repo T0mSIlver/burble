@@ -54,6 +54,7 @@ import kotlinx.coroutines.cancel
 import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -345,13 +346,16 @@ class Overlay(
         if (warmed) return
         warmed = true
         // The listening light's first frame in a process costs hundreds of ms: drawn once now,
-        // unseen, rather than at the first tap.
+        // unseen, rather than at the first tap. The hello can come before the keyboard's window,
+        // so before the flight's window too.
+        flightView()
         scope?.launch {
             ui.warming.value = true
             copy.light.snapTo(1f)
             repeat(3) { withFrameNanos {} }
             copy.light.snapTo(0f)
             ui.warming.value = false
+            if (ui.flight.value == null) removeFlightView()
         }
     }
 
@@ -392,7 +396,11 @@ class Overlay(
         flightView().viewTreeObserver.registerFrameCommitCallback(onDrawn)
         val go = CompletableDeferred<Unit>().also { released = it }
         flying = s.launch {
-            go.await()
+            // Never held for good: a start that gave up waiting for the main thread leaves no copy.
+            if (withTimeoutOrNull(HandoffMotion.HOLD_MAX_MS) { go.await() } == null && !Dictation.state.value.recording) {
+                abortFlight()
+                return@launch
+            }
             launch { f.skin.animateTo(0f, HandoffMotion.skin) }
             launch { f.icon.animateTo(0f, HandoffMotion.icon) }
             launch { delay(HandoffMotion.LIGHT_AFTER_MS); f.light.animateTo(1f, HandoffMotion.light) }
