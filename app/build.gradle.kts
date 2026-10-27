@@ -52,6 +52,8 @@ android {
         val updates = providers.gradleProperty("updatesUrl").orNull
             ?: "https://api.github.com/repos/T0mSIlver/burble/releases/latest"
         buildConfigField("String", "UPDATES_URL", "\"$updates\"")
+        // The device-lab tests in src/androidTest (docs/testlab.md); debug builds only.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -130,6 +132,12 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation("junit:junit:4.13.2")
+
+    // Device-lab tests (src/androidTest, docs/testlab.md): `connectedDebugAndroidTest` on an
+    // emulator, tools/testlab.sh on Firebase Test Lab's phones.
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 
     // Screenshot tests: `recordRoborazziDebug` writes app/screenshots/, `verifyRoborazziDebug`
     // fails when a screen drifts.

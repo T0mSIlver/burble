@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="Burble lab">
+        <!-- Another app's text field, in the test APK's own package and process: what Burble
+             types into. Rotating recreates it, as most apps do. -->
+        <activity
+            android:name="dev.silver.burble.lab.HostActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity
+            android:name="dev.silver.burble.lab.KeptHostActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
+</manifest>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The host's field, with a resource name as a real app's has. -->
+    <item name="lab_field" type="id" />
+</resources>

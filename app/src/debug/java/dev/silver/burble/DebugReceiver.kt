@@ -18,6 +18,12 @@ import android.content.Intent
  * `level` replaces the mic level for the current dictation; `do` acts as the bubble would.
  * `do clip` dictates the first `ms` of files/clip.pcm (16 kHz mono PCM16) as if heard by the
  * microphone, in real time, and stops `stop` ms after it ([ClipMic]).
+ *
+ *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --es audio clip|mic
+ *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --es answer 'Hello there'
+ *
+ * `audio` and `answer` stand in for the microphone and the server in every dictation, a tap on
+ * the bubble too, until set back ([DebugAudio]); an empty `answer` asks the server again.
  */
 class DebugReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -38,6 +44,13 @@ class DebugReceiver : BroadcastReceiver() {
         }
         intent.getStringExtra("error")?.let { Dictation.fakeError(Dictation.ErrorKind.valueOf(it), intent.getIntExtra("after", 0).toLong()) }
         if (intent.hasExtra("size")) Prefs.update { it.copy(bubbleSize = intent.getIntExtra("size", 64)) }
+        if (intent.hasExtra("audio") || intent.hasExtra("answer")) {
+            val now = DebugAudio.mode(context)
+            DebugAudio.set(context, DebugAudio.Mode(
+                clip = intent.getStringExtra("audio")?.let { it == "clip" } ?: now.clip,
+                answer = if (intent.hasExtra("answer")) intent.getStringExtra("answer")?.takeIf { it.isNotEmpty() } else now.answer,
+            ))
+        }
         if (intent.hasExtra("level")) Dictation.fakeLevel(intent.getFloatExtra("level", 0f))
     }
 }

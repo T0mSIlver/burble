@@ -74,7 +74,7 @@ object Dictation {
         }
     }
 
-    /** [mic] replaces the microphone; for the debug build's test hook. */
+    /** [mic] replaces the microphone; for the debug build's test hooks, as [DebugAudio] does. */
     fun start(context: Context, mic: (() -> PcmSource)? = null) {
         val app = context.applicationContext
         if (session?.isActive == true) return
@@ -107,7 +107,7 @@ object Dictation {
         lateinit var s: DictationSession
         s = DictationSession(
             dir = dir,
-            newRecognizer = { onDone -> S3Stream(request, onDone) },
+            newRecognizer = { onDone -> DebugAudio.recognizer(app, onDone) ?: S3Stream(request, onDone) },
             onLevel = { heard ->
                 val l = levelOverride ?: heard
                 _level.value = l
@@ -123,7 +123,7 @@ object Dictation {
                     }
                 }
             },
-            newMic = mic ?: { Microphone() },
+            newMic = mic ?: DebugAudio.mic(app) ?: { Microphone() },
         )
         session = s
         MicService.start(app)
@@ -177,7 +177,7 @@ object Dictation {
             val request = loadRequest(dir)
             lateinit var s: DictationSession
             val found = DictationSession.recover(dir,
-                newRecognizer = { onDone -> S3Stream(request, onDone) },
+                newRecognizer = { onDone -> DebugAudio.recognizer(app, onDone) ?: S3Stream(request, onDone) },
                 onResult = { r -> main.post { finish(app, s, r) } })
             if (found == null) {
                 dir.deleteRecursively() // stopped before any audio
