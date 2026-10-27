@@ -90,6 +90,7 @@ object Dictation {
         _state.value = State.Listening
         InsertionService.instance?.forgetTapped()
         target = InsertionService.instance?.captureTarget()
+        Log.d(TAG, "started; start field in ${target?.packageName ?: "none"}")
         levelOverride = null
         debug = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val settings = Prefs.settings.value

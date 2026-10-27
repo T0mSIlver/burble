@@ -38,9 +38,18 @@ $ADB push $OUT/settings.xml /data/local/tmp/settings.xml >/dev/null
 $ADB shell "run-as dev.silver.burble cp /data/local/tmp/settings.xml shared_prefs/settings.xml"
 frame() { $ADB shell dumpsys window windows | grep -A30 "u0 Burble}" | grep -m1 -o "frame=\[-\?[0-9]*,[0-9]*\]\[-\?[0-9]*,[0-9]*\]" | tr -c '0-9-' ' '; }
 # A dictation as the user starts it: a tap on the bubble, kept listening, then the words.
+# A tap that starts no dictation is retried once, then reported as such, not as a wrong field.
+tapBubble() {
+  for try in 1 2; do
+    read l t r b <<<$(frame)
+    $ADB shell input tap $(( (l+r)/2 )) $(( (t+b)/2 )); sleep 0.8
+    $ADB logcat -d -s Dictation:D | grep -q "started;" && return 0
+    sleep 1
+  done
+  echo "the bubble tap didn't start a dictation"; $ADB shell dumpsys window windows | grep -E "u0 Burble( touch)?}" -A12 | grep -E "Window #|frame=|mAttrs|isVisible|mHasSurface" | head -12 > $OUT/missed-tap.txt; exit 2
+}
 dictate() {
-  read l t r b <<<$(frame)
-  $ADB shell input tap $(( (l+r)/2 )) $(( (t+b)/2 )); sleep 0.5
+  tapBubble
   send --es do fake; sleep 1
   send --es text $1 --ei after 300; sleep 2.5
 }
@@ -53,8 +62,7 @@ if [[ "$mode" == autofocus-* ]]; then
   words=Auto$RANDOM; late=""
   $ADB logcat -c
   if [ "$mode" = autofocus-late ]; then
-    read l t r b <<<$(frame)
-    $ADB shell input tap $(( (l+r)/2 )) $(( (t+b)/2 )); sleep 0.5
+    tapBubble
     send --es do fake; sleep 0.5
     $ADB shell am start -W -n dev.silver.burble/.DebugAutoFocusActivity --es kind $kind >/dev/null; sleep 2.5
     send --es text Late$RANDOM --ei after 300; sleep 2.5
