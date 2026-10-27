@@ -170,6 +170,10 @@ internal class OverlayUi {
     val flight = mutableStateOf<Flight?>(null)
     /** The next rest comes at once rather than after [REST_MS]: no keyboard came back to go into. */
     var restNow = false
+    /** The keyboard's mic key as its hello last said, as a flight at the key, all but transparent. */
+    val keyCopy = mutableStateOf<Flight?>(null)
+    /** The key's copy draws the listening light once, unseen, to have its first frame done. */
+    val warming = mutableStateOf(false)
 }
 
 /**
@@ -274,7 +278,7 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
             exit = fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec(), targetScale = 0.6f, transformOrigin = origin),
         ) {
             // On its way back into the keyboard's key, its light goes out with no mic showing.
-            val drawn = if (flight?.returning == true && shown == Look.Idle) Look.Finishing else shown
+            val drawn = if (flight?.returning == true && flight.handoverAt == 0L && shown == Look.Idle) Look.Finishing else shown
             BubbleBody(
                 drawn, settings.shape, settings.bubbleSize.dp,
                 place = {
@@ -290,22 +294,37 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
 }
 
 /**
- * The bubble on its way out of a keyboard's mic key and back, in the flight's own window, whose
- * top left is at [origin] on screen: as [LiveBubble] draws it, placed by [flight].
+ * The bubble on its way out of a keyboard's mic key and back, in the flight's own window, which
+ * covers the screen: as [LiveBubble] draws it, placed by [OverlayUi.flight]. Kept composed and
+ * unseen while a keyboard that hands off is up, so its first frame is the next one.
  */
 @Composable
-internal fun FlightBubble(flight: Flight, origin: Offset) {
+internal fun FlightBubble(ui: OverlayUi) {
     val state by Dictation.state.collectAsState()
     val settings by Prefs.settings.collectAsState()
+    val flight = ui.flight.value
     val shown = state.look().shown()
-    val drawn = if (flight.returning && shown == Look.Idle) Look.Finishing else shown
+    // Out of the key it listens from the first frame, though the dictation starts a frame later;
+    // back into it, its light goes out with no mic. Never the idle mic.
+    val drawn = when {
+        flight == null && ui.warming.value -> Look.Listening
+        flight == null || shown != Look.Idle -> shown
+        flight.returning -> Look.Finishing
+        else -> Look.Listening
+    }
     val sizePx = with(LocalDensity.current) { settings.bubbleSize.dp.toPx() }
     Box(Modifier.fillMaxSize()) {
         BubbleBody(
             drawn, settings.shape, settings.bubbleSize.dp,
             place = {
-                val (x, y) = flight.centre()
-                flight.place(Placement(Offset.Zero), sizePx, Offset(x - origin.x, y - origin.y), shown = flight.inWindow)
+                // No flight: the key's copy, drawn where the key is but unseen, so the first
+                // frame of a flight only changes its opacity.
+                val f = ui.flight.value ?: ui.keyCopy.value
+                if (f == null) Placement(Offset.Zero, alpha = 0f)
+                else {
+                    val (x, y) = f.centre()
+                    f.place(Placement(Offset.Zero), sizePx, Offset(x, y), shown = f.inFlightWindow)
+                }
             },
         ) { color, modifier ->
             LiveWave(Dictation.level, color, modifier, finishing = { Dictation.state.value == Dictation.State.Finishing })

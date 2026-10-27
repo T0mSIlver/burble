@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
@@ -20,6 +21,11 @@ import dev.silver.burble.ui.theme.Motion
  * keyboard slides up, and hands over to it in one frame.
  */
 internal object HandoffMotion {
+    /**
+     * The key's copy waits drawn at the key at this opacity while the keyboard is up: a cached
+     * layer makes the flight's first frame cheap. 1/255, under what an eye tells apart.
+     */
+    const val WAITING_ALPHA = 1f / 255f
     /** Place, size and shape, both ways: tracks the keyboard's own 285 ms slide closely. */
     val spatial: FiniteAnimationSpec<Float> get() = Motion.spatial()
     /** The key's fill into the bubble's tonal colour, and its shadow; back again. */
@@ -48,6 +54,11 @@ internal object HandoffMotion {
      * isn't coming back. With nothing to bring it back to, or the words copied, it goes at once.
      */
     const val WAIT_MS = 250L
+    /**
+     * Handed over to the key, the keyboard said to be coming but its window not up yet: home
+     * after this. Its window came 1.4 s after its hello on a loaded emulator.
+     */
+    const val LAND_WAIT_MS = 3000L
     /** No ask for the keyboard yet after the words land (it waits on the window's focus): home after this. */
     const val NO_ASK_MS = 1000L
 
@@ -72,10 +83,11 @@ internal class Key(val bounds: Box, val fill: Color? = null, val icon: ImageBitm
  * One flight between a keyboard's [key] and [spot], the bubble's centre during the dictation, in
  * screen px; [home] is the bubble's full centre at its anchor. [p] goes from 0 at the key to 1 at
  * the spot. The motion itself is drawn in a window of its own that covers the whole way
- * ([inWindow]), since Android moves a window a frame or so after it draws; the bubble's own window
- * waits at the spot, unseen meanwhile. Everything is read while drawing.
+ * ([inFlightWindow]), since Android moves a window a frame or so after it draws; the bubble's own
+ * window waits at the spot, unseen meanwhile ([inWindow]). Each hands over to the other with a
+ * frame or two of overlap, never a gap. Everything is read while drawing.
  */
-internal class Flight(var key: Key, val spot: Pair<Float, Float>, val home: Pair<Float, Float>) {
+internal class Flight(var key: Key, val spot: Pair<Float, Float>, val home: Pair<Float, Float>, fade: Float = 1f) {
     val p = Animatable(0f)
     /** 1: the key's fill and no shadow; 0: the bubble's. */
     val skin = Animatable(1f)
@@ -83,16 +95,18 @@ internal class Flight(var key: Key, val spot: Pair<Float, Float>, val home: Pair
     val icon = Animatable(1f)
     /** What the bubble shows inside: the listening light, or after it the mic. */
     val light = Animatable(0f)
-    /** Unseen until its window is at the key; fades in at home after the keyboard covered the key. */
-    val fade = Animatable(0f)
-    /** The flight's window draws the bubble; its own window shows nothing. */
+    /** Gone at the handover to the key; fades in at home after the keyboard covered the key. */
+    val fade = Animatable(fade)
+    /** The flight's window draws the bubble. */
+    var inFlightWindow by mutableStateOf(true)
+    /** The bubble's own window shows nothing: the flight's draws it, or will this frame. */
     var inWindow by mutableStateOf(true)
     /** The dictation is over: the bubble goes back into the key once the keyboard comes. */
     var returning by mutableStateOf(false)
     /** Flying into the key. */
     val homing = mutableStateOf(false)
     /** When the bubble hands over to the key, in uptimeMillis; 0 until a flight back starts. */
-    var handoverAt = 0L
+    var handoverAt by mutableLongStateOf(0L)
 
     /** The bubble's centre at [p], in screen px. */
     fun centre(p: Float = this.p.value): Pair<Float, Float> {
@@ -127,16 +141,6 @@ internal class Flight(var key: Key, val spot: Pair<Float, Float>, val home: Pair
             fill = key.fill ?: Color.Unspecified,
             icon = key.icon,
             iconAlpha = icon.value,
-        )
-    }
-
-    /** The flight's window, in screen px: the key and the spot's bubble [size] across, and [pad]. */
-    fun window(size: Float, pad: Float): Box {
-        val b = key.bounds
-        val half = size / 2
-        return Box(
-            minOf(b.left, spot.first - half) - pad, minOf(b.top, spot.second - half) - pad,
-            maxOf(b.right, spot.first + half) + pad, maxOf(b.bottom, spot.second + half) + pad,
         )
     }
 }

@@ -9,6 +9,8 @@ import android.os.Binder
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.content.pm.PackageManager
 import android.provider.Settings
 import android.util.Log
 import android.graphics.Bitmap
@@ -26,7 +28,7 @@ import java.util.concurrent.TimeUnit
  * ([BuildConfig.HANDOFF], and the provider's `@bool/handoff`).
  */
 object Handoff {
-    const val VERSION = 1
+    const val VERSION = 2
 
     /**
      * The keyboard that said hello in this process's life. The bubble steps aside while it's up,
@@ -51,8 +53,13 @@ object Handoff {
     internal fun allows(callers: Array<String>?, defaultIme: String?, fieldFocused: Boolean) =
         defaultIme != null && callers?.contains(defaultIme) == true && fieldFocused
 
+    /** When the default keyboard last said hello, in uptimeMillis: it's showing. */
+    @Volatile var helloAt = 0L
+        private set
+
     /** Hello from [pkg], the default input method: the bubble steps aside while it's up. */
-    internal fun heardFrom(pkg: String) {
+    internal fun heardFrom(pkg: String, hello: Boolean = false) {
+        if (hello) helloAt = SystemClock.uptimeMillis()
         if (ime == pkg) return
         ime = pkg
         Handler(Looper.getMainLooper()).post { InsertionService.instance?.followKeyboard() }
@@ -79,21 +86,14 @@ class HandoffProvider : ContentProvider() {
         val fromIme = Handoff.allows(caller, ime, fieldFocused = true)
         return when (method) {
             "hello" -> Bundle().apply {
-                if (fromIme) Handoff.heardFrom(ime!!)
+                if (fromIme) Handoff.heardFrom(ime!!, hello = true)
                 putInt("version", Handoff.VERSION)
                 putBoolean("enabled", fromIme && onMain { usable() })
                 // A bubble on its way back into the key: the key stays hidden until it lands.
                 val key = key(extras)
                 putLong("holdKeyUntil", if (fromIme) onMain(0L) { InsertionService.instance?.keyboardBack(key) ?: 0L } else 0L)
             }
-            "start" -> Bundle().apply {
-                // Returns once the bubble's first frame, a copy of the key, is on screen: the
-                // keyboard then hides its key.
-                val drawn = CountDownLatch(1)
-                val accepted = fromIme && onMain(false) { start(context, caller, ime, extras) { drawn.countDown() } }
-                if (accepted) drawn.await(FIRST_FRAME_WAIT_MS, TimeUnit.MILLISECONDS)
-                putBoolean("accepted", accepted)
-            }
+            "start" -> Bundle().apply { putBoolean("accepted", fromIme && start(context, caller, ime, extras)) }
             "state" -> Bundle().apply {
                 putBoolean("listening", fromIme && Dictation.state.value == Dictation.State.Listening)
             }
@@ -106,25 +106,46 @@ class HandoffProvider : ContentProvider() {
 
     /**
      * As a tap on the bubble: starts a dictation into the focused field (or stops the one
-     * listening, retries one whose audio waits). Accepted only if one is now under way.
+     * listening, retries one whose audio waits). Accepted only if one is now under way. A new one
+     * first draws the bubble's first frame, a copy of the key, and returns once it is on screen,
+     * so the keyboard hides its key as the copy shows: the dictation starts right after.
      */
-    private fun start(context: Context, caller: Array<String>?, ime: String?, extras: Bundle?, onDrawn: () -> Unit): Boolean {
-        val service = InsertionService.instance
-        if (!usable() || service == null) return false
-        if (!Handoff.allows(caller, ime, fieldFocused = service.captureTarget() != null)) {
-            Log.d(TAG, "start refused: no text field has focus")
-            return false
+    private fun start(context: Context, caller: Array<String>?, ime: String?, extras: Bundle?): Boolean {
+        val tapAt = extras?.getLong("uptimeMillis", 0L) ?: 0L
+        val drawn = CountDownLatch(1)
+        val emerging = onMain(null) {
+            val service = InsertionService.instance
+            if (!usable() || service == null) return@onMain null
+            val key = key(extras)
+            val st = Dictation.state.value
+            val fresh = !st.recording && !(st is Dictation.State.Error && st.canRetry) &&
+                context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            // The copy first, the field after: finding the field can take tens of ms.
+            val emerging = fresh && key != null
+            if (emerging) service.emergeFrom(key!!, extras.px("keyboardTop") ?: key.bounds.top) {
+                if (tapAt > 0) Log.i(TAG, "first bubble frame ${SystemClock.uptimeMillis() - tapAt} ms after the tap")
+                drawn.countDown()
+            }
+            if (!Handoff.allows(caller, ime, fieldFocused = service.captureTarget() != null)) {
+                Log.d(TAG, "start refused: no text field has focus")
+                if (emerging) service.abortFlight()
+                return@onMain null
+            }
+            ime?.let(Handoff::heardFrom)
+            emerging
+        } ?: return false
+        if (emerging) drawn.await(FIRST_FRAME_WAIT_MS, TimeUnit.MILLISECONDS)
+        val accepted = onMain(false) {
+            val wasIdle = !Dictation.state.value.recording
+            Dictation.toggle(context)
+            val st = Dictation.state.value
+            if (emerging && !(wasIdle && st == Dictation.State.Listening)) InsertionService.instance?.abortFlight()
+            st.recording
         }
-        ime?.let(Handoff::heardFrom)
-        val key = key(extras)
-        val wasIdle = !Dictation.state.value.recording
-        Dictation.toggle(context)
-        val st = Dictation.state.value
-        val started = wasIdle && st == Dictation.State.Listening
-        // The bubble comes out of the key only for a dictation this tap began.
-        if (started && key != null) service.emergeFrom(key, extras.px("keyboardTop") ?: key.bounds.top, onDrawn)
-        else onDrawn()
-        return st.recording
+        // The keyboard hides its key as this returns; the copy over it sets off at the same time.
+        if (emerging && accepted) main.post { InsertionService.instance?.releaseFlight() }
+        if (tapAt > 0) Log.i(TAG, "start answered ${SystemClock.uptimeMillis() - tapAt} ms after the tap")
+        return accepted
     }
 
     /**

@@ -120,6 +120,7 @@ class InsertionService : AccessibilityService() {
                 it.locked = locked
                 it.away = away
                 it.show()
+                it.handoffMode(handsOff)
             }
         } else if (!on) {
             overlay?.hide()
@@ -193,11 +194,26 @@ class InsertionService : AccessibilityService() {
 
     private var handsOff = false
 
-    /** Hides the bubble as a keyboard that hands off comes up, shows it again once it's gone. */
+    /**
+     * Hides the bubble as a keyboard that hands off comes up, shows it again once it's gone: gone
+     * for [KEYBOARD_GONE_MS], since its window drops out of the list for a moment as it shows.
+     */
     fun followKeyboard() {
         val now = keyboardHandsOff()
+        main.removeCallbacks(keyboardGone)
         if (now == handsOff) return
-        handsOff = now
+        if (!now) {
+            main.postDelayed(keyboardGone, KEYBOARD_GONE_MS)
+            return
+        }
+        setHandsOff(true)
+    }
+
+    private val keyboardGone = Runnable { if (!keyboardHandsOff()) setHandsOff(false) }
+
+    private fun setHandsOff(on: Boolean) {
+        handsOff = on
+        overlay?.handoffMode(on)
         updateAway()
     }
 
@@ -214,7 +230,20 @@ class InsertionService : AccessibilityService() {
      * The keyboard that started the dictation is coming back, its mic key at [key]: the bubble
      * flies back into it. When, in uptimeMillis, the keyboard should show its key again.
      */
-    internal fun keyboardBack(key: Key?): Long = overlay?.keyboardBack(key) ?: 0L
+    internal fun keyboardBack(key: Key?): Long {
+        key?.let { overlay?.keySeen(it) }
+        return overlay?.keyboardBack(key) ?: 0L
+    }
+
+    /** The keyboard learns its tap started a dictation: the bubble leaves the key. */
+    internal fun releaseFlight() {
+        overlay?.release()
+    }
+
+    /** The dictation [emergeFrom] was for didn't start. */
+    internal fun abortFlight() {
+        overlay?.abortFlight()
+    }
 
     private val goAway = Runnable { away = true }
 
@@ -386,8 +415,12 @@ class InsertionService : AccessibilityService() {
      * focus for a frame, once, and clicks again.
      */
     private fun watchKeyboard(node: AccessibilityNodeInfo) {
+        val asked = SystemClock.uptimeMillis()
         main.postDelayed({
             if (keyboardHidden || keyboardShown() || !canTakeKeyboard(node)) return@postDelayed
+            // A keyboard that hands off said hello since: it's on its way, slowly; taking focus
+            // now would restart it.
+            if (Handoff.helloAt >= asked) return@postDelayed
             Log.d(TAG, "keyboard didn't come back from a click: taking focus for a frame")
             blipFocus(node) {
                 if (!keyboardHidden) {
@@ -574,6 +607,8 @@ class InsertionService : AccessibilityService() {
         /** Long enough for a window to get focus, or get it back. */
         private const val BLIP_TIMEOUT_MS = 400L
         private const val WEB_SETTLE_MS = 100L
+        /** A keyboard's window missing this long has gone, not just blinked out as it showed. */
+        private const val KEYBOARD_GONE_MS = 200L
         private val _connected = MutableStateFlow(false)
         /** True while Android has this service bound, which every background trigger needs. */
         val connected: StateFlow<Boolean> = _connected.asStateFlow()

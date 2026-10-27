@@ -44,6 +44,7 @@ import dev.silver.burble.Prefs
 import dev.silver.burble.recording
 import dev.silver.burble.ui.theme.AppTheme
 import dev.silver.burble.BubbleShape
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -231,6 +232,7 @@ class Overlay(
         scope?.cancel()
         scope = null
         // The target too, should Burble go mid-drag before its own exit ran.
+        keepFlightView = false
         for (v in listOfNotNull(view, touch, pill, target, flightView)) runCatching { windowManager.removeView(v) }
         touch = null; pill = null; target = null; flightView = null
         owner?.destroy()
@@ -318,8 +320,42 @@ class Overlay(
 
     // ---- handoff ----
 
-    /** The flight's own window, while one draws the bubble between the key and the spot. */
+    /**
+     * The flight's own window: the whole screen, so it never moves, drawing the bubble between the
+     * key and the spot. Kept while a keyboard that hands off is up ([handoffMode]), so the first
+     * frame of a flight is the next frame.
+     */
     private var flightView: ComposeView? = null
+    private var keepFlightView = false
+
+    /** A keyboard that hands off is up, or no longer: the flight's window waits, or goes. */
+    fun handoffMode(on: Boolean) {
+        keepFlightView = on
+        if (on) flightView() else {
+            ui.keyCopy.value = null
+            if (ui.flight.value == null) removeFlightView()
+        }
+    }
+
+    /** The keyboard's hello said where its mic key is, and how it looks: its copy waits there. */
+    internal fun keySeen(key: Key) {
+        val k = fitted(key)
+        val copy = Flight(k, k.bounds.centerX to k.bounds.centerY, home(), fade = HandoffMotion.WAITING_ALPHA)
+        ui.keyCopy.value = copy
+        if (warmed) return
+        warmed = true
+        // The listening light's first frame in a process costs hundreds of ms: drawn once now,
+        // unseen, rather than at the first tap.
+        scope?.launch {
+            ui.warming.value = true
+            copy.light.snapTo(1f)
+            repeat(3) { withFrameNanos {} }
+            copy.light.snapTo(0f)
+            ui.warming.value = false
+        }
+    }
+
+    private var warmed = false
 
     private val reducedMotion get() = DurationScale(context).scaleFactor == 0f
 
@@ -334,7 +370,6 @@ class Overlay(
         val s = scope ?: return onDrawn()
         snap?.cancel()
         flying?.cancel()
-        removeFlightView()
         ui.moving.value = false
         val k = fitted(key)
         val size = Prefs.settings.value.bubbleSize * density
@@ -347,15 +382,17 @@ class Overlay(
             flying = s.launch {
                 f.p.snapTo(1f); f.skin.snapTo(0f); f.icon.snapTo(0f); f.light.snapTo(1f); f.fade.snapTo(1f)
                 f.inWindow = false
+                f.inFlightWindow = false
                 onDrawn()
             }
             return
         }
-        val view = addFlightView(f)
+        // Its next frame is the key's copy, where the key is. It holds there, over the key, until
+        // the keyboard hides its key ([release]): then the two never show apart.
+        flightView().viewTreeObserver.registerFrameCommitCallback(onDrawn)
+        val go = CompletableDeferred<Unit>().also { released = it }
         flying = s.launch {
-            // Its first frame is the key's copy, where the key is.
-            f.fade.snapTo(1f)
-            view.viewTreeObserver.registerFrameCommitCallback(onDrawn)
+            go.await()
             launch { f.skin.animateTo(0f, HandoffMotion.skin) }
             launch { f.icon.animateTo(0f, HandoffMotion.icon) }
             launch { delay(HandoffMotion.LIGHT_AFTER_MS); f.light.animateTo(1f, HandoffMotion.light) }
@@ -365,37 +402,65 @@ class Overlay(
         }
     }
 
-    /** A window over the whole way between the key and the spot, drawing [f]; never moves. */
-    private fun addFlightView(f: Flight): ComposeView {
-        val size = Prefs.settings.value.bubbleSize * density
-        val box = f.window(size, Geometry.PAD_DP * density)
+    /** The flight's window over the whole screen, added if it isn't there. */
+    private fun flightView(): ComposeView {
+        flightView?.let { return it }
+        val b = windowManager.currentWindowMetrics.bounds
         val params = overlayParams("Burble flight", WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = box.left.roundToInt(); y = box.top.roundToInt()
-            width = box.width.roundToInt(); height = box.height.roundToInt()
+            x = 0; y = 0
+            width = b.width(); height = b.height()
         }
-        val origin = Offset(params.x.toFloat(), params.y.toFloat())
         val view = ComposeView(context).apply {
             owner?.let { owned(it) }
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-            setContent { AppTheme { FlightBubble(f, origin) } }
+            setContent { AppTheme { FlightBubble(ui) } }
         }
         runCatching { windowManager.addView(view, params) }
         flightView = view
         return view
     }
 
-    /** The bubble's own window shows it, the frame after which the flight's window goes. */
+    /** The bubble's own window shows it, the frame after which the flight's window lets it go. */
     private suspend fun toOwnWindow(f: Flight) {
         f.inWindow = false
         withFrameNanos {}
         withFrameNanos {}
+        f.inFlightWindow = false
         removeFlightView()
     }
 
+    /** The flight's window draws nothing now; it goes too unless a keyboard that hands off is up. */
     private fun removeFlightView() {
+        ui.flight.value?.inFlightWindow = false
+        if (keepFlightView) return
         flightView?.let { runCatching { windowManager.removeView(it) } }
         flightView = null
+    }
+
+    /** The screen turned: the flight's window, the screen's size, comes again. */
+    private fun resizeFlightView() {
+        val keep = keepFlightView
+        keepFlightView = false
+        removeFlightView()
+        keepFlightView = keep
+        if (keep) flightView()
+    }
+
+    private var released: CompletableDeferred<Unit>? = null
+
+    /** The keyboard was told its tap started a dictation, and hides its key: the copy sets off. */
+    internal fun release() {
+        released?.complete(Unit)
+        released = null
+    }
+
+    /** The dictation the key asked for didn't start: no flight, the bubble back home. */
+    internal fun abortFlight() {
+        if (ui.flight.value == null) return
+        endFlight()
+        ui.drag.value = 0f to 0f
+        apply()
     }
 
     /** The bubble's full centre at its anchor, in screen px. */
@@ -480,6 +545,7 @@ class Overlay(
      * with the idle look.
      */
     private fun goHome() {
+        if (ui.flight.value != null) Log.d(TAG, "handoff: no keyboard to go back into, home")
         flying?.cancel()
         waiting?.cancel()
         removeFlightView()
@@ -510,12 +576,14 @@ class Overlay(
         }
         f.homing.value = true
         f.handoverAt = SystemClock.uptimeMillis() + HandoffMotion.RETURN_AFTER_MS + HandoffMotion.HANDOVER_MS
+        Log.d(TAG, "handoff: back into the key, the key shows at ${f.handoverAt}")
         flying = s.launch {
             launch { f.light.animateTo(0f, HandoffMotion.lightOut) }
             delay(HandoffMotion.RETURN_AFTER_MS)
             // The flight's window draws the same frame first, then the bubble's own lets it go.
             f.p.snapTo(1f)
-            addFlightView(f)
+            flightView()
+            f.inFlightWindow = true
             withFrameNanos {}
             withFrameNanos {}
             f.inWindow = true
@@ -530,10 +598,14 @@ class Overlay(
             withFrameNanos {}
             parts.forEach { it.cancel() }
             f.fade.snapTo(0f)
+            withFrameNanos {}
             removeFlightView()
             f.homing.value = false
-            // The keyboard went again meanwhile, or never came: home.
-            if (!ui.away.value) land()
+            // Its hello can come before its window: home only if no keyboard is up a moment later.
+            if (!ui.away.value) {
+                delay(HandoffMotion.LAND_WAIT_MS)
+                land()
+            }
         }
         return f.handoverAt
     }
@@ -549,6 +621,7 @@ class Overlay(
         apply()
         flying = scope?.launch {
             f.inWindow = false
+            f.inFlightWindow = false
             f.p.snapTo(1f)
             f.skin.snapTo(0f)
             f.icon.snapTo(0f)
@@ -749,6 +822,7 @@ class Overlay(
             // share of the height.
             post {
                 endFlight()
+                resizeFlightView()
                 snap?.cancel()
                 ui.moving.value = false
                 ui.drag.value = 0f to 0f
