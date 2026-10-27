@@ -5,6 +5,10 @@ Burble needs Android 12 or later.
 1. Download `burble-<version>.apk` from [the latest release](https://github.com/T0mSIlver/burble/releases/latest), or add `https://github.com/T0mSIlver/burble` to [Obtainium](https://github.com/ImranR98/Obtainium).
 2. Open Burble, tap **Allow microphone**, then turn on Burble in Accessibility settings. Accessibility is the only way Android lets an app type into other apps.
 
+## If Play Protect asks to scan the app
+
+Play Protect hasn't seen a new release before, so it may recommend a scan. **Scan app** sends the APK to Google first. To skip the scan, tap **More details**, then **Install without scanning**.
+
 ## If Android blocks the accessibility switch
 
 Android 13 and later may block it for an app installed from a file. Burble shows these steps when that happens:
