@@ -20,6 +20,10 @@ Burble needs Android 12 or later and uses no Pixel-only part, so the phone's bra
 
 For the blocked switch, follow the restricted settings steps in [Install](install.md); Burble shows them too. If Play Protect warns about an app it doesn't know, check the certificate in [Install](install.md), then open **More details** and choose to install anyway.
 
+### Is Burble registered with Google's developer verification?
+
+No. Burble is not registered with Google's developer verification. It installs normally today; once Google extends the checks to all apps (planned for 2027), your phone may ask you to turn on "install apps from unverified developers" once, which takes a day.
+
 ### Is this the official app?
 
 Burble comes only from [github.com/T0mSIlver/burble](https://github.com/T0mSIlver/burble) and its [Releases](https://github.com/T0mSIlver/burble/releases). It isn't on Google Play. Before installing an APK from anywhere, check it is signed with the certificate in [Install](install.md).
