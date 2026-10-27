@@ -616,11 +616,5 @@ class InsertionService : AccessibilityService() {
         /** The connected service; null when the user hasn't turned it on. */
         @Volatile var instance: InsertionService? = null
             private set
-
-        /** Package of the app whose field has input focus; Rambler gets it as the trigger app. */
-        fun focusedApp(): String? = runCatching {
-            instance?.let { it.restoring ?: it.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }
-                ?.packageName?.toString()
-        }.getOrNull()
     }
 }

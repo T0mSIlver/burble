@@ -99,7 +99,8 @@ object Dictation {
         val request = S3Request(
             language = languages.firstOrNull() ?: Locale.getDefault().toLanguageTag(),
             extraLanguages = languages.drop(1),
-            triggerApp = InsertionService.focusedApp(),
+            // The field's app, never Burble's own: Gboard sends the app being typed into.
+            triggerApp = target?.packageName?.takeIf { it != app.packageName },
         )
         val dir = File(pendingDir(app), System.currentTimeMillis().toString())
         saveRequest(dir, request)

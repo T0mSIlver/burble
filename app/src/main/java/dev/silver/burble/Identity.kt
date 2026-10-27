@@ -16,7 +16,12 @@ internal object Identity {
     const val CLIENT = "gboard"
     /** Gboard's versionName ("18.5.3.…") cut to major.minor, as Gboard does before sending it. */
     const val VERSION = "18.5"
-    const val ROUTING_KEY = "gboard_gemini_v3_streaming_voice_edit_mul"
+    /**
+     * The live value of Gboard's server-set flag jetson_experiment_recognizer_routing_key, as
+     * Gboard 18.4.1 logged it (RMB-34); the app's built-in default is
+     * "gboard_gemini_v3_streaming_voice_edit_mul".
+     */
+    const val ROUTING_KEY = "gboard-rambler"
 
     /** OpusTags vendor of Gboard's native Ogg writer (libintegrated_shared_object.so). */
     const val OGG_VENDOR = "Google using libopus"
