@@ -132,7 +132,10 @@ class S3Stream(
     private fun write(sink: BufferedSink, elapsedMs: () -> Long) {
         try {
             sink.use { out ->
-                out.write(grpcFrame(s3Header(request, elapsedMs()))).flush()
+                val header = s3Header(request, elapsedMs())
+                // Debug builds only: the exact header, to compare with a captured Gboard request.
+                if (BuildConfig.DEBUG) Log.d(TAG, "S3 header base64 " + android.util.Base64.encodeToString(header, android.util.Base64.NO_WRAP))
+                out.write(grpcFrame(header)).flush()
                 Latency.mark("header sent")
                 val chunks = Chunker(Identity.CHUNK)
                 var sent = false
