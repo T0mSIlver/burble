@@ -258,14 +258,22 @@ class InsertionService : AccessibilityService() {
 
     private fun isField(n: AccessibilityNodeInfo) = n.isEditable && !n.isPassword
 
-    /** A focused text field under [container], a few levels down. */
-    private fun focusedFieldIn(container: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
-        if (depth > 0 && container.isFocused && isField(container)) return container
-        if (depth >= 8) return null
-        for (i in 0 until container.childCount) {
-            container.getChild(i)?.let { focusedFieldIn(it, depth + 1) }?.let { return it }
+    /**
+     * A focused text field under [container], a few levels down. At most [FIELD_SEARCH_NODES]
+     * nodes: each is a call into the app, and focus can rest on a whole web page.
+     */
+    private fun focusedFieldIn(container: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var budget = FIELD_SEARCH_NODES
+        fun walk(n: AccessibilityNodeInfo, depth: Int): AccessibilityNodeInfo? {
+            if (depth > 0 && n.isFocused && isField(n)) return n
+            if (depth >= 8) return null
+            for (i in 0 until n.childCount) {
+                if (--budget < 0) return null
+                n.getChild(i)?.let { walk(it, depth + 1) }?.let { return it }
+            }
+            return null
         }
-        return null
+        return walk(container, 0)
     }
 
     /** The last text field that took focus, by a tap or its app's own doing. */
@@ -509,6 +517,8 @@ class InsertionService : AccessibilityService() {
         private const val TAG = "Insert"
         /** How long after a finger goes down its tap may still move focus. */
         private const val TAP_MS = 1500L
+        /** How many nodes the search for a field inside a focused container visits at most. */
+        private const val FIELD_SEARCH_NODES = 200
         /** Set on every node of a page in Chrome or a WebView. */
         private const val CHROME_ROLE = "AccessibilityNodeInfo.chromeRole"
         /** A keyboard asked for has its window within about 350 ms on an emulator. */
