@@ -2,6 +2,8 @@ package dev.silver.burble
 
 import android.graphics.Rect
 import dev.silver.burble.InsertionService.Companion.findAgain
+import dev.silver.burble.InsertionService.Companion.findRecreated
+import dev.silver.burble.InsertionService.Seen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -31,5 +33,30 @@ class FindAgainTest {
     @Test fun theSameIdWins() {
         val fields = listOf(null to Rect(0, 1800, 1080, 1900), "app:id/text" to Rect(0, 50, 500, 100))
         assertEquals(1, findAgain("app:id/text", bar, fields))
+    }
+
+    // An app recreated when the screen turns: its fields are new nodes in a new window.
+    private val edit = "android.widget.EditText"
+
+    @Test fun aRecreatedFieldIsFoundByItsId() {
+        val fields = listOf(Seen("app:id/to", edit, null, true), Seen("app:id/text", edit, "Message", false))
+        assertEquals(1, findRecreated(Seen("app:id/text", edit, "Message", true), fields))
+    }
+
+    @Test fun anIdThatsGoneIsAnotherScreen() {
+        assertNull(findRecreated(Seen("app:id/text", edit, null, true), listOf(Seen("app:id/search", edit, null, true))))
+        assertNull(findRecreated(Seen("app:id/text", edit, null, true), listOf(Seen(null, edit, null, true))))
+    }
+
+    @Test fun withoutAnIdTheFieldOfItsClassWithItsHint() {
+        val fields = listOf(Seen(null, edit, "Search", false), Seen(null, edit, "Message", false))
+        assertEquals(1, findRecreated(Seen(null, edit, "Message", true), fields))
+        assertNull(findRecreated(Seen(null, edit, "Subject", true), fields))
+    }
+
+    @Test fun twoAlikeTheFocusedOneElseNone() {
+        val alike = listOf(Seen(null, edit, null, false), Seen(null, edit, null, true))
+        assertEquals(1, findRecreated(Seen(null, edit, null, true), alike))
+        assertNull(findRecreated(Seen(null, edit, null, true), alike.map { it.copy(focused = false) }))
     }
 }

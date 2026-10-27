@@ -12,7 +12,6 @@ import androidx.test.uiautomator.Until
 import dev.silver.burble.Dictation
 import org.junit.After
 import org.junit.Assume.assumeTrue
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -70,10 +69,8 @@ class DictationTest {
 
     /**
      * The same over an app that is recreated on rotation, as most apps are: its field is in a new
-     * window, which InsertionService.current refuses, so the words go to the clipboard. Found by
-     * this suite on the emulator, 2026-10-27; for Tom to decide (RMB-29).
+     * window, where Burble finds it again by its id (RMB-29).
      */
-    @Ignore("Burble copies instead of inserting when the app under it is recreated mid-dictation (RMB-29)")
     @Test fun survivesRotationOfARecreatedApp() {
         Lab.setUp(answer = "Burble lab three")
         Lab.openHost()

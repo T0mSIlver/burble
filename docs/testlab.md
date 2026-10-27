@@ -19,7 +19,8 @@ user does: a tap on the bubble.
 |---|---|
 | `DictationTest.landsInAnotherAppsField` | Tap the bubble over another app's field (the test APK's own `HostActivity`): the words land in it. With `server on`, the clip goes to Google's server: **the only request of the run** |
 | `DictationTest.landsInTheStockMessagingApp` | The same in the phone's own messaging app (its compose box) with its own keyboard; a new contact's name where there is no messaging app |
-| `DictationTest.survivesRotationMidDictation` | The screen turns while listening, the app under it is recreated: the words still land, the bubble stays on screen |
+| `DictationTest.survivesRotationMidDictation` | The screen turns while listening, over an app that keeps its window: the words still land, the bubble stays on screen |
+| `DictationTest.survivesRotationOfARecreatedApp` | The same over an app recreated on rotation, as most are: the words land in its field in the new window |
 | `OverlayTest.showsDocksAndComesBack` | The bubble shows, docks to the edge 2 s after the last touch, is full size while listening, docks again after |
 | `BackgroundTest.survivesAMinuteInTheBackground` | A minute on the home screen with the screen off: same process, the accessibility service still bound, the next dictation lands |
 | `BackgroundTest.microphoneServiceIsNotSilenced` | The real microphone, opened from a tap over another app: the foreground service has the microphone type and Android doesn't silence the recording. Nothing is sent |

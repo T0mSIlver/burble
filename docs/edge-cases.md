@@ -87,7 +87,7 @@ Status: ✅ covered and passing, 👤 needs the phone, ❌ fails, open. **Lab**:
 | Field rebuilt when the keyboard hides: found again by focus, id, only field, or edges at or below | Unit `FindAgainTest`; emulator | ✅ |
 | Field that drops focus when the keyboard hides | Emulator (`DebugFieldsActivity`) | ✅ |
 | Rotation mid-dictation over an app that keeps its window | Lab `DictationTest.survivesRotationMidDictation` | ✅ |
-| Rotation mid-dictation over an app recreated on rotation (most apps): its field is in a new window, which `InsertionService.current` refuses, so the words go to the clipboard | Lab `DictationTest.survivesRotationOfARecreatedApp` (`@Ignore` until decided, RMB-29) | ❌ |
+| Rotation mid-dictation over an app recreated on rotation (most apps): its field is in a new window; after a configuration change, the same app's windows on screen are searched: the field with the same id; without one, the one of its class with its hint, else the focused one of those. No match, two, an id that's gone, or another app → clipboard | Unit `FindAgainTest.aRecreatedFieldIsFoundByItsId` and three more; Lab `DictationTest.survivesRotationOfARecreatedApp` (emulator, Android 16: found by its id, the words land) | ✅ |
 | Another app's field, the stock messaging or contacts app with the phone's own keyboard | Lab `DictationTest` | ✅ emulator, Test Lab waits on Tom |
 | Claude app, Messages with hide-keyboard on, on the phone | 👤 1 | 👤 |
 

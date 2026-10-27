@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Bundle
@@ -296,8 +297,7 @@ class InsertionService : AccessibilityService() {
     private fun noteTap(event: AccessibilityEvent) {
         val node = event.source ?: return
         if (!node.isEditable || node.isPassword) return
-        tapped = Target(node, event.packageName?.toString(), node.windowId, node.viewIdResourceName,
-            Rect().also(node::getBoundsInScreen))
+        tapped = targetOf(node, event.packageName?.toString())
     }
 
     fun tappedTarget(): Target? = tapped
@@ -489,14 +489,29 @@ class InsertionService : AccessibilityService() {
     /** The field a dictation would go into now, with its app; never a password field. */
     fun captureTarget(): Target? {
         val node = focusedField() ?: return null
-        return Target(node, node.packageName?.toString(), node.windowId, node.viewIdResourceName,
-            Rect().also(node::getBoundsInScreen))
+        return targetOf(node, node.packageName?.toString())
+    }
+
+    private fun targetOf(node: AccessibilityNodeInfo, packageName: String?) = Target(node, packageName, node.windowId,
+        node.viewIdResourceName, Rect().also(node::getBoundsInScreen), node.className?.toString(),
+        node.hintText?.toString(), configurations)
+
+    /**
+     * How many times the configuration changed (the screen turned, dark theme, …) since the
+     * service started: each may recreate the app under the bubble in a new window.
+     */
+    private var configurations = 0
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        configurations++
     }
 
     /**
      * Types [text] into [target] at its cursor, replacing any selection, or at its end when it
      * no longer has focus. Returns the field, or null when it's gone (its window closed, or its
-     * app went to the background), can't be told apart from another, or takes a password.
+     * app went to the background), can't be told apart from another, or takes a password. A
+     * field whose app was recreated (the screen turned) is the same field in its new window.
      */
     fun insert(target: Target, text: String): AccessibilityNodeInfo? {
         val node = current(target) ?: return null
@@ -542,7 +557,8 @@ class InsertionService : AccessibilityService() {
      * looked for again in the same window of the same app: the one field with the same id, else
      * the one field at the same left and right edges at or below where it was (the bar moves down
      * as the keyboard goes). Two candidates, or none, and the text waits for the user instead: it
-     * never goes into a field that merely has focus now.
+     * never goes into a field that merely has focus now. An app recreated by a configuration
+     * change (most apps when the screen turns) has its field in a new window: see [recreated].
      */
     private fun current(target: Target): AccessibilityNodeInfo? {
         // Only into a window on screen now: a field in an app the user left gets nothing, now or
@@ -550,17 +566,13 @@ class InsertionService : AccessibilityService() {
         // popup or a split screen leaves its field in view.
         val root = windows.firstOrNull { it.id == target.windowId }?.root
         if (root == null || root.packageName?.toString() != target.packageName) {
+            if (configurations != target.configurations) return recreated(target)
             Log.d(TAG, "insert fell back: ${target.packageName}'s window is no longer on screen")
             return null
         }
         val node = target.node
         if (node.refresh() && node.isEditable && node.windowId == target.windowId) return node
-        val fields = mutableListOf<AccessibilityNodeInfo>()
-        fun walk(n: AccessibilityNodeInfo, depth: Int) {
-            if (n.isEditable && !n.isPassword) fields += n
-            if (depth < 64) for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
-        }
-        walk(root, 0)
+        val fields = fieldsIn(root)
         val found = findAgain(target.viewId, target.bounds, fields.map { it.viewIdResourceName to Rect().also(it::getBoundsInScreen) })
             ?.let(fields::get)
         Log.d(TAG, if (found == null) "insert fell back: the start field is gone or ambiguous (${fields.size} fields in ${target.packageName})"
@@ -568,14 +580,50 @@ class InsertionService : AccessibilityService() {
         return found
     }
 
-    /** A text field and the app it belongs to, with what finds it again once redrawn. */
+    /**
+     * [target]'s field after its window closed while the configuration changed: the app was
+     * recreated, so the field is looked for in the same app's windows on screen now, by
+     * [findRecreated]. Another app never gets the words, nor a field that doesn't clearly match.
+     */
+    private fun recreated(target: Target): AccessibilityNodeInfo? {
+        val fields = windows.mapNotNull { it.root }.filter { it.packageName?.toString() == target.packageName }
+            .flatMap(::fieldsIn)
+        val found = findRecreated(target.seen(), fields.map { it.seen() })?.let(fields::get)
+        Log.d(TAG, if (found == null) "insert fell back: ${target.packageName} was recreated; its field is gone or ambiguous (${fields.size} fields)"
+            else "${target.packageName} was recreated; found its field again")
+        return found
+    }
+
+    private fun fieldsIn(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
+        val fields = mutableListOf<AccessibilityNodeInfo>()
+        fun walk(n: AccessibilityNodeInfo, depth: Int) {
+            if (n.isEditable && !n.isPassword) fields += n
+            if (depth < 64) for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
+        }
+        walk(root, 0)
+        return fields
+    }
+
+    private fun AccessibilityNodeInfo.seen() =
+        Seen(viewIdResourceName, className?.toString(), hintText?.toString(), isFocused)
+
+    /** A text field and the app it belongs to, with what finds it again once redrawn or recreated. */
     class Target(
         val node: AccessibilityNodeInfo,
         val packageName: String?,
         val windowId: Int,
         val viewId: String?,
         val bounds: Rect,
-    )
+        val className: String?,
+        val hint: String?,
+        /** The service's count of configuration changes when the field was taken. */
+        val configurations: Int,
+    ) {
+        internal fun seen() = Seen(viewId, className, hint, focused = true)
+    }
+
+    /** What tells a field apart in a recreated window, where its node and bounds are new. */
+    internal data class Seen(val viewId: String?, val className: String?, val hint: String?, val focused: Boolean)
 
     companion object {
         /**
@@ -592,6 +640,19 @@ class InsertionService : AccessibilityService() {
                 b.left == bounds.left && b.right == bounds.right && b.top >= bounds.top
             }
             return below.singleOrNull()
+        }
+
+        /**
+         * Which of [fields] is [start] in its app's recreated window: the one with its view id;
+         * with no id, the one of its class with its hint, else the focused one of those. Null
+         * unless exactly one matches, and when its id is gone: another screen, not the same one.
+         */
+        internal fun findRecreated(start: Seen, fields: List<Seen>): Int? {
+            if (start.viewId != null) return fields.indices.singleOrNull { fields[it].viewId == start.viewId }
+            val alike = fields.indices.filter {
+                fields[it].viewId == null && fields[it].className == start.className && fields[it].hint == start.hint
+            }
+            return alike.singleOrNull() ?: alike.singleOrNull { fields[it].focused }
         }
 
         private const val AWAY_MS = 400L
