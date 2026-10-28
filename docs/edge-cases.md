@@ -122,7 +122,6 @@ A patched Gboard's mic key starts Burble's dictation (Burble's design notes spec
 | Try it with a real dictation | 👤 7 | 👤 |
 | Sideloaded install: the restricted-settings unlock works | 👤 3 | 👤 |
 | Home states: setup, stopped, off, update, 200 % font | Screenshot `ScreenshotTest.home*` | ✅ |
-| About: the thanks to PixelBoard (Akshay Kadam) and JasonWu's Gboard patch project above the disclaimer, each name a link | Screenshot `ScreenshotTest.about`; emulator (the PixelBoard link opens the browser) | ✅ |
 | Preview pinned above its controls while they scroll | Emulator recording | ✅ |
 | Keyboard languages: current first, then enabled, deduplicated; none → phone's | Unit `KeyboardLanguagesTest`; emulator (app locale French still reads Gboard's English) | ✅ |
 | A keyboard with two languages on the phone | 👤 5 | 👤 |
