@@ -128,6 +128,10 @@
     <string name="report_test_failed">Google didn\'t answer: %1$s</string>
     <string name="bubble_look">Bubble look</string>
     <string name="updates_install_short">Install</string>
+    <!-- About, above the disclaimer: %1$s and %2$s are links, with the texts below. -->
+    <string name="about_thanks">Burble exists because %1$s by Akshay Kadam proved Rambler works on any phone. Burble\'s reverse engineering started from PixelBoard\'s build and the Gboard code it patches. PixelBoard builds on %2$s.</string>
+    <string name="about_thanks_pixelboard">PixelBoard</string>
+    <string name="about_thanks_jasonwu">JasonWu\'s original Gboard patch project</string>
     <string name="about_disclaimer">Burble is not affiliated with Google. Your dictation audio goes to Google\'s servers, through a service Google has not opened to other apps, and it may stop working at any time.</string>
     <string name="overlay_copied">Copied</string>
 </resources>

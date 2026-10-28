@@ -58,6 +58,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import dev.silver.burble.BubbleShow
 import dev.silver.burble.R
@@ -282,9 +288,41 @@ private fun Missing(label: Int?, detail: Int?, action: Int, onClick: () -> Unit)
     }
 }
 
+/** PixelBoard and the Gboard patch project it builds on, each name a link. */
+@Composable
+private fun Thanks(actions: HomeActions) {
+    val colors = MaterialTheme.colorScheme
+    val style = TextLinkStyles(SpanStyle(color = colors.primary, textDecoration = TextDecoration.Underline))
+    val links = listOf(
+        stringResource(R.string.about_thanks_pixelboard) to PIXELBOARD,
+        stringResource(R.string.about_thanks_jasonwu) to GBOARD_PATCHES,
+    )
+    val template = stringResource(R.string.about_thanks)
+    val text = buildAnnotatedString {
+        var rest = template
+        links.forEachIndexed { i, (label, url) ->
+            val (before, after) = rest.split("%${i + 1}\$s", limit = 2)
+            append(before)
+            withLink(LinkAnnotation.Clickable(url, style) { actions.openUrl(url) }) { append(label) }
+            rest = after
+        }
+        append(rest)
+    }
+    Text(
+        text,
+        Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = colors.onSurfaceVariant,
+    )
+}
+
+private const val PIXELBOARD = "https://github.com/Akshayykadam/PixelBoard"
+private const val GBOARD_PATCHES = "https://github.com/jasonwu1994/Gboard-patches"
+
 /**
  * One tap from home: the version with the automatic update check, the update's details while
- * there is one, report a problem, privacy, licences, source and the disclaimer.
+ * there is one, report a problem, privacy, licences, source, the thanks to PixelBoard and the
+ * disclaimer.
  */
 @Composable
 private fun About(settings: Settings, update: Updater.State, version: String, actions: HomeActions, onLicences: () -> Unit, onBack: () -> Unit) {
@@ -305,6 +343,7 @@ private fun About(settings: Settings, update: Updater.State, version: String, ac
     SubScreen(stringResource(R.string.section_about), onBack) {
         item { Spacer(Modifier.size(8.dp)) }
         item { Group(rows) }
+        item { Thanks(actions) }
         item {
             Text(
                 stringResource(R.string.about_disclaimer),
