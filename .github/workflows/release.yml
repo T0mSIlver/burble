@@ -1,5 +1,5 @@
 # Release (RELEASING.md). A pushed v* tag tests, lints and builds the release APK, signs it with the
-# key in the repository's RELEASE_* secrets, checks the certificate against docs/install.md, and
+# key in the repository's BURBLE_* secrets, checks the certificate against docs/install.md, and
 # attaches burble-<version>.apk and its SHA-256 to a DRAFT release. Tom publishes the draft by hand:
 # nothing here ever publishes. The in-app updater and Obtainium install only APKs signed with the
 # same key as the installed app, so the key comes from those secrets and nowhere else.
@@ -49,10 +49,10 @@ jobs:
           TAG: ${{ github.ref_name }}
           INPUT_VERSION: ${{ inputs.version }}
           # Only tested for being set, never printed.
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          BURBLE_KEYSTORE: ${{ secrets.BURBLE_KEYSTORE }}
+          BURBLE_KEYSTORE_PASSWORD: ${{ secrets.BURBLE_KEYSTORE_PASSWORD }}
+          BURBLE_KEY_ALIAS: ${{ secrets.BURBLE_KEY_ALIAS }}
+          BURBLE_KEY_PASSWORD: ${{ secrets.BURBLE_KEY_PASSWORD }}
         run: |
           if [ "$EVENT" = push ]; then version="${TAG#v}"; else version="$INPUT_VERSION"; fi
           # versionCode is major*10000 + minor*100 + patch (app/build.gradle.kts).
@@ -61,7 +61,7 @@ jobs:
             exit 1
           fi
           missing=""
-          for name in RELEASE_KEYSTORE_BASE64 RELEASE_KEYSTORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+          for name in BURBLE_KEYSTORE BURBLE_KEYSTORE_PASSWORD BURBLE_KEY_ALIAS BURBLE_KEY_PASSWORD; do
             [ -n "${!name}" ] || missing="$missing $name"
           done
           if [ -z "$missing" ]; then
@@ -124,11 +124,11 @@ jobs:
       - name: Signed APK
         if: env.SIGNED == 'true'
         env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.BURBLE_KEYSTORE }}
           # The names app/build.gradle.kts reads.
-          BURBLE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          BURBLE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          BURBLE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          BURBLE_KEYSTORE_PASSWORD: ${{ secrets.BURBLE_KEYSTORE_PASSWORD }}
+          BURBLE_KEY_ALIAS: ${{ secrets.BURBLE_KEY_ALIAS }}
+          BURBLE_KEY_PASSWORD: ${{ secrets.BURBLE_KEY_PASSWORD }}
         run: |
           keystore="$RUNNER_TEMP/release.jks"
           (umask 077 && printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$keystore")
@@ -174,7 +174,7 @@ jobs:
             fi
           } > dist/fingerprint.md
           {
-            if [ -n "$cert" ]; then echo "### Burble $VERSION, signed"; else echo "### Burble $VERSION: signing skipped (no RELEASE_* secrets), unsigned APK"; fi
+            if [ -n "$cert" ]; then echo "### Burble $VERSION, signed"; else echo "### Burble $VERSION: signing skipped (no BURBLE_* secrets), unsigned APK"; fi
             [ "$GITHUB_EVENT_NAME" = push ] || echo "Dry run: no release was created."
             echo
             cat dist/fingerprint.md

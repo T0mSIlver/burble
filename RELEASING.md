@@ -13,14 +13,15 @@ updater, Obtainium and IzzyOnDroid all depend on two things never changing:
   must grow). The updater takes the release's first `.apk` asset, and Obtainium and IzzyOnDroid
   match the name. The checksum file ends in `.sha256`, so none of them mistake it for the APK.
 
-The release key and its password are in Tom's Vaultwarden (one password for the store and the
-key). They never enter the repository, and only Tom handles them.
+The release key and its password are in Tom's Vaultwarden, item "Burble Android release keystore"
+in "Keys - irreplaceable" (one password for the store and the key), and in the repository's
+`BURBLE_*` secrets for CI. They never enter the repository, and only Tom handles them.
 
 ## CI: `.github/workflows/release.yml`
 
 Pushing a tag `v1.2.3`:
 
-1. checks the tag is a release version and the four `RELEASE_*` secrets are set, and stops there
+1. checks the tag is a release version and the four `BURBLE_*` secrets are set, and stops there
    with an error saying which are missing if not, before building anything;
 2. checks the Gradle wrapper jar against Gradle's published checksum, installs a fixed JDK
    (Temurin 21.0.13), platform `android-37.0` and build-tools 37.0.0;
@@ -40,23 +41,20 @@ repository's code, can write to the repository. Actions are pinned to commit SHA
 
 ### Turn it on (Tom, once)
 
-The workflow is inert until these four repository secrets exist. Run this from a clone of the
-repository on your Mac, with the keystore exported from Vaultwarden to a temporary file. `gh secret
-set` reads the value from stdin, so nothing lands in shell history:
+The workflow reads the four repository secrets set on 2026-10-24: `BURBLE_KEYSTORE` (the keystore,
+base64), `BURBLE_KEYSTORE_PASSWORD`, `BURBLE_KEY_ALIAS` (`burble`) and `BURBLE_KEY_PASSWORD` (the
+same password). They are already in place, so the workflow only waits for GitHub Actions to run on
+the repository: on the private repository Actions is blocked by a billing error, and public
+repositories get Actions for free, so it starts working when the repository goes public.
+`gh secret list` shows the names, never the values. If the key ever has to be uploaded again:
 
 ```bash
-base64 -i burble-release.jks | gh secret set RELEASE_KEYSTORE_BASE64
-gh secret set RELEASE_KEYSTORE_PASSWORD   # paste the password at the prompt
-gh secret set RELEASE_KEY_PASSWORD        # the same password
-printf burble | gh secret set RELEASE_KEY_ALIAS
+base64 -i burble-release.jks | gh secret set BURBLE_KEYSTORE
+gh secret set BURBLE_KEYSTORE_PASSWORD    # paste the password at the prompt
+gh secret set BURBLE_KEY_PASSWORD         # the same password
+printf burble | gh secret set BURBLE_KEY_ALIAS
 rm -P burble-release.jks                  # remove the exported copy
-gh secret list                            # the four RELEASE_* names, no values
 ```
-
-The repository also holds `BURBLE_KEYSTORE`, `BURBLE_KEYSTORE_PASSWORD`, `BURBLE_KEY_ALIAS` and
-`BURBLE_KEY_PASSWORD`, set on 2026-10-24 for the earlier workflow. Nothing reads them now: delete
-them (`gh secret delete BURBLE_KEYSTORE`, and so on for the other three) once the `RELEASE_*`
-ones are in.
 
 Then do a dry run: **Actions → Release → Run workflow** (or `gh workflow run release.yml -f
 version=0.0.1`). It builds, signs and checks the certificate, writes the APK's SHA-256 and
@@ -103,5 +101,5 @@ git tag v1.2.3 && git push origin v1.2.3         # once CI is on, this tag push 
 gh release create v1.2.3 burble-1.2.3.apk burble-1.2.3.apk.sha256 --draft --title "Burble 1.2.3" --generate-notes
 ```
 
-Once the `RELEASE_*` secrets are set, the tag push also starts release.yml. It finds your draft and
+Once Actions runs on the repository, the tag push also starts release.yml. It finds your draft and
 replaces its files with its own build of the same commit, signed with the same key.
