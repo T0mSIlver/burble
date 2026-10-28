@@ -1,82 +1,234 @@
-# Builds the signed release APK when a v* tag is pushed and attaches it to that tag's GitHub
-# release, creating the release if it doesn't exist yet. The in-app updater installs this APK, and
-# only if it is signed with the same key as the running app, so the key comes from the repository's
-# secrets and nowhere else.
+# Release (RELEASING.md). A pushed v* tag tests, lints and builds the release APK, signs it with the
+# key in the repository's RELEASE_* secrets, checks the certificate against docs/install.md, and
+# attaches burble-<version>.apk and its SHA-256 to a DRAFT release. Tom publishes the draft by hand:
+# nothing here ever publishes. The in-app updater and Obtainium install only APKs signed with the
+# same key as the installed app, so the key comes from those secrets and nowhere else.
+#
+# Without the secrets a tag push stops in the first job and says so. Run by hand (workflow_dispatch)
+# it is a dry run that never touches releases: signed and checked if the secrets are there, else
+# unsigned.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. 1.2.3 (dry run: no release is created)"
+        required: true
+        default: "0.0.1"
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Fixed toolchain, so a release builds the same way twice. Bump these on purpose, with a dry run.
+  JAVA_VERSION: "21.0.13"
+  ANDROID_PLATFORM: "platforms;android-37.0"
+  ANDROID_BUILD_TOOLS: "37.0.0"
 
 jobs:
-  apk:
-    runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.ref_name }}
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      signed: ${{ steps.check.outputs.signed }}
     steps:
-      - uses: actions/checkout@v4
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          # Only tested for being set, never printed.
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ "$EVENT" = push ]; then version="${TAG#v}"; else version="$INPUT_VERSION"; fi
+          # versionCode is major*10000 + minor*100 + patch (app/build.gradle.kts).
+          if ! [[ "$version" =~ ^[0-9]+\.([0-9]{1,2})\.([0-9]{1,2})$ ]]; then
+            echo "::error::'$version' is not a release version: tags are vMAJOR.MINOR.PATCH, minor and patch below 100 (RELEASING.md)"
+            exit 1
+          fi
+          missing=""
+          for name in RELEASE_KEYSTORE_BASE64 RELEASE_KEYSTORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -z "$missing" ]; then
+            signed=true
+          elif [ "$EVENT" = push ]; then
+            echo "::error title=Release CI is not set up::The repository secrets$missing are missing, so $TAG can't be signed and nothing was built. Add them as RELEASING.md says and re-run this workflow, or release locally (RELEASING.md)."
+            exit 1
+          else
+            signed=false
+            echo "::notice title=Signing skipped::The secrets$missing are missing: this dry run builds an unsigned APK."
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "signed=$signed" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-java@v4
+  build:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      SIGNED: ${{ needs.preflight.outputs.signed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: 21
+          java-version: ${{ env.JAVA_VERSION }}
 
-      - uses: android-actions/setup-android@v3
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      - name: Signing key
-        env:
-          BURBLE_KEYSTORE_BASE64: ${{ secrets.BURBLE_KEYSTORE }}
+      - name: Gradle wrapper
         run: |
-          # A release signed with any other key couldn't update installed copies: stop here.
-          if [ -z "$BURBLE_KEYSTORE_BASE64" ]; then echo "::error::The BURBLE_KEYSTORE secret is missing"; exit 1; fi
-          echo "$BURBLE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/burble.jks"
-          echo "BURBLE_KEYSTORE=$RUNNER_TEMP/burble.jks" >> "$GITHUB_ENV"
+          # The wrapper jar runs before anything else: it must be Gradle's own for that version.
+          # The distribution it downloads is pinned by distributionSha256Sum.
+          props=gradle/wrapper/gradle-wrapper.properties
+          gradle="$(sed -nE 's#^distributionUrl=.*/gradle-([0-9.]+)-bin\.zip$#\1#p' "$props")"
+          grep -q '^distributionSha256Sum=[0-9a-f]\{64\}$' "$props" || { echo "::error::$props lacks distributionSha256Sum"; exit 1; }
+          expected="$(curl -fsSL --retry 3 "https://services.gradle.org/distributions/gradle-$gradle-wrapper.jar.sha256")"
+          for jar in $(git ls-files '*gradle-wrapper*.jar'); do
+            actual="$(sha256sum "$jar" | cut -d' ' -f1)"
+            [ "$jar" = gradle/wrapper/gradle-wrapper.jar ] && [ "$actual" = "$expected" ] ||
+              { echo "::error::$jar is not Gradle $gradle's wrapper jar"; exit 1; }
+          done
+          echo "Gradle $gradle, wrapper jar $expected"
 
-      - name: Build
-        env:
-          BURBLE_KEYSTORE_PASSWORD: ${{ secrets.BURBLE_KEYSTORE_PASSWORD }}
-          BURBLE_KEY_ALIAS: ${{ secrets.BURBLE_KEY_ALIAS }}
-          BURBLE_KEY_PASSWORD: ${{ secrets.BURBLE_KEY_PASSWORD }}
-        # Nothing ships that fails its tests or lint.
-        run: ./gradlew --no-daemon -PversionName="${TAG#v}" testDebugUnitTest lintRelease assembleRelease
-
-      - name: Name and fingerprint
+      - name: Android SDK
         run: |
-          version="${TAG#v}"
-          apk="burble-$version.apk"
-          cp app/build/outputs/apk/release/app-release.apk "$apk"
-          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
-          "$apksigner" verify --print-certs "$apk" | tee certs.txt
-          # "Signer #1 certificate SHA-256 digest: …" or, from build-tools 37, "V2 Signer: certificate …".
-          cert="$(sed -nE 's/^.*[Ss]igner.*certificate SHA-256 digest: //p' certs.txt | head -1)"
-          [ -n "$cert" ] || { echo "::error::No signing certificate in $apk"; exit 1; }
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          (yes || true) | "$sdkmanager" --licenses > /dev/null
+          "$sdkmanager" --install "$ANDROID_PLATFORM" "build-tools;$ANDROID_BUILD_TOOLS" > /dev/null
+          echo "APKSIGNER=$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS/apksigner" >> "$GITHUB_ENV"
+
+      # Without the key in the environment: the tests never see it. Nothing ships that fails them.
+      - name: Tests and lint
+        run: ./gradlew --no-daemon -PversionName="$VERSION" testDebugUnitTest lintRelease
+
+      - name: Signed APK
+        if: env.SIGNED == 'true'
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          # The names app/build.gradle.kts reads.
+          BURBLE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          BURBLE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          BURBLE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          keystore="$RUNNER_TEMP/release.jks"
+          (umask 077 && printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$keystore")
+          unset RELEASE_KEYSTORE_BASE64
+          BURBLE_KEYSTORE="$keystore" ./gradlew --no-daemon -PversionName="$VERSION" assembleRelease
+          rm -f "$keystore"
+          cp app/build/outputs/apk/release/app-release.apk "burble-$VERSION.apk"
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Unsigned APK
+        if: env.SIGNED != 'true'
+        run: |
+          ./gradlew --no-daemon -PversionName="$VERSION" -PunsignedRelease assembleRelease
+          cp app/build/outputs/apk/release/app-release-unsigned.apk "burble-$VERSION-unsigned.apk"
+
+      - name: Check signature and checksum
+        run: |
+          mkdir dist
+          if [ "$SIGNED" = true ]; then
+            apk="burble-$VERSION.apk"
+            # Fails unless it is signed with the certificate docs/install.md publishes.
+            cert="$(tools/verify-apk.sh "$apk")"
+          else
+            apk="burble-$VERSION-unsigned.apk"
+            cert=""
+          fi
+          sha="$(sha256sum "$apk" | cut -d' ' -f1)"
+          mv "$apk" dist/
+          (cd dist && sha256sum "$apk" > "$apk.sha256")
           {
-            echo
+            echo "<!-- release.yml: APK -->"
             echo "---"
             echo "**$apk**"
             echo
-            echo "- SHA-256 of the APK: \`$(sha256sum "$apk" | cut -d' ' -f1)\`"
-            echo "- Signing certificate SHA-256: \`$cert\`"
+            echo "- SHA-256 of the APK: \`$sha\`"
+            if [ -n "$cert" ]; then
+              echo "- Signing certificate SHA-256: \`$cert\`"
+              echo
+              echo "Check with \`apksigner verify --print-certs $apk\`, or in AppVerifier."
+            fi
+          } > dist/fingerprint.md
+          {
+            if [ -n "$cert" ]; then echo "### Burble $VERSION, signed"; else echo "### Burble $VERSION: signing skipped (no RELEASE_* secrets), unsigned APK"; fi
+            [ "$GITHUB_EVENT_NAME" = push ] || echo "Dry run: no release was created."
             echo
-            echo "Check with \`apksigner verify --print-certs $apk\`, or in AppVerifier."
-          } > fingerprint.md
-          echo "APK=$apk" >> "$GITHUB_ENV"
+            cat dist/fingerprint.md
+          } >> "$GITHUB_STEP_SUMMARY"
+          ls -l dist
 
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Keep for the release job
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: dist/
+          retention-days: 3
+          if-no-files-found: error
+
+  release:
+    needs: [preflight, build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The only job that can write, and it runs none of the repository's code.
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.preflight.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: dist
+
+      - name: Draft release
         run: |
-          # A release written by hand before the tag keeps its notes; the fingerprint goes under them.
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release view "$TAG" --json body --jq .body > notes.md
-            cat fingerprint.md >> notes.md
-            gh release upload "$TAG" "$APK" --clobber
+          apk="dist/burble-$VERSION.apk"
+          [ -f "$apk" ] && [ -f "$apk.sha256" ] || { echo "::error::The build job left no $apk"; exit 1; }
+          if draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$draft" != true ]; then
+              echo "::error::$TAG is already published; release.yml only ever fills drafts. Nothing was changed."
+              exit 1
+            fi
+            # A draft written by hand keeps its notes; the APK block under them is replaced.
+            gh release view "$TAG" --json body --jq .body | sed '/^<!-- release.yml: APK -->$/,$d' > notes.md
+            cat dist/fingerprint.md >> notes.md
+            gh release upload "$TAG" "$apk" "$apk.sha256" --clobber
             gh release edit "$TAG" --notes-file notes.md
           else
-            gh release create "$TAG" "$APK" --title "Burble ${TAG#v}" --generate-notes --notes-file fingerprint.md
+            gh api "repos/$GH_REPO/releases/generate-notes" -f tag_name="$TAG" --jq .body > notes.md
+            printf '\n' >> notes.md
+            cat dist/fingerprint.md >> notes.md
+            gh release create "$TAG" "$apk" "$apk.sha256" --draft --verify-tag --title "Burble $VERSION" --notes-file notes.md
           fi
+          url="$(gh release view "$TAG" --json url --jq .url)"
+          echo "Draft release: $url. Check it, then publish it by hand." >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Draft ready::$url: publish it by hand."

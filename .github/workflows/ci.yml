@@ -1,5 +1,5 @@
 # Builds, tests and lints every push to main and every pull request: what release.yml also runs
-# before it publishes.
+# before it drafts a release.
 name: CI
 
 on:

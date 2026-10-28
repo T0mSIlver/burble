@@ -107,11 +107,15 @@ android {
 }
 
 // A release APK signed with any other key couldn't update installed copies, or would pass a debug
-// key off as Burble's. Lint and tests of the release variant still run without the key.
+// key off as Burble's. Lint and tests of the release variant still run without the key, and
+// -PunsignedRelease (release.yml's dry run) packages app-release-unsigned.apk, which nothing installs.
 tasks.matching { it.name == "packageRelease" }.configureEach {
     val signed = releaseKeystore() != null
+    val unsigned = providers.gradleProperty("unsignedRelease").isPresent
+    // Else an unsigned build left up to date would skip the check below.
+    inputs.property("unsignedRelease", unsigned)
     doFirst {
-        if (!signed) throw GradleException("A release build needs BURBLE_KEYSTORE and its passwords, which only release.yml sets")
+        if (!signed && !unsigned) throw GradleException("A release build needs BURBLE_KEYSTORE and its passwords (RELEASING.md), or -PunsignedRelease for an unsigned one")
     }
 }
 
