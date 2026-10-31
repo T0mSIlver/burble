@@ -1,6 +1,5 @@
 package dev.silver.burble.overlay
 
-import android.content.Context
 import android.animation.ValueAnimator
 import android.graphics.RuntimeShader
 import android.os.Build
@@ -11,10 +10,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
@@ -23,9 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import dev.silver.burble.BuildConfig
 import dev.silver.burble.ui.theme.Follow
 import dev.silver.burble.ui.theme.Motion
 import kotlinx.coroutines.flow.StateFlow
@@ -160,51 +155,16 @@ private const val DOTS_ON = 1.5f
 private const val DRIFT = 0.21f
 private const val MORPH = 0.95f
 
-/**
- * The wave's geometry. The defaults are the shipped radial wave.
- *
- * TODO(before v0.1.0): remove the debug "Wave shape (temporary)" row (src/debug,
- * ui/WaveShapeDebug.kt) and this switchboard; keep only the shape Tom picks, as constants.
- */
-@Immutable
-internal data class WaveShape(
-    /** Scales the glow's distances: 1.25 lights a quarter more radius. Tom's pick on the phone. */
-    val cover: Float = 1.5f,
-    /** 0 a disc; toward 1 a wide horizontal ellipse. */
-    val blend: Float = 0f,
-    /** The glow's source below the centre, share of the radius. */
-    val lift: Float = 0f,
-    /** The glow's edge in silence, dp from the source. */
-    val edgeRest: Float = 15f,
-    /** How far full voice pushes it, dp. */
-    val edgeGain: Float = 20f,
-) {
-    companion object {
-        /** The shape every wave draws. Only debug builds change it. */
-        var current by mutableStateOf(WaveShape())
-
-        private const val PREFS = "debug_wave_shape"
-
-        /** Debug builds: the shape chosen in Advanced, kept across restarts. */
-        fun load(context: Context) {
-            if (!BuildConfig.DEBUG) return
-            val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val d = WaveShape()
-            current = WaveShape(
-                p.getFloat("cover", d.cover), p.getFloat("blend", d.blend), p.getFloat("lift", d.lift),
-                p.getFloat("edgeRest", d.edgeRest), p.getFloat("edgeGain", d.edgeGain),
-            )
-        }
-
-        fun save(context: Context, shape: WaveShape) {
-            if (!BuildConfig.DEBUG) return
-            current = shape
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putFloat("cover", shape.cover).putFloat("blend", shape.blend).putFloat("lift", shape.lift)
-                .putFloat("edgeRest", shape.edgeRest).putFloat("edgeGain", shape.edgeGain).apply()
-        }
-    }
-}
+/** The wave's geometry, Tom's pick on the phone. Scales the glow's distances: 1.5 lights half more radius. */
+private const val COVER = 1.5f
+/** 0 a disc; toward 1 a wide horizontal ellipse. */
+private const val BLEND = 0f
+/** The glow's source below the centre, share of the radius. */
+private const val LIFT = 0f
+/** The glow's edge in silence, dp from the source. */
+private const val EDGE_REST = 15f
+/** How far full voice pushes it, dp. */
+private const val EDGE_GAIN = 20f
 
 /**
  * The wave for [frame]. [accent] sets the hue (Gboard derives its glow from the system accent);
@@ -265,8 +225,6 @@ fun LiveWave(
             state.value = h.frame(now).let { if (reducedMotion) it.copy(drift = 0f, morph = 0f, time = 0f) else it }
         }
     }
-    val context = LocalContext.current
-    LaunchedEffect(Unit) { WaveShape.load(context) }
     Wave({ state.value }, accent, modifier)
 }
 
@@ -359,17 +317,16 @@ private fun CanvasWave(frame: () -> WaveFrame, colors: WaveColors, surface: Colo
         onDrawBehind {
             val f = frame()
             // The humps' rise and fall, without their shape round the edge.
-            val shape = WaveShape.current // blend and lift are the shader's only
-            val edge = shape.edgeRest + shape.edgeGain * f.glow + 0.25f * (13f + 25f * f.glow) * sin(1.1f * f.morph)
-            val e0 = shape.edgeRest + shape.edgeGain * f.glow
+            val edge = EDGE_REST + EDGE_GAIN * f.glow + 0.25f * (13f + 25f * f.glow) * sin(1.1f * f.morph)
+            val e0 = EDGE_REST + EDGE_GAIN * f.glow
             val band = minOf(BAR_DP / 6 * (1 + f.bands), 0.45f * e0)
             val soft = 6f * (SILENT_SOFT + (1 - SILENT_SOFT) * f.glow)
             val glow = Array(n + 1) { i ->
-                val u = i * r / n / dp * ref / shape.cover
+                val u = i * r / n / dp * ref / COVER
                 i / n.toFloat() to colors.glow.copy(alpha = logistic((edge - u) / soft) * reveal(u))
             }
             val core = Array(n + 1) { i ->
-                val u = i * r / n / dp * ref / shape.cover
+                val u = i * r / n / dp * ref / COVER
                 val t = ((band - u) / band).coerceIn(0f, 1f)
                 i / n.toFloat() to Color.White.copy(alpha = CORE * t * t * (3 - 2 * t))
             }
@@ -573,12 +530,11 @@ private fun ShaderWave(frame: () -> WaveFrame, colors: WaveColors, surface: Colo
             shader.setFloatUniform("morph", f.morph)
             shader.setFloatUniform("time", f.time)
             shader.setFloatUniform("opened", f.opened)
-            val shape = WaveShape.current
-            shader.setFloatUniform("cover", shape.cover)
-            shader.setFloatUniform("blend", shape.blend)
-            shader.setFloatUniform("lift", shape.lift)
-            shader.setFloatUniform("edgeRest", shape.edgeRest)
-            shader.setFloatUniform("edgeGain", shape.edgeGain)
+            shader.setFloatUniform("cover", COVER)
+            shader.setFloatUniform("blend", BLEND)
+            shader.setFloatUniform("lift", LIFT)
+            shader.setFloatUniform("edgeRest", EDGE_REST)
+            shader.setFloatUniform("edgeGain", EDGE_GAIN)
             drawRect(brush, Offset.Zero, size)
         }
     })

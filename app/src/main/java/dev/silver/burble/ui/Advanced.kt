@@ -67,7 +67,5 @@ fun Advanced(
                 },
             ))
         }
-        // TODO(before v0.1.0): remove, with the temporary wave shape row (src/debug only).
-        debugRows()
     }
 }
