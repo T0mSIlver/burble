@@ -4,6 +4,10 @@
 
 Burble has no speech model of its own. Google's speech server, the one Gboard's Rambler uses, turns your audio into text. There is no Burble server. [What leaves your phone](privacy.md) lists everything Burble sends and keeps.
 
+### How does Burble get in without an account? Does it pretend to be Google's app?
+
+Yes. Google's speech server answers only requests that name a Google app, so Burble sends the same three identifiers Gboard sends: the Google app's package name, the hash of its signing certificate, and the API key that ships inside it. They name an app, not a person, and no account or sign-in is involved. This is why Google can block Burble at any time, and why using it may breach Google's terms.
+
 ### Why does it need accessibility?
 
 Android lets an app type into another app's field only through an accessibility service. Burble's service also shows the bubble and hides the keyboard while you dictate. [What leaves your phone](privacy.md) says what it reads.
@@ -23,6 +27,10 @@ Rambler sometimes drops a sentence that sounds like an instruction, such as "kee
 ### Android blocks the accessibility switch, or Play Protect warns me. What do I do?
 
 For the blocked switch, follow the restricted settings steps in [Install](install.md); Burble shows them too. If Play Protect warns about an app it doesn't know, check the certificate in [Install](install.md), then open **More details** and choose to install anyway.
+
+### Android refuses to install it. What can I do?
+
+In some countries, Play Protect blocks installing from a browser, messaging app or file manager any app that asks for an accessibility service, and Burble needs one. Google started this in Singapore and has extended it to more countries, including India, Thailand and Brazil. Installing through [Obtainium](https://github.com/ImranR98/Obtainium) may get past it; that hasn't been tested yet.
 
 ### Is Burble registered with Google's developer verification?
 
