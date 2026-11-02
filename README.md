@@ -20,7 +20,7 @@ The bubble's behaviour takes ideas from Wispr Flow's Android app.
 
 ## Install
 
-Android 12 or later. Download the APK from [the latest release](https://github.com/T0mSIlver/burble/releases/latest), open Burble and follow its two steps. Details, and how to check the APK's signature: [docs/install.md](docs/install.md).
+Android 12 or later. Download the APK from [the latest release](https://github.com/T0mSIlver/burble/releases/latest), or add `https://github.com/T0mSIlver/burble` to [Obtainium](https://github.com/ImranR98/Obtainium) for updates, then open Burble and follow its two steps. Details, and how to check the APK's signature: [docs/install.md](docs/install.md).
 
 ## What leaves your phone
 
