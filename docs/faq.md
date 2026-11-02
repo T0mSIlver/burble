@@ -32,9 +32,13 @@ For the blocked switch, follow the restricted settings steps in [Install](instal
 
 In some countries, Play Protect blocks installing from a browser, messaging app or file manager any app that asks for an accessibility service, and Burble needs one. Google started this in Singapore and has extended it to more countries, including India, Thailand and Brazil. Installing through [Obtainium](https://github.com/ImranR98/Obtainium) may get past it; that hasn't been tested yet.
 
+### Does it work with Advanced Protection?
+
+No. Android 17's Advanced Protection turns off accessibility services in apps that aren't accessibility tools, and Burble can't insert text without one.
+
 ### Is Burble registered with Google's developer verification?
 
-No. Burble is not registered with Google's developer verification. It installs normally today; once Google extends the checks to all apps (planned for 2027), your phone may ask you to turn on "install apps from unverified developers" once, which takes a day.
+No. Burble is not registered with Google's developer verification. In Brazil, Indonesia, Singapore and Thailand, where the checks started on 30 September 2026, installing it needs `adb install` or Android's one-time "install apps from unverified developers" setting, which takes a day to turn on. Elsewhere it installs normally until Google extends the checks to all countries, planned for 2027.
 
 ### Is this the official app?
 
