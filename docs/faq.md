@@ -26,7 +26,7 @@ Rambler sometimes drops a sentence that sounds like an instruction, such as "kee
 
 ### Android blocks the accessibility switch, or Play Protect asks to scan Burble. What do I do?
 
-For the blocked switch, follow the restricted settings steps in [Install](install.md); Burble shows them too. If Play Protect recommends a scan, **Scan app** checks Burble and then lets you install it; [Install](install.md) says how to skip the scan.
+For the blocked switch, follow the restricted settings steps in [Install](install.md); Burble shows them too. If Play Protect recommends a scan, **Scan app** checks Burble, then lets you install it. [Install](install.md) says how to skip the scan and how to check the certificate.
 
 ### Android refuses to install it. What can I do?
 
