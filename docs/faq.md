@@ -24,9 +24,9 @@ Burble needs Android 12 or later and uses no Pixel-only part, so the phone's bra
 
 Rambler sometimes drops a sentence that sounds like an instruction, such as "keep it minimal", because Google's server takes it as an edit to your text rather than words to write. It does this in Gboard too, and Burble sends Rambler's text as it comes. In 15 of the author's own dictations, 5 lost a phrase this way.
 
-### Android blocks the accessibility switch, or Play Protect warns me. What do I do?
+### Android blocks the accessibility switch, or Play Protect asks to scan Burble. What do I do?
 
-For the blocked switch, follow the restricted settings steps in [Install](install.md); Burble shows them too. If Play Protect warns about an app it doesn't know, check the certificate in [Install](install.md), then open **More details** and choose to install anyway.
+For the blocked switch, follow the restricted settings steps in [Install](install.md); Burble shows them too. If Play Protect recommends a scan, **Scan app** checks Burble and then lets you install it; [Install](install.md) says how to skip the scan.
 
 ### Android refuses to install it. What can I do?
 
