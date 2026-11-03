@@ -91,15 +91,25 @@ object Lab {
             "keyboard ${shell("settings get secure default_input_method").trim()}")
     }
 
-    /** As `adb shell settings` turns it on: no restricted-settings prompt, which only guards the Settings switch. */
+    /**
+     * As `adb shell settings` turns it on: no restricted-settings prompt, which only guards the
+     * Settings switch. Under Test Lab's orchestrator each test starts a new process while the
+     * setting still lists the service from the last one, and Android doesn't bind it again
+     * (Samsung, OPPO, Motorola): writing the list without it, then with it, makes it bind.
+     */
     fun enableService() {
-        val on = shell("settings get secure enabled_accessibility_services").trim()
-        if (SERVICE !in on) {
-            val all = listOf(on).filter { it.isNotEmpty() && it != "null" } + SERVICE
-            shell("settings put secure enabled_accessibility_services ${all.joinToString(":")}")
+        if (InsertionService.instance != null) return
+        val others = shell("settings get secure enabled_accessibility_services").trim()
+            .split(':').filter { it.isNotEmpty() && it != "null" && it != SERVICE }
+        // Right after an install the first toggle can be lost too; a second one binds it.
+        repeat(2) { attempt ->
+            shell("settings put secure enabled_accessibility_services ${others.joinToString(":").ifEmpty { "\"\"" }}")
+            SystemClock.sleep(500) // two writes at once can reach the system as one
+            shell("settings put secure enabled_accessibility_services ${(others + SERVICE).joinToString(":")}")
+            shell("settings put secure accessibility_enabled 1")
+            if (attempt == 1) waitFor("the accessibility service to connect", 15_000) { InsertionService.instance != null }
+            else if (poll(10_000) { InsertionService.instance != null }) return
         }
-        shell("settings put secure accessibility_enabled 1")
-        waitFor("the accessibility service to connect", 15_000) { InsertionService.instance != null }
     }
 
     fun disableService() {
@@ -166,12 +176,16 @@ object Lab {
     }
 
     fun waitFor(what: String, timeoutMs: Long, check: () -> Boolean) {
+        if (!poll(timeoutMs, check)) die("timed out after $timeoutMs ms waiting for $what")
+    }
+
+    private fun poll(timeoutMs: Long, check: () -> Boolean): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
-            if (check()) return
+            if (check()) return true
             SystemClock.sleep(100)
         }
-        die("timed out after $timeoutMs ms waiting for $what")
+        return false
     }
 
     /** Fails the test, with a screenshot of how the screen looked. */
