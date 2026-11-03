@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -124,7 +125,8 @@ fun Onboarding(
     val progress by animateFloatAsState((index + 1f) / steps.size, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "progress")
 
     Surface(color = MaterialTheme.colorScheme.surface) {
-        // Try it's field brings up the keyboard: the button stays above it.
+        // Try it's field doesn't open the keyboard on arrival; if the user taps the field it comes up,
+        // and the button stays above it.
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
             LinearProgressIndicator(
                 progress = { progress },
@@ -259,7 +261,8 @@ private fun TryItButton(done: Boolean, onDone: () -> Unit) {
 
 /**
  * A first dictation, through the real bubble and insertion: the field has focus on arrival, as
- * in any app, so the bubble's text lands in it. The line under it follows the dictation, and the
+ * in any app, so the bubble's text lands in it, but the keyboard stays down: dictating without
+ * one is the point. The line under it follows the dictation, and the
  * badge turns into a check mark once [landed].
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -280,8 +283,8 @@ private fun TryIt(field: TextFieldState, dictation: Dictation.State, landed: Boo
         landed -> R.string.onb_try_landed
         else -> null
     }
-    // Whole, with the line under it, while the dictation moves on and after a rotation, where the
-    // keyboard leaves room for little more than the field.
+    // Whole, with the line under it, while the dictation moves on and after a rotation; matters
+    // once a tap on the field has brought the keyboard up.
     val view = remember { BringIntoViewRequester() }
     val orientation = LocalConfiguration.current.orientation
     LaunchedEffect(dictation, orientation, status) { view.bringIntoView() }
@@ -290,6 +293,7 @@ private fun TryIt(field: TextFieldState, dictation: Dictation.State, landed: Boo
         modifier = Modifier.fillMaxWidth().focusRequester(focus).bringIntoViewRequester(view),
         placeholder = { Text(stringResource(R.string.onb_try_placeholder)) },
         supportingText = { Text(status?.let { stringResource(it) }.orEmpty()) },
+        keyboardOptions = KeyboardOptions(showKeyboardOnFocus = false),
         lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 3),
         textStyle = MaterialTheme.typography.bodyLarge,
     )
