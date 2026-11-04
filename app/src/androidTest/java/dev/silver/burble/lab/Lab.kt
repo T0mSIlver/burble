@@ -137,6 +137,11 @@ object Lab {
 
     /** The text in the host's field, its hint not counted. */
     fun hostText(): String {
+        HostActivity.field?.get()?.takeIf { it.isAttachedToWindow }?.let { f ->
+            var text = ""
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { text = f.text.toString() }
+            return text
+        }
         val f = device.wait(Until.findObject(hostField()), 5_000) ?: return ""
         return f.text?.takeIf { it != HostActivity.HINT }.orEmpty()
     }

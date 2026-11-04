@@ -58,13 +58,21 @@ class RestrictedSettingsTest {
         // App info → ⋮ → Allow restricted settings.
         Lab.app.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${Lab.PKG}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        val allowPattern = Pattern.compile("(?i)allow restricted settings?")
+        val allowText = By.text(allowPattern)
         val more = Lab.device.wait(Until.findObject(By.desc(Pattern.compile("(?i)more options"))), 10_000)
-            ?: Lab.die("no ⋮ menu in App info")
-        more.click()
-        val allow = Lab.device.wait(Until.findObject(By.text(Pattern.compile("(?i)allow restricted settings?"))), 5_000)
-        Lab.screenshot("app-info-menu")
-        allow ?: Lab.die("no Allow restricted settings in App info's menu")
-        allow.click()
+        val allow = if (more != null) {
+            more.click()
+            Lab.device.wait(Until.findObject(allowText), 5_000).also { Lab.screenshot("app-info-menu") }
+                ?: Lab.die("no Allow restricted settings in App info's menu")
+        } else {
+            // OxygenOS 14 (OnePlus 11, 2026-11-04) showed App info without ⋮ here: the app op
+            // alone may not stand in for a file install there. Look down the page, then skip.
+            Lab.screenshot("app-info-no-menu")
+            findScrolling(allowPattern).also { Lab.screenshot("app-info-bottom") }
+        }
+        assumeTrue("App info shows no Allow restricted settings for an adb install here", allow != null)
+        allow!!.click()
         SystemClock.sleep(1500)
         Lab.screenshot("allowed")
         // Some versions confirm with the screen lock; Test Lab's phones have none.
