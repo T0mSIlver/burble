@@ -159,8 +159,9 @@ class Overlay(
         }
     }
 
-    fun show() {
-        if (bubble != null) return
+    /** Puts the bubble on screen; false when Android refused its windows (see below). */
+    fun show(): Boolean {
+        if (bubble != null) return true
         dropShapeThatHung()
         val o = Owner().also { owner = it }
         scope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main + DurationScale(context))
@@ -181,9 +182,20 @@ class Overlay(
         val frame = TouchFrame(context)
         ui.screen.value = screen()
         apply()
-        windowManager.addView(view, params)
-        windowManager.addView(label, pillParams)
-        windowManager.addView(frame, touchParams)
+        try {
+            windowManager.addView(view, params)
+            windowManager.addView(label, pillParams)
+            windowManager.addView(frame, touchParams)
+        } catch (e: WindowManager.BadTokenException) {
+            // The service's window token is gone: Accessibility turned it off as the bubble came
+            // up (OPPO CPH2557, Test Lab 2026-11-04, a crash until then). Nothing to show until it
+            // connects again.
+            Log.w(TAG, "no window token, no bubble: ${e.message}")
+            for (v in listOf(view, label, frame)) runCatching { windowManager.removeView(v) }
+            scope?.cancel(); scope = null
+            o.destroy(); owner = null
+            return false
+        }
         bubble = view; pill = label; touch = frame
         touchable()
         o.resume()
@@ -217,6 +229,7 @@ class Overlay(
                 pill?.let { runCatching { windowManager.updateViewLayout(it, pillParams) } }
             }
         }
+        return true
     }
 
     /** Fades the bubble out, then takes its windows away. */

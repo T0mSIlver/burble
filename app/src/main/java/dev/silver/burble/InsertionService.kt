@@ -23,6 +23,7 @@ import dev.silver.burble.overlay.Key
 import dev.silver.burble.overlay.Overlay
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,6 +79,10 @@ class InsertionService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         stopListening()
+        // Unbound, this service's window token is dead: nothing may show the bubble any more,
+        // and a new connection starts its own watchers.
+        scope.coroutineContext.cancelChildren()
+        setOverlay(false)
         _connected.value = false
         if (instance === this) instance = null
         return super.onUnbind(intent)
@@ -120,9 +125,7 @@ class InsertionService : AccessibilityService() {
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, onSnooze = ::snooze).also {
                 it.locked = locked
                 it.away = away
-                it.show()
-                it.handoffMode(handsOff)
-            }
+            }.takeIf { it.show() }?.also { it.handoffMode(handsOff) }
         } else if (!on) {
             overlay?.hide()
             overlay = null
