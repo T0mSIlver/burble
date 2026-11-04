@@ -1,5 +1,6 @@
 package dev.silver.burble.lab
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.UiAutomation
 import android.content.ComponentName
 import android.content.Context
@@ -137,10 +138,13 @@ object Lab {
 
     /** The text in the host's field, its hint not counted. */
     fun hostText(): String {
-        HostActivity.field?.get()?.takeIf { it.isAttachedToWindow }?.let { f ->
-            var text = ""
-            InstrumentationRegistry.getInstrumentation().runOnMainSync { text = f.text.toString() }
-            return text
+        // Every window, not only the active one: a floating keyboard over the field, as OxygenOS
+        // shows Gboard in landscape, hides it from UI Automator (OnePlus 11, 2026-11-04).
+        val ua = instrumentation.uiAutomation
+        ua.serviceInfo = ua.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
+        for (w in ua.windows) {
+            val node = w.root?.findAccessibilityNodeInfosByViewId("$hostPkg:id/lab_field")?.firstOrNull() ?: continue
+            return node.text?.toString()?.takeIf { it != HostActivity.HINT }.orEmpty()
         }
         val f = device.wait(Until.findObject(hostField()), 5_000) ?: return ""
         return f.text?.takeIf { it != HostActivity.HINT }.orEmpty()
@@ -184,7 +188,7 @@ object Lab {
         if (!poll(timeoutMs, check)) die("timed out after $timeoutMs ms waiting for $what")
     }
 
-    private fun poll(timeoutMs: Long, check: () -> Boolean): Boolean {
+    fun poll(timeoutMs: Long, check: () -> Boolean): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (check()) return true

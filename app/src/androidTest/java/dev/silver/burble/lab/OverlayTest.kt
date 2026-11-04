@@ -41,8 +41,12 @@ class OverlayTest {
         assertTrue("listening bubble ($full) not bigger than docked ($docked)", full.width() > docked.width())
         Lab.assertLanded(states.done()) { Lab.hostText() }
 
-        SystemClock.sleep(3500)
-        val again = Lab.bubbleBounds()
+        // Docks once idle again, counted from when the keyboard is back: polled, not slept.
+        var again = Lab.bubbleBounds()
+        Lab.poll(10_000) {
+            again = Lab.bubbleBounds()
+            again.width() < full.width() && (again.left <= 2 || again.right >= w - 2)
+        }
         Lab.screenshot("docked-again")
         assertTrue("not docked again after the dictation: $again", again.width() < full.width() && (again.left <= 2 || again.right >= w - 2))
     }
