@@ -489,24 +489,10 @@ class InsertionService : AccessibilityService() {
 
     // ---- insertion ----
 
-    /**
-     * The field a dictation would go into now, with its app; never a password field. With no
-     * field focused, the active window's only text field.
-     */
+    /** The field a dictation would go into now, with its app; never a password field. */
     fun captureTarget(): Target? {
-        val node = focusedField() ?: onlyFieldOnScreen() ?: return null
+        val node = focusedField() ?: return null
         return targetOf(node, node.packageName?.toString())
-    }
-
-    /** A keyboard hands off only from a field with focus: the one it types into. */
-    fun hasFocusedField() = focusedField() != null
-
-    private fun onlyFieldOnScreen(): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
-        val node = soleField(root, { n -> (0 until n.childCount).asSequence().mapNotNull(n::getChild) },
-            { it.isEditable && it.isVisibleToUser }, SOLE_FIELD_NODES)?.takeIf(::isField)
-        if (node != null) Log.d(TAG, "no field focused; the only one in ${root.packageName} is the start field")
-        return node
     }
 
     private fun targetOf(node: AccessibilityNodeInfo, packageName: String?) = Target(node, packageName, node.windowId,
@@ -678,8 +664,6 @@ class InsertionService : AccessibilityService() {
         private const val TAP_MS = 1500L
         /** How many nodes the search for a field inside a focused container visits at most. */
         private const val FIELD_SEARCH_NODES = 200
-        /** Enough for a chat screen; past it, a page too big to call one field the only one. */
-        private const val SOLE_FIELD_NODES = 1500
         /** Set on every node of a page in Chrome or a WebView. */
         private const val CHROME_ROLE = "AccessibilityNodeInfo.chromeRole"
         /** A keyboard asked for has its window within about 350 ms on an emulator. */

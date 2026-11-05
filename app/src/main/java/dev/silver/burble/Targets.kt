@@ -17,29 +17,3 @@ internal fun <T> pickTarget(tapped: T?, start: T?, insert: (T) -> Boolean): T? =
  */
 internal fun <T> startField(candidates: Sequence<T?>, isField: (T) -> Boolean): T? =
     candidates.filterNotNull().firstOrNull(isField)
-
-/**
- * The start field when no field has focus: the one text field under [root], found by [isText]
- * (editable and on screen, password fields included so they count). Null when there is none, two
- * or more, or the tree has more than [maxNodes] nodes: then the words go to the clipboard, as
- * before. The Claude app (1.261102.19) stopped focusing its message box when a chat opens, so a
- * dictation started without a tap had no field (RMB-46).
- */
-internal fun <T> soleField(root: T, children: (T) -> Sequence<T>, isText: (T) -> Boolean, maxNodes: Int): T? {
-    var found: T? = null
-    var seen = 1
-    val pending = ArrayDeque(listOf(root))
-    while (pending.isNotEmpty()) {
-        val n = pending.removeLast()
-        if (isText(n)) {
-            if (found != null) return null
-            found = n
-        }
-        // Counted as each child is fetched: every fetch is a call into the app.
-        for (child in children(n)) {
-            if (++seen > maxNodes) return null
-            pending.addLast(child)
-        }
-    }
-    return found
-}

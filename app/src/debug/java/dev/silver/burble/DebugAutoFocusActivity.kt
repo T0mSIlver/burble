@@ -28,9 +28,8 @@ import androidx.compose.ui.unit.dp
 /**
  * Debug builds only: a field that has focus on opening, never tapped, as chat apps do with their
  * message box. `--es kind edit` focuses an EditText in onCreate; `compose` (the default) a
- * Compose TextField at the bottom through a FocusRequester once composed, as the Claude app did;
- * `none` the same box never focused, as the Claude app 1.261102.19 does (RMB-46); `two` two
- * boxes, neither focused. The keyboard stays down.
+ * Compose TextField at the bottom through a FocusRequester once composed, like the Claude app.
+ * The keyboard stays down.
  *
  *     adb shell am start -n dev.silver.burble/.DebugAutoFocusActivity --es kind compose
  */
@@ -48,19 +47,15 @@ class DebugAutoFocusActivity : ComponentActivity() {
             field.requestFocus()
             return
         }
-        val kind = intent.getStringExtra("kind")
         setContent {
             val focus = remember { FocusRequester() }
             var text by remember { mutableStateOf("") }
-            var other by remember { mutableStateOf("") }
             Box(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(16.dp)) {
                 Text("A chat", Modifier.align(Alignment.TopStart))
-                if (kind == "two") TextField(other, { other = it }, Modifier.fillMaxWidth().align(Alignment.Center),
-                    placeholder = { Text("Search") })
                 TextField(text, { text = it }, Modifier.fillMaxWidth().align(Alignment.BottomCenter).focusRequester(focus),
                     placeholder = { Text("Message") })
             }
-            if (kind != "none" && kind != "two") LaunchedEffect(Unit) { focus.requestFocus() }
+            LaunchedEffect(Unit) { focus.requestFocus() }
         }
     }
 }

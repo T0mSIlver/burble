@@ -8,17 +8,12 @@
 #           open a screen whose field takes focus on its own (an EditText in onCreate, or a
 #           Compose field through a FocusRequester, as chat apps do), keyboard down, never
 #           tapped; tap the bubble, stop: the words land in that field.
-#   autofocus-none
-#           the same Compose screen, its field never focused, as the Claude app 1.261102.19:
-#           the only field on screen, so the words land in it (RMB-46).
-#   autofocus-two
-#           two Compose fields, neither focused: no start field, the words go to the clipboard.
 #   autofocus-late
 #           start on the home screen, then open the Compose screen: its field took focus after
 #           the start and wasn't tapped, so the words go to the clipboard; a second dictation
 #           there lands in the field.
 #
-#   tools/emulator/where-text-goes.sh tap|switch|autofocus-edit|autofocus-compose|autofocus-none|autofocus-two|autofocus-late
+#   tools/emulator/where-text-goes.sh tap|switch|autofocus-edit|autofocus-compose|autofocus-late
 #
 # Needs: a booted emulator with no lock screen and the debug APK built. Prints PASS or FAIL.
 set -e
@@ -40,7 +35,7 @@ $ADB install -r -g "$APK" >/dev/null
 $ADB shell settings put secure enabled_accessibility_services null; $ADB shell am force-stop dev.silver.burble
 $ADB shell "run-as dev.silver.burble rm -rf no_backup/pending shared_prefs/overlay.xml"
 $ADB push $OUT/settings.xml /data/local/tmp/settings.xml >/dev/null
-$ADB shell "run-as dev.silver.burble mkdir -p shared_prefs && run-as dev.silver.burble cp /data/local/tmp/settings.xml shared_prefs/settings.xml"
+$ADB shell "run-as dev.silver.burble cp /data/local/tmp/settings.xml shared_prefs/settings.xml"
 frame() { $ADB shell dumpsys window windows | grep -A30 "u0 Burble}" | grep -m1 -o "frame=\[-\?[0-9]*,[0-9]*\]\[-\?[0-9]*,[0-9]*\]" | tr -c '0-9-' ' '; }
 # A dictation as the user starts it: a tap on the bubble, kept listening, then the words.
 # A tap that starts no dictation is retried once, then reported as such, not as a wrong field.
@@ -69,11 +64,11 @@ if [[ "$mode" == autofocus-* ]]; then
   if [ "$mode" = autofocus-late ]; then
     tapBubble
     send --es do fake; sleep 0.5
-    $ADB shell am start -W --activity-clear-task -n dev.silver.burble/.DebugAutoFocusActivity --es kind $kind >/dev/null; sleep 2.5
+    $ADB shell am start -W -n dev.silver.burble/.DebugAutoFocusActivity --es kind $kind >/dev/null; sleep 2.5
     send --es text Late$RANDOM --ei after 300; sleep 2.5
     late=$(went); $ADB logcat -c
   else
-    $ADB shell am start -W --activity-clear-task -n dev.silver.burble/.DebugAutoFocusActivity --es kind $kind >/dev/null; sleep 2.5
+    $ADB shell am start -W -n dev.silver.burble/.DebugAutoFocusActivity --es kind $kind >/dev/null; sleep 2.5
   fi
   dictate $words
   now=$(went)
@@ -82,11 +77,7 @@ if [[ "$mode" == autofocus-* ]]; then
   text=$($ADB shell cat /sdcard/where.xml | grep -o '<node[^>]*class="android.widget.EditText"[^>]*>' | grep -o ' text="[^"]*"' | head -1)
   echo "log: ${late:+late: $late }$now"; echo "field:$text"
   ok=0
-  if [ "$mode" = autofocus-two ]; then
-    [[ "$now" == *"delivered: clipboard"* ]] && ! $ADB shell cat /sdcard/where.xml | grep -q $words && ok=1
-  else
-    [[ "$now" == *"delivered: inserted"* && "$text" == *$words* ]] && ok=1
-  fi
+  [[ "$now" == *"delivered: inserted"* && "$text" == *$words* ]] && ok=1
   [ "$mode" = autofocus-late ] && [[ "$late" != *"delivered: clipboard"* ]] && ok=0
   [ $ok = 1 ] && echo PASS || { echo FAIL; exit 1; }
   exit 0
