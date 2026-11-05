@@ -503,7 +503,7 @@ class InsertionService : AccessibilityService() {
 
     private fun onlyFieldOnScreen(): AccessibilityNodeInfo? {
         val root = rootInActiveWindow ?: return null
-        val node = soleField(root, { n -> (0 until n.childCount).mapNotNull(n::getChild) },
+        val node = soleField(root, { n -> (0 until n.childCount).asSequence().mapNotNull(n::getChild) },
             { it.isEditable && it.isVisibleToUser }, SOLE_FIELD_NODES)?.takeIf(::isField)
         if (node != null) Log.d(TAG, "no field focused; the only one in ${root.packageName} is the start field")
         return node

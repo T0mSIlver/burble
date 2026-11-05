@@ -25,18 +25,21 @@ internal fun <T> startField(candidates: Sequence<T?>, isField: (T) -> Boolean): 
  * before. The Claude app (1.261102.19) stopped focusing its message box when a chat opens, so a
  * dictation started without a tap had no field (RMB-46).
  */
-internal fun <T> soleField(root: T, children: (T) -> List<T>, isText: (T) -> Boolean, maxNodes: Int): T? {
+internal fun <T> soleField(root: T, children: (T) -> Sequence<T>, isText: (T) -> Boolean, maxNodes: Int): T? {
     var found: T? = null
-    var seen = 0
+    var seen = 1
     val pending = ArrayDeque(listOf(root))
     while (pending.isNotEmpty()) {
-        if (++seen > maxNodes) return null
         val n = pending.removeLast()
         if (isText(n)) {
             if (found != null) return null
             found = n
         }
-        pending.addAll(children(n))
+        // Counted as each child is fetched: every fetch is a call into the app.
+        for (child in children(n)) {
+            if (++seen > maxNodes) return null
+            pending.addLast(child)
+        }
     }
     return found
 }

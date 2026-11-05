@@ -49,7 +49,7 @@ class TargetsTest {
     // No field focused (the Claude app no longer focuses its box when a chat opens, RMB-46): the
     // only text field on screen is the start field; two, none or a tree too big → the clipboard.
     private class Tree(val text: Boolean, vararg val kids: Tree)
-    private fun sole(root: Tree, maxNodes: Int = 100) = soleField(root, { it.kids.toList() }, { it.text }, maxNodes)
+    private fun sole(root: Tree, maxNodes: Int = 100) = soleField(root, { it.kids.asSequence() }, { it.text }, maxNodes)
 
     @Test fun theOnlyFieldOnScreenIsTheStartField() {
         val box = Tree(true)
@@ -65,5 +65,12 @@ class TargetsTest {
         val root = Tree(false, *Array(10) { Tree(false) }, Tree(true))
         assertNull(sole(root, maxNodes = 5))
         assertEquals(root.kids.last(), sole(root, maxNodes = 12))
+    }
+
+    @Test fun aWideContainerIsNotFetchedPastTheBudget() {
+        var fetched = 0
+        val wide = generateSequence { fetched++; Tree(false) }.take(10_000)
+        assertNull(soleField(Tree(false), { if (it.kids.isEmpty() && fetched == 0) wide else emptySequence() }, { it.text }, 50))
+        assertEquals(50, fetched)
     }
 }
