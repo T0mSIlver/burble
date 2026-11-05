@@ -45,4 +45,25 @@ class TargetsTest {
     @Test fun neverAPasswordField() {
         assertEquals(null, startField(sequenceOf(Node("pin", password = true), null, null, null), isField))
     }
+
+    // No field focused (the Claude app no longer focuses its box when a chat opens, RMB-46): the
+    // only text field on screen is the start field; two, none or a tree too big → the clipboard.
+    private class Tree(val text: Boolean, vararg val kids: Tree)
+    private fun sole(root: Tree, maxNodes: Int = 100) = soleField(root, { it.kids.toList() }, { it.text }, maxNodes)
+
+    @Test fun theOnlyFieldOnScreenIsTheStartField() {
+        val box = Tree(true)
+        assertEquals(box, sole(Tree(false, Tree(false, Tree(false), Tree(false, box)), Tree(false))))
+    }
+
+    @Test fun twoFieldsOnScreenAreNoStartField() =
+        assertNull(sole(Tree(false, Tree(false, Tree(true)), Tree(true))))
+
+    @Test fun noFieldOnScreenIsNoStartField() = assertNull(sole(Tree(false, Tree(false), Tree(false))))
+
+    @Test fun aTreeTooBigToSearchIsNoStartField() {
+        val root = Tree(false, *Array(10) { Tree(false) }, Tree(true))
+        assertNull(sole(root, maxNodes = 5))
+        assertEquals(root.kids.last(), sole(root, maxNodes = 12))
+    }
 }

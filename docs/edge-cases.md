@@ -82,6 +82,7 @@ Status: ✅ covered and passing, 👤 needs the phone, ❌ fails, open. **Lab**:
 | Started in app A, switched to B, stopped → clipboard; back in A, nothing lands | Emulator `tools/emulator/where-text-goes.sh switch` | ✅ |
 | A field the app focused on opening, never tapped (EditText in onCreate, Compose FocusRequester as in chat apps), keyboard down: the start field; found in the active window, any window, inside a focused container, or from the app's focus event | Unit `TargetsTest.anAppFocusedFieldIsTheStartField` and three more; emulator `tools/emulator/where-text-goes.sh autofocus-edit`, `autofocus-compose` | ✅ |
 | A field the app focused after the start, not tapped: clipboard; the next dictation there lands in it | Emulator `where-text-goes.sh autofocus-late` | ✅ |
+| No field focused at the start (the Claude app 1.261102.19 no longer focuses its message box): the active window's only text field is the start field; two or more, or none → clipboard. The keyboard's hand-off still needs a focused field | Unit `TargetsTest.theOnlyFieldOnScreenIsTheStartField` and three more; emulator `where-text-goes.sh autofocus-none`, `autofocus-two` | ✅ |
 | The Claude app's message box focused on opening a chat | 👤 10 | 👤 |
 | Tapping a Chrome web field during a dictation | 👤 8 | 👤 |
 | Field rebuilt when the keyboard hides: found again by focus, id, only field, or edges at or below | Unit `FindAgainTest`; emulator | ✅ |

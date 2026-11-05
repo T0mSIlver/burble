@@ -126,7 +126,7 @@ class HandoffProvider : ContentProvider() {
                 if (tapAt > 0) Log.i(TAG, "first bubble frame ${SystemClock.uptimeMillis() - tapAt} ms after the tap")
                 drawn.countDown()
             }
-            if (!Handoff.allows(caller, ime, fieldFocused = service.captureTarget() != null)) {
+            if (!Handoff.allows(caller, ime, fieldFocused = service.hasFocusedField())) {
                 Log.d(TAG, "start refused: no text field has focus")
                 if (emerging) service.abortFlight()
                 return@onMain null
