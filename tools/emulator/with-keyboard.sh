@@ -28,9 +28,13 @@ $ADB push $OUT/settings.xml /data/local/tmp/settings.xml >/dev/null
 $ADB shell "run-as dev.silver.burble mkdir -p shared_prefs && run-as dev.silver.burble cp /data/local/tmp/settings.xml shared_prefs/settings.xml"
 $ADB shell input keyevent KEYCODE_HOME; sleep 1
 $ADB shell am start -W -a android.intent.action.SENDTO -d sms:5554 >/dev/null; sleep 4; $ADB shell input keyevent KEYCODE_ESCAPE; sleep 1
-$ADB shell uiautomator dump /sdcard/wk.xml >/dev/null
-first=$($ADB shell cat /sdcard/wk.xml | grep -o '<node[^>]*class="android.widget.EditText"[^>]*>' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
-read l t r b <<<"$first"; fx=$(( (l+r)/2 )); fy=$(( (t+b)/2 ))
+field() { $ADB shell uiautomator dump /sdcard/wk.xml >/dev/null
+  read l t r b <<<$($ADB shell cat /sdcard/wk.xml | grep -o '<node[^>]*class="android.widget.EditText"[^>]*>' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+  fx=$(( (l+r)/2 )); fy=$(( (t+b)/2 )); }
+# An empty draft, so the box is one line and a tap on it brings the keyboard.
+field; $ADB shell input tap $fx $fy; sleep 1.5
+$ADB shell input keycombination KEYCODE_CTRL_LEFT KEYCODE_A; $ADB shell input keyevent KEYCODE_DEL
+$ADB shell input keyevent KEYCODE_BACK; sleep 1; field
 $ADB shell settings put secure enabled_accessibility_services dev.silver.burble/dev.silver.burble.InsertionService
 for i in $(seq 15); do sleep 1; [ -n "$(frame)" ] && break; done
 sleep 1
