@@ -523,7 +523,7 @@ class InsertionService : AccessibilityService() {
             return null
         }
         val focused = node.isFocused
-        val existing = existingText(node.text?.toString(), node.hintText?.toString(), node.isShowingHintText,
+        val existing = existingText(node.text?.toString(), node.isShowingHintText,
             selectable = node.className?.toString() != EDIT_TEXT ||
                 node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_SELECTION } || node.movementGranularities != 0)
         // What the field says about itself, never its text: why a hint was or wasn't taken for text.
@@ -642,8 +642,8 @@ class InsertionService : AccessibilityService() {
          * text only when it holds some, so text that isn't [selectable] isn't there. Without
          * that, a dictation landed as "Message hello".
          */
-        internal fun existingText(text: String?, hint: String?, showingHint: Boolean, selectable: Boolean): String =
-            if (showingHint || !selectable || text.isNullOrEmpty() || text == hint) "" else text
+        internal fun existingText(text: String?, showingHint: Boolean, selectable: Boolean): String =
+            if (showingHint || !selectable || text.isNullOrEmpty()) "" else text
 
         private const val EDIT_TEXT = "android.widget.EditText"
 

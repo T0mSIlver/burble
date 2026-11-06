@@ -6,14 +6,14 @@ import org.junit.Test
 
 class ExistingTextTest {
     @Test fun aHintIsNotText() {
-        assertEquals("", existingText("Search settings", "Search settings", showingHint = true, selectable = false))
-        assertEquals("", existingText("Message", "Message", showingHint = false, selectable = true))
-        // WhatsApp's message box: its own hint as plain text, no hint, no flag, nothing to select.
-        assertEquals("", existingText("Message", null, showingHint = false, selectable = false))
+        assertEquals("", existingText("Search settings", showingHint = true, selectable = false))
+        // WhatsApp's message box: its own hint as plain text, no flag, nothing to select.
+        assertEquals("", existingText("Message", showingHint = false, selectable = false))
     }
 
     @Test fun typedTextStays() {
-        assertEquals("Hi there", existingText("Hi there", "Message", showingHint = false, selectable = true))
-        assertEquals("Hi", existingText("Hi", null, showingHint = false, selectable = true))
+        assertEquals("Hi there", existingText("Hi there", showingHint = false, selectable = true))
+        // Typed text that happens to read like the field's hint is still text.
+        assertEquals("Message", existingText("Message", showingHint = false, selectable = true))
     }
 }

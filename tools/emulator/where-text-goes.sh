@@ -35,7 +35,7 @@ $ADB install -r -g "$APK" >/dev/null
 $ADB shell settings put secure enabled_accessibility_services null; $ADB shell am force-stop dev.silver.burble
 $ADB shell "run-as dev.silver.burble rm -rf no_backup/pending shared_prefs/overlay.xml"
 $ADB push $OUT/settings.xml /data/local/tmp/settings.xml >/dev/null
-$ADB shell "run-as dev.silver.burble cp /data/local/tmp/settings.xml shared_prefs/settings.xml"
+$ADB shell "run-as dev.silver.burble mkdir -p shared_prefs && run-as dev.silver.burble cp /data/local/tmp/settings.xml shared_prefs/settings.xml"
 frame() { $ADB shell dumpsys window windows | grep -A30 "u0 Burble}" | grep -m1 -o "frame=\[-\?[0-9]*,[0-9]*\]\[-\?[0-9]*,[0-9]*\]" | tr -c '0-9-' ' '; }
 # A dictation as the user starts it: a tap on the bubble, kept listening, then the words.
 # A tap that starts no dictation is retried once, then reported as such, not as a wrong field.
