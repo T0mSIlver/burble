@@ -524,6 +524,11 @@ class InsertionService : AccessibilityService() {
         }
         val focused = node.isFocused
         val existing = existingText(node.text?.toString(), node.hintText?.toString(), node.isShowingHintText)
+        // What the field says about itself, never its text: why a hint was or wasn't taken for text.
+        Log.d(TAG, "insert into ${node.className}: text ${node.text?.length ?: -1} chars, hint " +
+            "${node.hintText?.length ?: -1} chars, showing hint ${node.isShowingHintText}, text is hint " +
+            "${node.text?.toString() == node.hintText?.toString()}, kept ${existing.length} chars, " +
+            "focused $focused, selection ${node.textSelectionStart}..${node.textSelectionEnd}")
         var start = node.textSelectionStart
         var end = node.textSelectionEnd
         if (!focused || start !in 0..existing.length || end !in start..existing.length) {
@@ -544,6 +549,9 @@ class InsertionService : AccessibilityService() {
             Log.d(TAG, "insert fell back: ${node.className} in ${target.packageName} refused the text")
             return null
         }
+        // Whether the field holds what was sent, by length only.
+        node.refresh()
+        Log.d(TAG, "insert sent ${(before + spaced + existing.substring(end)).length} chars; the field now has ${node.text?.length ?: -1}")
         // Park the cursor after the inserted text when the field reports selections.
         val at = start + spaced.length
         node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
