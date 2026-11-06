@@ -523,7 +523,9 @@ class InsertionService : AccessibilityService() {
             return null
         }
         val focused = node.isFocused
-        val existing = existingText(node.text?.toString(), node.hintText?.toString(), node.isShowingHintText)
+        val existing = existingText(node.text?.toString(), node.hintText?.toString(), node.isShowingHintText,
+            selectable = node.className?.toString() != EDIT_TEXT ||
+                node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_SELECTION } || node.movementGranularities != 0)
         // What the field says about itself, never its text: why a hint was or wasn't taken for text.
         Log.d(TAG, "insert into ${node.className}: text ${node.text?.length ?: -1} chars, hint " +
             "${node.hintText?.length ?: -1} chars, showing hint ${node.isShowingHintText}, text is hint " +
@@ -637,12 +639,16 @@ class InsertionService : AccessibilityService() {
 
     companion object {
         /**
-         * The text an empty field really holds: it reports its hint as its text, and some apps
-         * (WhatsApp's message box) don't flag it as showing the hint, so a text equal to the hint
-         * counts as empty too. Without that, a dictation landed as "Message hello".
+         * The text a field really holds. An empty field reports its hint as its text, flagged as
+         * showing it. WhatsApp's message box draws its own hint and reports it as plain text, with
+         * no hint and no flag; but an EditText offers to set its selection or move through its
+         * text only when it holds some, so text that isn't [selectable] isn't there. Without
+         * that, a dictation landed as "Message hello".
          */
-        internal fun existingText(text: String?, hint: String?, showingHint: Boolean): String =
-            if (showingHint || text.isNullOrEmpty() || text == hint) "" else text
+        internal fun existingText(text: String?, hint: String?, showingHint: Boolean, selectable: Boolean): String =
+            if (showingHint || !selectable || text.isNullOrEmpty() || text == hint) "" else text
+
+        private const val EDIT_TEXT = "android.widget.EditText"
 
         /**
          * Which of [fields] (each its view id and bounds) is the start field, by its [viewId] or

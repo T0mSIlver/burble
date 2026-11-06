@@ -1,6 +1,11 @@
 package dev.silver.burble
 
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.os.Bundle
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -46,8 +51,33 @@ class DebugFieldsActivity : ComponentActivity() {
         column.addView(ComposeView(this).apply { setContent { ComposeFields() } })
         repeat(40) { column.addView(TextView(this).apply { text = "Line $it"; textSize = 20f }) }
         column.addView(EditText(this).apply { hint = "Second field"; contentDescription = "second" })
+        column.addView(DrawnHintField(this))
         setContentView(ScrollView(this).apply { addView(column) })
     }
+}
+
+/**
+ * Reports its placeholder to accessibility as its text while empty, with no hint and no
+ * showing-hint flag, as WhatsApp's message box does (it draws its hint itself).
+ */
+private class DrawnHintField(context: Context) : EditText(context) {
+    init {
+        setTextColor(Color.BLACK)
+        contentDescription = "drawn hint"
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (text.isEmpty()) canvas.drawText(PLACEHOLDER, paddingLeft.toFloat(), baseline.toFloat(),
+            Paint(paint).apply { color = Color.GRAY })
+    }
+
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        if (text.isEmpty()) info.text = PLACEHOLDER
+    }
+
+    private companion object { const val PLACEHOLDER = "Message" }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
