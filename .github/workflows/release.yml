@@ -6,7 +6,7 @@
 #
 # Without the secrets a tag push stops in the first job and says so. Run by hand (workflow_dispatch)
 # it is a dry run that never touches releases: signed and checked if the secrets are there, else
-# unsigned.
+# unsigned. Its APK is kept 3 days as the run's "release" artifact, a test build to install by hand.
 name: Release
 
 on:
@@ -181,8 +181,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           ls -l dist
 
+      # A dry run's APK is the test build: gh run download <run> -n release
       - name: Keep for the release job
-        if: github.event_name == 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release

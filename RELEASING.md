@@ -61,6 +61,16 @@ version=0.0.1`). It builds, signs and checks the certificate, writes the APK's S
 certificate in the run's summary, and creates no release. Without the secrets the same run builds
 an unsigned `burble-0.0.1-unsigned.apk` and says signing was skipped.
 
+### Test build before a release
+
+A dry run keeps its APK 3 days as the run's `release` artifact, signed with the release key, so it
+installs over the released app. Give it the next version, so the phone takes it as an update:
+
+```bash
+gh workflow run release.yml -f version=1.2.4
+gh run download "$(gh run list --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId')" -n release
+```
+
 ### Cut a release
 
 ```bash
