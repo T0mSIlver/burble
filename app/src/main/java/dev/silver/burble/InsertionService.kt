@@ -523,8 +523,7 @@ class InsertionService : AccessibilityService() {
             return null
         }
         val focused = node.isFocused
-        // An empty field reports its hint as its text.
-        val existing = if (node.isShowingHintText) "" else node.text?.toString() ?: ""
+        val existing = existingText(node.text?.toString(), node.hintText?.toString(), node.isShowingHintText)
         var start = node.textSelectionStart
         var end = node.textSelectionEnd
         if (!focused || start !in 0..existing.length || end !in start..existing.length) {
@@ -629,6 +628,14 @@ class InsertionService : AccessibilityService() {
     internal data class Seen(val viewId: String?, val className: String?, val hint: String?, val focused: Boolean)
 
     companion object {
+        /**
+         * The text an empty field really holds: it reports its hint as its text, and some apps
+         * (WhatsApp's message box) don't flag it as showing the hint, so a text equal to the hint
+         * counts as empty too. Without that, a dictation landed as "Message hello".
+         */
+        internal fun existingText(text: String?, hint: String?, showingHint: Boolean): String =
+            if (showingHint || text.isNullOrEmpty() || text == hint) "" else text
+
         /**
          * Which of [fields] (each its view id and bounds) is the start field, by its [viewId] or
          * else its [bounds]; null unless exactly one matches.
