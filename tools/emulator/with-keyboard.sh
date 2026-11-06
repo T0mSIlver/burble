@@ -57,6 +57,12 @@ seen=""; for i in $(seq 25); do seen="$seen $(state)"; done
 echo "after the words, polled:$seen"; [[ "$seen" == *hidden* ]] && { echo "bubble blinked out after the dictation"; fail=1; }
 expect "words landed, keyboard back" shown
 $ADB logcat -d -s Dictation:D Insert:D | grep -o "delivered: [a-z]*" | head -1
+# Back right after a dictation's words land, as the keyboard comes back: the bubble goes.
+read l t r b <<<$(frame); $ADB shell input tap $(( (l+r)/2 )) $(( (t+b)/2 )); sleep 1
+send --es do fake; sleep 1
+send --es text Kb$RANDOM --ei after 300; sleep 1.0
+$ADB shell input keyevent KEYCODE_BACK; sleep 2.5
+expect "Back right after a dictation" hidden
 $ADB shell input keyevent KEYCODE_HOME; sleep 2
 expect "home screen" hidden
 $ADB shell settings put secure enabled_accessibility_services null

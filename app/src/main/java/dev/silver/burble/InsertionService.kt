@@ -204,6 +204,8 @@ class InsertionService : AccessibilityService() {
     /** When Burble last asked for the keyboard back, in uptimeMillis. */
     private var keyboardAskedAt = Long.MIN_VALUE / 2
 
+    private val keyboardWaitOver = Runnable { updateAway() }
+
     // ---- handoff ----
 
     /** A keyboard that hands off to Burble (it said hello, and is the default one) is up. */
@@ -425,6 +427,9 @@ class InsertionService : AccessibilityService() {
             if (!keyboardHidden) {
                 softKeyboardController.setShowMode(SHOW_MODE_AUTO)
                 keyboardAskedAt = SystemClock.uptimeMillis()
+                // Looked at again once the wait is over: Back may have closed it meanwhile.
+                main.removeCallbacks(keyboardWaitOver)
+                main.postDelayed(keyboardWaitOver, KEYBOARD_WAIT_MS + BLIP_TIMEOUT_MS)
                 askForKeyboard(node)
                 // Asked again once if no keyboard comes: that's how long it may take.
                 overlay?.keyboardAsked(retryInMs = KEYBOARD_WAIT_MS + BLIP_TIMEOUT_MS)
