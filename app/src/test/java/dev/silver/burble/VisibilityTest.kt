@@ -19,15 +19,15 @@ class VisibilityTest {
     @Test fun aKeyboardThatHandsOffHidesItButNotADictation() {
         val v = Visibility<String>()
         for (mode in listOf(ALWAYS, TYPING)) {
-            assertFalse(v.shows(dictating = false, mode, fieldFocused = true, keyboardHandsOff = true))
-            assertTrue(v.shows(dictating = true, mode, fieldFocused = true, keyboardHandsOff = true))
+            assertFalse(v.shows(dictating = false, mode, typing = true, keyboardHandsOff = true))
+            assertTrue(v.shows(dictating = true, mode, typing = true, keyboardHandsOff = true))
         }
     }
 
     @Test fun aDictationShowsEvenSnoozed() {
         val v = Visibility<String>().apply { snooze("a") }
-        assertTrue(v.shows(dictating = true, ALWAYS, fieldFocused = false))
-        assertFalse(v.shows(dictating = false, ALWAYS, fieldFocused = true))
+        assertTrue(v.shows(dictating = true, ALWAYS, typing = false))
+        assertFalse(v.shows(dictating = false, ALWAYS, typing = true))
     }
 
     @Test fun alwaysWakesOnlyAtTheNextUnlock() {

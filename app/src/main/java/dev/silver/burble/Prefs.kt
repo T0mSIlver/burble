@@ -28,7 +28,7 @@ enum class WhenIdle { FULL, SHRINK, DOT }
 /** When the bubble shows. */
 enum class BubbleShow {
     ALWAYS,
-    /** While an editable field has input focus, and through a dictation and its waiting text. */
+    /** While an editable field has input focus and the keyboard is up, and through a dictation and its waiting text. */
     TYPING,
 }
 

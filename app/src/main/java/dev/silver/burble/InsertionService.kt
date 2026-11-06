@@ -35,8 +35,8 @@ import kotlinx.coroutines.launch
 /**
  * The accessibility service: hosts the bubble, remembers the field a dictation started in and
  * the last one the user taps during it, types the text into one of them while it's on screen,
- * and hides the keyboard while dictating. In "only while typing", it shows the bubble while a field has
- * input focus.
+ * and hides the keyboard while dictating. In "In text fields", it shows the bubble while a field has
+ * input focus and the keyboard is up.
  */
 class InsertionService : AccessibilityService() {
 
@@ -170,9 +170,10 @@ class InsertionService : AccessibilityService() {
         set(value) { field = value; overlay?.away = value }
 
     /**
-     * Keyed on input focus, not on the keyboard, which a dictation hides. A dictation and its result
-     * keep the bubble up; it goes [AWAY_MS] after focus leaves, so
-     * moving between fields doesn't flicker it.
+     * Keyed on input focus and the keyboard. A dictation and its result keep the bubble up, so the
+     * keyboard a dictation hides doesn't count. It goes [AWAY_MS] after focus leaves, so moving
+     * between fields doesn't flicker it, and [KEYBOARD_GONE_MS] after the keyboard does, as Back
+     * keeps focus in the field.
      */
     private fun updateAway() {
         main.removeCallbacks(goAway)
@@ -184,12 +185,24 @@ class InsertionService : AccessibilityService() {
             shouldShow(field, handsOff) -> away = false
             // The keyboard's mic key takes over as it comes up: no fade lagging behind it.
             handsOff -> away = true
-            !away -> main.postDelayed(goAway, AWAY_MS)
+            !away -> main.postDelayed(goAway, if (field != null) KEYBOARD_GONE_MS else AWAY_MS)
         }
     }
 
     private fun shouldShow(field: AccessibilityNodeInfo? = focusedField(), handsOff: Boolean = keyboardHandsOff()) =
-        visibility.shows(Dictation.state.value != Dictation.State.Idle, Prefs.settings.value.bubbleShow, field != null, handsOff)
+        visibility.shows(Dictation.state.value != Dictation.State.Idle, Prefs.settings.value.bubbleShow,
+            field != null && keyboardUpFor(field), handsOff)
+
+    /**
+     * The keyboard is up, or Burble keeps it down or is bringing it back. On Burble's own screens
+     * a field is enough: Try it keeps the keyboard down on purpose.
+     */
+    private fun keyboardUpFor(field: AccessibilityNodeInfo) =
+        keyboardHidden || keyboardShown() || field.packageName == packageName ||
+            SystemClock.uptimeMillis() - keyboardAskedAt < KEYBOARD_WAIT_MS + BLIP_TIMEOUT_MS
+
+    /** When Burble last asked for the keyboard back, in uptimeMillis. */
+    private var keyboardAskedAt = Long.MIN_VALUE / 2
 
     // ---- handoff ----
 
@@ -261,8 +274,16 @@ class InsertionService : AccessibilityService() {
             event.source?.takeIf(::isField)?.let { appFocused = it }
         }
         if (event != null && Dictation.state.value.recording && tappedField(event)) noteTap(event)
-        // The keyboard came or went: with a keyboard that hands off, the bubble steps aside.
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) return followKeyboard()
+        // The keyboard came or went: with a keyboard that hands off, the bubble steps aside; with
+        // "In text fields", it comes and goes with the keyboard.
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            followKeyboard()
+            if (Prefs.settings.value.bubbleShow == BubbleShow.TYPING) {
+                main.removeCallbacks(focusCheck)
+                main.postDelayed(focusCheck, 120)
+            }
+            return
+        }
         // A scroll in another app: the user has moved on, the idle bubble rests now. Not a focus
         // change, so nothing more to look at.
         if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
@@ -403,6 +424,7 @@ class InsertionService : AccessibilityService() {
         val show = {
             if (!keyboardHidden) {
                 softKeyboardController.setShowMode(SHOW_MODE_AUTO)
+                keyboardAskedAt = SystemClock.uptimeMillis()
                 askForKeyboard(node)
                 // Asked again once if no keyboard comes: that's how long it may take.
                 overlay?.keyboardAsked(retryInMs = KEYBOARD_WAIT_MS + BLIP_TIMEOUT_MS)

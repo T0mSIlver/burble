@@ -37,10 +37,11 @@ internal class Visibility<F> {
 
     /**
      * A dictation always shows, snoozed or not, since the bubble is all there is to see of it;
-     * otherwise the mode decides, unless snoozed. Burble's own screens are like any app's: there
-     * the bubble shows what the settings do to it. While a keyboard that hands off to Burble is
-     * up ([keyboardHandsOff]), its mic key stands in for the bubble, which steps aside.
+     * otherwise the mode decides, unless snoozed: [typing] is a text field focused with the
+     * keyboard up. Burble's own screens are like any app's: there the bubble shows what the
+     * settings do to it. While a keyboard that hands off to Burble is up ([keyboardHandsOff]),
+     * its mic key stands in for the bubble, which steps aside.
      */
-    fun shows(dictating: Boolean, mode: BubbleShow, fieldFocused: Boolean, keyboardHandsOff: Boolean = false) =
-        dictating || !snoozed && !keyboardHandsOff && (mode == BubbleShow.ALWAYS || fieldFocused)
+    fun shows(dictating: Boolean, mode: BubbleShow, typing: Boolean, keyboardHandsOff: Boolean = false) =
+        dictating || !snoozed && !keyboardHandsOff && (mode == BubbleShow.ALWAYS || typing)
 }

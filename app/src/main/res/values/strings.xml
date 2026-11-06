@@ -65,7 +65,7 @@
     <string name="section_about">About</string>
     <string name="bubble_when">Show bubble</string>
     <string name="bubble_when_always">Always</string>
-    <string name="bubble_when_typing">In text fields</string>
+    <string name="bubble_when_typing">With keyboard</string>
     <string name="bubble_shape">Shape</string>
     <string name="bubble_size">Size</string>
     <string name="idle_opacity">Opacity when inactive</string>

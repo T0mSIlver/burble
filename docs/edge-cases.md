@@ -61,16 +61,17 @@ Status: ✅ covered and passing, 👤 needs the phone, ❌ fails, open. **Lab**:
 
 | Case | Coverage | Status |
 |---|---|---|
-| Always / While typing; a dictation always shows | Unit `VisibilityTest.eachModeShowsWhereItShould`, `aDictationShowsEvenSnoozed` | ✅ |
+| Always / With keyboard (a field focused and the keyboard up, or Burble keeping it down or bringing it back; a field is enough on Burble's own screens); a dictation always shows | Unit `VisibilityTest.eachModeShowsWhereItShould`, `aDictationShowsEvenSnoozed` | ✅ |
+| With keyboard: Back closes the keyboard while the field keeps focus, and the bubble goes (0.8 s from the key press on the emulator, the keyboard's own animation included); a dictation that hides the keyboard keeps it up, also while the keyboard comes back; Home hides it | Emulator, Messages: tap the compose box, Back, tap again, dictate, Home (`tools/emulator/with-keyboard.sh`) | ✅ |
 | ✕ snooze: back at the next unlock (Always) | Unit `VisibilityTest.alwaysWakesOnlyAtTheNextUnlock`; emulator (swipe lock) | ✅ |
-| ✕ snooze, While typing: back at another field, or the same after focus left | Unit `VisibilityTest.whileTypingWakesAtAnotherField`, `…AtTheSameFieldAfterFocusLeft`, `snoozedWithNoFieldWakesAtAnyField`; emulator | ✅ |
+| ✕ snooze, With keyboard: back at another field, or the same after focus left | Unit `VisibilityTest.whileTypingWakesAtAnotherField`, `…AtTheSameFieldAfterFocusLeft`, `snoozedWithNoFieldWakesAtAnyField`; emulator | ✅ |
 | Fields compared across nodes on Android 12 (no `equals` before 13) | Code (`FieldKey`: window, id, bounds) | ✅ |
 | Use Burble off: overlay gone; during Listening it stops so the words land | Code (`InsertionService`); emulator (switch on home) | ✅ |
 | Use Burble on clears a snooze | Code (`setOverlay`) | ✅ |
 | Burble's own screens: shown with Always (home, Bubble look, Advanced, About), clear of the main switch and back at its default place; drags; Bubble look changes it live; no bubble in onboarding before Accessibility is on | Unit `VisibilityTest.eachModeShowsWhereItShould`; emulator (sb66: screenshots of each page, a drag on home, Dot picked on Bubble look) | ✅ |
 | Unsent dictation recovered while Use Burble is off: waits, shows once on | Code (`Dictation.recover`, overlay follows the state) | ✅ |
 | Lock screen hides the bubble; keyboard never kept hidden there | Code (`updateLock`); 👤 2 | 👤 |
-| Password fields: not a target, not a text field for While typing | Code (`focusedField`) | ✅ |
+| Password fields: not a target, not a text field for With keyboard | Code (`focusedField`) | ✅ |
 
 ## Insertion targets
 
