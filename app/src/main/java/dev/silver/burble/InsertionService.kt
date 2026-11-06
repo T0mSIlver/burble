@@ -551,9 +551,6 @@ class InsertionService : AccessibilityService() {
             Log.d(TAG, "insert fell back: ${node.className} in ${target.packageName} refused the text")
             return null
         }
-        // Whether the field holds what was sent, by length only.
-        node.refresh()
-        Log.d(TAG, "insert sent ${(before + spaced + existing.substring(end)).length} chars; the field now has ${node.text?.length ?: -1}")
         // Park the cursor after the inserted text when the field reports selections.
         val at = start + spaced.length
         node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
