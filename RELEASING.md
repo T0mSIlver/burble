@@ -71,6 +71,10 @@ gh workflow run release.yml -f version=1.2.4
 gh run download "$(gh run list --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId')" -n release
 ```
 
+GitHub's mobile site doesn't show a run's artifacts, so to install from the phone, attach the APK to
+the draft release "Dogfood", which only the repository's owner sees:
+`gh release upload <Dogfood's untagged-… tag> burble-1.2.4-rc1-<sha>.apk`.
+
 ### Cut a release
 
 ```bash
