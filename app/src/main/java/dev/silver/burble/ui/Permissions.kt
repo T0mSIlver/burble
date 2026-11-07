@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import dev.silver.burble.InsertionService
@@ -59,7 +58,7 @@ object Permissions {
      * download, file manager) until the user taps App info → ⋮ → Allow restricted settings.
      */
     private fun restricted(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT < 33 || insertion(context)) return false
+        if (insertion(context)) return false
         // The app op behind that menu item would say whether the user allowed it, but Android
         // refuses to show it to apps (GET_APP_OPS_STATS), so only the install source is known.
         // An update through the in-app updater makes the source unspecified, but Android keeps

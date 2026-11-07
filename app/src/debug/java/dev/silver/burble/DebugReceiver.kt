@@ -22,6 +22,11 @@ import android.content.Intent
  *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --es audio clip|mic
  *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --es answer 'Hello there'
  *
+ *     adb shell am broadcast -n dev.silver.burble/.DebugReceiver --es insert rewrite|type
+ *
+ * `insert rewrite` always writes the field's text back instead of typing through its input
+ * connection, to compare the two; `insert type` goes back to typing.
+ *
  * `audio` and `answer` stand in for the microphone and the server in every dictation, a tap on
  * the bubble too, until set back ([DebugAudio]); an empty `answer` asks the server again.
  */
@@ -51,6 +56,7 @@ class DebugReceiver : BroadcastReceiver() {
                 answer = if (intent.hasExtra("answer")) intent.getStringExtra("answer")?.takeIf { it.isNotEmpty() } else now.answer,
             ))
         }
+        intent.getStringExtra("insert")?.let { InsertionService.rewriteOnly = it == "rewrite" }
         if (intent.hasExtra("level")) Dictation.fakeLevel(intent.getFloatExtra("level", 0f))
     }
 }

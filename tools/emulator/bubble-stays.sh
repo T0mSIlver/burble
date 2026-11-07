@@ -22,7 +22,7 @@ $ADB install -r -g "$APK" >/dev/null
 $ADB shell settings put secure enabled_accessibility_services null; $ADB shell am force-stop dev.silver.burble
 $ADB shell "run-as dev.silver.burble rm -rf no_backup/pending shared_prefs/overlay.xml"
 $ADB push $OUT/settings.xml /data/local/tmp/settings.xml >/dev/null
-$ADB shell "run-as dev.silver.burble cp /data/local/tmp/settings.xml shared_prefs/settings.xml"
+$ADB shell "run-as dev.silver.burble mkdir -p shared_prefs && run-as dev.silver.burble cp /data/local/tmp/settings.xml shared_prefs/settings.xml"
 $ADB shell settings put secure enabled_accessibility_services dev.silver.burble/dev.silver.burble.InsertionService
 for i in $(seq 30); do sleep 1; [ -n "$(frame)" ] && break; done
 [ -n "$(frame)" ] || { echo "no bubble window: is the accessibility service on?"; exit 1; }

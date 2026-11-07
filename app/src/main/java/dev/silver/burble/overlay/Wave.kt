@@ -175,14 +175,14 @@ internal fun Wave(
     frame: () -> WaveFrame,
     accent: Color,
     modifier: Modifier = Modifier,
-    shader: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
+    shader: Boolean = true,
 ) {
     // The bubble's one background, in every state.
     val surface = MaterialTheme.colorScheme.surfaceContainerHigh
     val dark = surface.luminance() < 0.5f
     val colors = remember(accent, dark) { waveColors(accent, dark) }
     val dp = LocalDensity.current.density
-    if (shader && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    if (shader) {
         ShaderWave(frame, colors, surface, dp, modifier)
     } else {
         CanvasWave(frame, colors, surface, dp, modifier)

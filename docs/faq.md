@@ -18,7 +18,7 @@ Burble never signs in to Google, so it uses no account of yours. Google can bloc
 
 ### Does it work on Samsung and other non-Pixel phones?
 
-Burble needs Android 12 or later and uses no Pixel-only part, so the phone's brand shouldn't matter. If it fails on yours, tap **Report a problem** in Burble. It follows your keyboard's languages, or you pick from 34 common ones in **Advanced**, and Google's server decides how well each works.
+Burble needs Android 13 or later and uses no Pixel-only part, so the phone's brand shouldn't matter. If it fails on yours, tap **Report a problem** in Burble. It follows your keyboard's languages, or you pick from 34 common ones in **Advanced**, and Google's server decides how well each works.
 
 ### Why did a sentence go missing?
 

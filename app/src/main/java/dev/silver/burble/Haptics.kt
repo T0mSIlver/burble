@@ -1,7 +1,6 @@
 package dev.silver.burble
 
 import android.content.Context
-import android.media.AudioAttributes
 import android.os.Build
 import android.os.VibrationAttributes
 import android.os.VibrationEffect
@@ -92,13 +91,7 @@ object Haptics {
         val effect = VibrationEffect.startComposition().apply {
             for (b in beats) addPrimitive(b.primitive, b.scale, b.delayMs)
         }.compose()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH))
-        } else {
-            // Android 12 maps sonification to touch feedback.
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build())
-        }
+        vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH))
     }
 
     /**

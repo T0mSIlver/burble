@@ -1,6 +1,7 @@
 package dev.silver.burble
 
 import dev.silver.burble.InsertionService.Companion.existingText
+import dev.silver.burble.InsertionService.Companion.spaced
 import dev.silver.burble.InsertionService.Companion.landed
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,5 +30,13 @@ class ExistingTextTest {
         assertTrue(landed(before = "yes", now = "yes yes", words = "yes"))
         // A field may fold the whitespace it was given.
         assertTrue(landed(before = "", now = "one two", words = "one\n two"))
+    }
+
+    @Test fun wordsAfterAWordGetASpace() {
+        assertEquals(" hello", spaced("Hi", "hello"))
+        assertEquals("hello", spaced("Hi ", "hello"))
+        assertEquals("hello", spaced("", "hello"))
+        // Punctuation joins the word before it.
+        assertEquals(", then", spaced("Hi", ", then"))
     }
 }

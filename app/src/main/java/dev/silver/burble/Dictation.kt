@@ -292,8 +292,22 @@ object Dictation {
                         done: (State) -> Unit) {
         val service = InsertionService.instance
         val tapped = service?.tappedTarget()
+        if (service == null) {
+            if (current()) done(toClipboard(context, text))
+            return
+        }
         var insertion: InsertionService.Insertion? = null
-        if (service != null && pickTarget(tapped, into) { t -> service.insert(t, text)?.also { insertion = it } != null } != null) {
+        val insert = { t: InsertionService.Target, took: (Boolean) -> Unit ->
+            service.insert(t, text, current) { insertion = it; took(it != null) }
+        }
+        pickTarget(tapped, into, insert) { picked ->
+            if (!current()) return@pickTarget
+            if (picked == null) {
+                if (tapped == null && into == null) Log.d(TAG, "insert fell back: no field tapped or focused at the start")
+                val copied = toClipboard(context, text)
+                service.showKeyboard()
+                return@pickTarget done(copied)
+            }
             val ins = insertion!!
             Latency.mark("inserted")
             service.showKeyboard(ins.field)
@@ -307,12 +321,7 @@ object Dictation {
                     done(toClipboard(context, text))
                 }
             }
-            return
         }
-        if (tapped == null && into == null) Log.d(TAG, "insert fell back: no field tapped or focused at the start")
-        val copied = toClipboard(context, text)
-        service?.showKeyboard()
-        done(copied)
     }
 
     /** Reads [ins]'s field back now, then after each of [CHECK_MS], until its words show. */

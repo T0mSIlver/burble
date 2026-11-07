@@ -47,7 +47,7 @@ catalogue changes; the script skips a model that's gone and says so):
 |---|---|---|---|
 | `e1q` | Samsung Galaxy S24 | 16 (One UI 8) | Samsung flagship |
 | `a16x` | Samsung Galaxy A16 5G | 16 (One UI 8) | Samsung's best-selling budget line, little memory |
-| `OP573DL1` | OPPO CPH2557 | 14 (ColorOS) | Stands in for Xiaomi: Test Lab's only Xiaomi is a Redmi 6A on Android 8.1, below Burble's Android 12. ColorOS is as eager to stop background apps |
+| `OP573DL1` | OPPO CPH2557 | 14 (ColorOS) | Stands in for Xiaomi: Test Lab's only Xiaomi is a Redmi 6A on Android 8.1, below Burble's Android 13. ColorOS is as eager to stop background apps |
 | `CPH2449` | OnePlus 11 5G | 14 (OxygenOS) | OnePlus |
 | `cuscoi` | Motorola edge 50 fusion | 15 | Motorola |
 

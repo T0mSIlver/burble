@@ -7,7 +7,9 @@ import org.junit.Test
 class TargetsTest {
     private fun pick(tapped: String?, start: String?, takes: Set<String>): String? {
         val tried = mutableListOf<String>()
-        return pickTarget(tapped, start) { tried += it; it in takes }
+        var picked: String? = "not answered"
+        pickTarget(tapped, start, { t, took -> tried += t; took(t in takes) }) { picked = it }
+        return picked
     }
 
     @Test fun theLastTappedFieldFirst() = assertEquals("tapped", pick("tapped", "start", setOf("tapped", "start")))

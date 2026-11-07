@@ -1,6 +1,7 @@
 package dev.silver.burble
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.InputMethod
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -538,22 +539,88 @@ class InsertionService : AccessibilityService() {
     }
 
     /**
-     * Types [text] into [target] at its cursor, replacing any selection, or at its end when it
-     * no longer has focus. Returns what went where, or null when the field is gone (its window
-     * closed, or its app went to the background), can't be told apart from another, or takes a
-     * password. A field whose app was recreated (the screen turned) is the same field in its new
-     * window. A field may take the action and keep its old text: [landed] tells.
+     * Puts [text] into [target] as a keyboard would: through the field's input connection, at its
+     * cursor, replacing any selection, so the field's text is never written back (an app may
+     * report a placeholder or a label as its text). A field without the connection, as most chat
+     * apps' boxes are once the keyboard hides, is focused so its app starts input again; one
+     * rebuilt since the start has lost the user's cursor, so the words go at its end. With no
+     * connection after [REFOCUS_MS], the field's text is rewritten instead ([rewrite]). [done]
+     * gets what went where, or null when the field is gone (its window closed, or its app went
+     * to the background), can't be told apart from another, or takes a password; nothing once
+     * [current] turns false. A field whose app was recreated (the screen turned) is the same
+     * field in its new window. A field may take the words and not show them: [landed] tells.
      */
-    fun insert(target: Target, text: String): Insertion? {
-        val node = current(target) ?: return null
+    fun insert(target: Target, text: String, current: () -> Boolean, done: (Insertion?) -> Unit) {
+        val node = current(target) ?: return done(null)
         if (node.isPassword) {
             Log.d(TAG, "insert fell back: a password field")
-            return null
+            return done(null)
         }
+        if (rewriteOnly) return done(rewrite(node, target, text))
+        connection(node, target)?.let { return done(type(it, node, text, atEnd = false)) }
+        val rebuilt = node !== target.node
+        val start = SystemClock.uptimeMillis()
+        // The app asks for the keyboard as its field gets focus. Refused while Burble holds the
+        // keyboard down, the app takes it as asked and ignores [showKeyboard]'s request for it
+        // after the words; so the keyboard is let go first, as it comes back anyway.
+        if (keyboardHidden) softKeyboardController.setShowMode(SHOW_MODE_AUTO)
+        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        main.post(object : Runnable {
+            override fun run() {
+                if (!current()) return
+                val ic = connection(node, target)
+                val waited = SystemClock.uptimeMillis() - start
+                when {
+                    ic != null -> {
+                        Log.d(TAG, "insert: the field's input connection came back $waited ms after focusing it (rebuilt: $rebuilt)")
+                        done(type(ic, node, text, atEnd = rebuilt))
+                    }
+                    waited > REFOCUS_MS -> {
+                        Log.d(TAG, "insert: no input connection $waited ms after focusing the field; rewriting its text")
+                        done(rewrite(node, target, text))
+                    }
+                    else -> main.postDelayed(this, 16)
+                }
+            }
+        })
+    }
+
+    /** The input connection Android gives this service while [node], in its app, has input focus. */
+    private fun connection(node: AccessibilityNodeInfo, target: Target): InputMethod.AccessibilityInputConnection? {
+        val im = inputMethod ?: return null
+        val ic = im.currentInputConnection ?: return null
+        if (im.currentInputEditorInfo?.packageName != target.packageName) return null
+        return ic.takeIf { node.refresh() && node.isFocused }
+    }
+
+    /** Types [text] at the cursor, or at the end of the text when [atEnd], as a keyboard does. */
+    private fun type(ic: InputMethod.AccessibilityInputConnection, node: AccessibilityNodeInfo, text: String,
+                     atEnd: Boolean): Insertion {
+        // Read only to tell afterwards whether the words landed; never written back.
+        val held = existingText(node.text?.toString(), node.isShowingHintText, node.selectable())
+        if (atEnd) ic.getSurroundingText(WHOLE, WHOLE, 0)?.let {
+            // The whole text around the cursor; an unknown offset (-1) means it starts at 0.
+            val end = it.offset.coerceAtLeast(0) + it.text.length
+            ic.setSelection(end, end)
+        }
+        // The character before the cursor, or before the selection the words replace.
+        val before = ic.getSurroundingText(1, 0, 0)?.let { it.text.subSequence(0, it.selectionStart.coerceIn(0, it.text.length)) }
+        val spaced = spaced(before?.toString().orEmpty(), text)
+        ic.commitText(spaced, 1, null)
+        Log.d(TAG, "insert: typed through the input connection${if (atEnd) " at the end" else ""}")
+        return Insertion(node, held, spaced.trim())
+    }
+
+    /**
+     * Writes the field's text back with [text] at its cursor, replacing any selection, or at its
+     * end when it no longer has focus: for a field whose app gives no input connection. Returns
+     * what went where, or null when the field refuses the text.
+     */
+    private fun rewrite(node: AccessibilityNodeInfo, target: Target, text: String): Insertion? {
         val focused = node.isFocused
         val existing = existingText(node.text?.toString(), node.isShowingHintText, node.selectable())
         // What the field says about itself, never its text: why a hint was or wasn't taken for text.
-        Log.d(TAG, "insert into ${node.className}: text ${node.text?.length ?: -1} chars, hint " +
+        Log.d(TAG, "rewrite ${node.className}: text ${node.text?.length ?: -1} chars, hint " +
             "${node.hintText?.length ?: -1} chars, showing hint ${node.isShowingHintText}, text is hint " +
             "${node.text?.toString() == node.hintText?.toString()}, kept ${existing.length} chars, " +
             "focused $focused, selection ${node.textSelectionStart}..${node.textSelectionEnd}")
@@ -564,8 +631,7 @@ class InsertionService : AccessibilityService() {
             end = existing.length
         }
         val before = existing.substring(0, start)
-        val spaced = if (before.isNotEmpty() && !before.last().isWhitespace() &&
-            text.firstOrNull()?.let { it.isLetterOrDigit() } == true) " $text" else text
+        val spaced = spaced(before, text)
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
                 before + spaced + existing.substring(end))
@@ -687,6 +753,10 @@ class InsertionService : AccessibilityService() {
          * text only when it holds some, so text that isn't [selectable] isn't there. Without
          * that, a dictation landed as "Message hello".
          */
+        /** [text] with a space before it when it starts a word right after one ([before]). */
+        internal fun spaced(before: String, text: String): String =
+            if (before.isNotEmpty() && !before.last().isWhitespace() && text.firstOrNull()?.isLetterOrDigit() == true) " $text" else text
+
         internal fun existingText(text: String?, showingHint: Boolean, selectable: Boolean): String =
             if (showingHint || !selectable || text.isNullOrEmpty()) "" else text
 
@@ -714,6 +784,12 @@ class InsertionService : AccessibilityService() {
         }
 
         private const val EDIT_TEXT = "android.widget.EditText"
+        /** How long a field focused again has to hand over its input connection (60 to 130 ms on an emulator). */
+        private const val REFOCUS_MS = 600L
+        /** Characters asked for on each side of the cursor to get a field's whole text. */
+        private const val WHOLE = 100_000
+        /** Debug builds only: always rewrite the field's text, to compare with typing. */
+        @Volatile internal var rewriteOnly = false
 
         /**
          * Which of [fields] (each its view id and bounds) is the start field, by its [viewId] or

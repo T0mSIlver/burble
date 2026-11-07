@@ -40,7 +40,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.silver.burble"
-        minSdk = 31
+        minSdk = 33
         targetSdk = 36
         // Release builds pass -PversionName from the tag (v1.2.3 gives 1.2.3).
         val version = providers.gradleProperty("versionName").orNull ?: "0.1.0"
