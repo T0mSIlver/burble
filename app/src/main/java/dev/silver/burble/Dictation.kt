@@ -258,10 +258,10 @@ object Dictation {
         val into = target
         val text = r.getOrNull()
         if (text != null && text.isNotBlank()) {
-            // The audio goes once the words are in a field or on the clipboard.
-            deliver(context, text, into) { done ->
-                // Cancelled or replaced while the field was read back.
-                if (_state.value == State.Idle || from !== session) return@deliver
+            // The audio goes once the words are in a field or on the clipboard. Cancelled or
+            // replaced while the field is read back, the dictation delivers nothing more.
+            val current = { _state.value != State.Idle && from === session }
+            deliver(context, text, into, current) { done ->
                 dropSession()
                 _state.value = done
             }
@@ -286,8 +286,10 @@ object Dictation {
      * command brings the user's own words ([S3Stream]). [done] gets the result: at once, or
      * once the field read back shows the words, up to [CHECK_MS] later. A field that took the
      * action but not the words gets them on the clipboard, since the audio goes after (P5).
+     * Once [current] is false, nothing more happens: no read, no copy, no [done].
      */
-    private fun deliver(context: Context, text: String, into: InsertionService.Target?, done: (State) -> Unit) {
+    private fun deliver(context: Context, text: String, into: InsertionService.Target?, current: () -> Boolean,
+                        done: (State) -> Unit) {
         val service = InsertionService.instance
         val tapped = service?.tappedTarget()
         var insertion: InsertionService.Insertion? = null
@@ -295,7 +297,7 @@ object Dictation {
             val ins = insertion!!
             Latency.mark("inserted")
             service.showKeyboard(ins.field)
-            confirm(service, ins, 0) { landed ->
+            confirm(service, ins, 0, current) { landed ->
                 if (landed) {
                     Log.d(TAG, "delivered: inserted")
                     done(State.Done(text, Output.INSERT, delivered = true))
@@ -314,10 +316,12 @@ object Dictation {
     }
 
     /** Reads [ins]'s field back now, then after each of [CHECK_MS], until its words show. */
-    private fun confirm(service: InsertionService, ins: InsertionService.Insertion, step: Int, then: (Boolean) -> Unit) {
+    private fun confirm(service: InsertionService, ins: InsertionService.Insertion, step: Int, current: () -> Boolean,
+                        then: (Boolean) -> Unit) {
+        if (!current()) return
         if (service.landed(ins)) return then(true)
         if (step == CHECK_MS.size) return then(false)
-        main.postDelayed({ confirm(service, ins, step + 1, then) }, CHECK_MS[step])
+        main.postDelayed({ confirm(service, ins, step + 1, current, then) }, CHECK_MS[step])
     }
 
     private fun toClipboard(context: Context, text: String): State {
