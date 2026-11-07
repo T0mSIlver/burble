@@ -577,7 +577,9 @@ class InsertionService : AccessibilityService() {
                     }
                     waited > REFOCUS_MS -> {
                         Log.d(TAG, "insert: no input connection $waited ms after focusing the field; rewriting its text")
-                        done(rewrite(node, target, text))
+                        // Found again: the text may have changed, or the field gone, while it waited.
+                        val now = current(target)
+                        done(if (now == null || now.isPassword) null else rewrite(now, target, text))
                     }
                     else -> main.postDelayed(this, 16)
                 }
@@ -585,12 +587,17 @@ class InsertionService : AccessibilityService() {
         })
     }
 
-    /** The input connection Android gives this service while [node], in its app, has input focus. */
+    /**
+     * The input connection Android gives this service, while it's [node]'s: [node] has the
+     * screen's input focus, in the focused window, not merely its own window's (a dialog over it
+     * would have the connection).
+     */
     private fun connection(node: AccessibilityNodeInfo, target: Target): InputMethod.AccessibilityInputConnection? {
         val im = inputMethod ?: return null
         val ic = im.currentInputConnection ?: return null
         if (im.currentInputEditorInfo?.packageName != target.packageName) return null
-        return ic.takeIf { node.refresh() && node.isFocused }
+        if (!node.refresh() || !node.isFocused) return null
+        return ic.takeIf { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) == node }
     }
 
     /** Types [text] at the cursor, or at the end of the text when [atEnd], as a keyboard does. */
@@ -598,16 +605,15 @@ class InsertionService : AccessibilityService() {
                      atEnd: Boolean): Insertion {
         // Read only to tell afterwards whether the words landed; never written back.
         val held = existingText(node.text?.toString(), node.isShowingHintText, node.selectable())
-        if (atEnd) ic.getSurroundingText(WHOLE, WHOLE, 0)?.let {
-            // The whole text around the cursor; an unknown offset (-1) means it starts at 0.
-            val end = it.offset.coerceAtLeast(0) + it.text.length
-            ic.setSelection(end, end)
-        }
+        // The end of the text as the field reports it, a placeholder counting as none.
+        if (atEnd) ic.setSelection(held.length, held.length)
         // The character before the cursor, or before the selection the words replace.
-        val before = ic.getSurroundingText(1, 0, 0)?.let { it.text.subSequence(0, it.selectionStart.coerceIn(0, it.text.length)) }
+        val around = ic.getSurroundingText(1, 0, 0)
+        val before = around?.let { it.text.subSequence(0, it.selectionStart.coerceIn(0, it.text.length)) }
         val spaced = spaced(before?.toString().orEmpty(), text)
         ic.commitText(spaced, 1, null)
-        Log.d(TAG, "insert: typed through the input connection${if (atEnd) " at the end" else ""}")
+        Log.d(TAG, "insert: typed through the input connection${if (atEnd) " at the end" else ""}; cursor at " +
+            "${around?.let { if (it.offset < 0) "?" else (it.offset + it.selectionStart).toString() } ?: "?"} of ${held.length}")
         return Insertion(node, held, spaced.trim())
     }
 
@@ -786,8 +792,6 @@ class InsertionService : AccessibilityService() {
         private const val EDIT_TEXT = "android.widget.EditText"
         /** How long a field focused again has to hand over its input connection (60 to 130 ms on an emulator). */
         private const val REFOCUS_MS = 600L
-        /** Characters asked for on each side of the cursor to get a field's whole text. */
-        private const val WHOLE = 100_000
         /** Debug builds only: always rewrite the field's text, to compare with typing. */
         @Volatile internal var rewriteOnly = false
 

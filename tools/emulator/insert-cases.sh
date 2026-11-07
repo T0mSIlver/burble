@@ -49,7 +49,7 @@ $ADB shell "run-as dev.silver.burble mkdir -p shared_prefs && run-as dev.silver.
 $ADB shell settings put system accelerometer_rotation 0; $ADB shell settings put system user_rotation 0
 $ADB shell am start -W -n dev.silver.burble/.DebugFieldsActivity >/dev/null
 $ADB shell settings put secure enabled_accessibility_services dev.silver.burble/dev.silver.burble.InsertionService
-sleep 4
+for i in $(seq 20); do [ -n "$(frame)" ] && break; sleep 0.5; done # the service shows the bubble once bound
 [ "$how" = rewrite ] && send --es insert rewrite || send --es insert type
 
 # Scrolls the page to its top, or with "bottom" to its end. Swipes stay above the keyboard,
@@ -64,13 +64,18 @@ prepare() {
   $ADB shell input tap $(centre "$f"); sleep 1
   $ADB shell input keyevent KEYCODE_MOVE_END $(printf 'KEYCODE_DEL %.0s' $(seq 30))
   [ -n "$2" ] && $ADB shell input text "$2"
-  for k in $3; do $ADB shell input keyevent $k; done # one at a time: Compose drops a burst
+  for k in $3; do $ADB shell input keyevent $k; sleep 0.3; done # one at a time: Compose drops a burst
   sleep 1
 }
+# A tap on the bubble that starts no dictation is retried once, then reported as such.
 dictate() {
   $ADB logcat -c
-  read l t r b <<<$(frame)
-  $ADB shell input tap $(( (l+r)/2 )) $(( (t+b)/2 )); sleep 1
+  for try in 1 2; do
+    read l t r b <<<$(frame)
+    $ADB shell input tap $(( (l+r)/2 )) $(( (t+b)/2 )); sleep 1
+    $ADB logcat -d -s Dictation:D | grep -q "started;" && break
+    [ $try = 2 ] && { echo "the bubble tap didn't start a dictation"; exit 2; }
+  done
   send --es do fake; sleep 0.5
   send --es text Hello --ei after 300; sleep 3
 }
