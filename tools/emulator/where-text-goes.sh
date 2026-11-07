@@ -8,12 +8,15 @@
 #           open a screen whose field takes focus on its own (an EditText in onCreate, or a
 #           Compose field through a FocusRequester, as chat apps do), keyboard down, never
 #           tapped; tap the bubble, stop: the words land in that field.
+#   autofocus-ignores
+#           the same with an EditText that takes the set-text action and keeps its text: read
+#           back, the words aren't there, so they go to the clipboard.
 #   autofocus-late
 #           start on the home screen, then open the Compose screen: its field took focus after
 #           the start and wasn't tapped, so the words go to the clipboard; a second dictation
 #           there lands in the field.
 #
-#   tools/emulator/where-text-goes.sh tap|switch|autofocus-edit|autofocus-compose|autofocus-late
+#   tools/emulator/where-text-goes.sh tap|switch|autofocus-edit|autofocus-compose|autofocus-ignores|autofocus-late
 #
 # Needs: a booted emulator with no lock screen and the debug APK built. Prints PASS or FAIL.
 set -e
@@ -77,7 +80,11 @@ if [[ "$mode" == autofocus-* ]]; then
   text=$($ADB shell cat /sdcard/where.xml | grep -o '<node[^>]*class="android.widget.EditText"[^>]*>' | grep -o ' text="[^"]*"' | head -1)
   echo "log: ${late:+late: $late }$now"; echo "field:$text"
   ok=0
-  [[ "$now" == *"delivered: inserted"* && "$text" == *$words* ]] && ok=1
+  if [ "$mode" = autofocus-ignores ]; then
+    [[ "$now" == *"doesn't show it"* && "$now" == *"delivered: clipboard"* && "$text" != *$words* ]] && ok=1
+  else
+    [[ "$now" == *"delivered: inserted"* && "$text" == *$words* ]] && ok=1
+  fi
   [ "$mode" = autofocus-late ] && [[ "$late" != *"delivered: clipboard"* ]] && ok=0
   [ $ok = 1 ] && echo PASS || { echo FAIL; exit 1; }
   exit 0

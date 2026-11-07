@@ -8,7 +8,6 @@ import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -257,17 +256,25 @@ object Dictation {
         // A failed dictation keeps its session, and with it the audio and the field, for retry.
         val retryable = r.isFailure && kindOf(r.exceptionOrNull()!!) != ErrorKind.NO_MIC
         val into = target
+        val text = r.getOrNull()
+        if (text != null && text.isNotBlank()) {
+            // The audio goes once the words are in a field or on the clipboard.
+            deliver(context, text, into) { done ->
+                // Cancelled or replaced while the field was read back.
+                if (_state.value == State.Idle || from !== session) return@deliver
+                dropSession()
+                _state.value = done
+            }
+            return
+        }
         val next = r.fold(
-            onSuccess = { text ->
-                if (text.isBlank()) State.Error(ErrorKind.NOTHING_HEARD)
-                else deliver(context, text, into)
-            },
+            onSuccess = { State.Error(ErrorKind.NOTHING_HEARD) },
             onFailure = { e ->
                 android.util.Log.e(TAG, "dictation failed", e)
                 State.Error(kindOf(e), e.message?.take(120), canRetry = retryable)
             },
         )
-        // The audio goes once the words are in a field or on the clipboard; a failure keeps it.
+        // A failure keeps the audio.
         if (!retryable) dropSession()
         _state.value = next
     }
@@ -276,22 +283,46 @@ object Dictation {
      * Into the last text field the user tapped while dictating, else the field the dictation
      * started in; when neither takes them, onto the clipboard, where Android's own preview
      * offers paste and edit. Every result goes the same way, whatever Rambler's intent: a
-     * command brings the user's own words ([S3Stream]).
+     * command brings the user's own words ([S3Stream]). [done] gets the result: at once, or
+     * once the field read back shows the words, up to [CHECK_MS] later. A field that took the
+     * action but not the words gets them on the clipboard, since the audio goes after (P5).
      */
-    private fun deliver(context: Context, text: String, into: InsertionService.Target?): State {
+    private fun deliver(context: Context, text: String, into: InsertionService.Target?, done: (State) -> Unit) {
         val service = InsertionService.instance
         val tapped = service?.tappedTarget()
-        var field: AccessibilityNodeInfo? = null
-        if (service != null && pickTarget(tapped, into) { t -> service.insert(t, text)?.also { field = it } != null } != null) {
+        var insertion: InsertionService.Insertion? = null
+        if (service != null && pickTarget(tapped, into) { t -> service.insert(t, text)?.also { insertion = it } != null } != null) {
+            val ins = insertion!!
             Latency.mark("inserted")
-            service.showKeyboard(field)
-            Log.d(TAG, "delivered: inserted")
-            return State.Done(text, Output.INSERT, delivered = true)
+            service.showKeyboard(ins.field)
+            confirm(service, ins, 0) { landed ->
+                if (landed) {
+                    Log.d(TAG, "delivered: inserted")
+                    done(State.Done(text, Output.INSERT, delivered = true))
+                } else {
+                    Log.d(TAG, "insert fell back: ${ins.field.className} took the text but doesn't show it " +
+                        "${CHECK_MS.sum()} ms later")
+                    done(toClipboard(context, text))
+                }
+            }
+            return
         }
         if (tapped == null && into == null) Log.d(TAG, "insert fell back: no field tapped or focused at the start")
+        val copied = toClipboard(context, text)
+        service?.showKeyboard()
+        done(copied)
+    }
+
+    /** Reads [ins]'s field back now, then after each of [CHECK_MS], until its words show. */
+    private fun confirm(service: InsertionService, ins: InsertionService.Insertion, step: Int, then: (Boolean) -> Unit) {
+        if (service.landed(ins)) return then(true)
+        if (step == CHECK_MS.size) return then(false)
+        main.postDelayed({ confirm(service, ins, step + 1, then) }, CHECK_MS[step])
+    }
+
+    private fun toClipboard(context: Context, text: String): State {
         copy(context, text)
         Latency.mark("copied")
-        service?.showKeyboard()
         Log.d(TAG, "delivered: clipboard")
         return State.Done(text, Output.CLIPBOARD, delivered = true)
     }
@@ -337,5 +368,10 @@ object Dictation {
     }
 
     private const val REQUEST = "request.properties"
+    /**
+     * The waits between reads of a field after an insertion: 0.7 s in all. An EditText shows
+     * the words at the first read; a Compose field a frame or more later.
+     */
+    private val CHECK_MS = longArrayOf(100, 150, 200, 250)
     private const val TAG = "Dictation"
 }

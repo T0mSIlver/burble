@@ -539,20 +539,19 @@ class InsertionService : AccessibilityService() {
 
     /**
      * Types [text] into [target] at its cursor, replacing any selection, or at its end when it
-     * no longer has focus. Returns the field, or null when it's gone (its window closed, or its
-     * app went to the background), can't be told apart from another, or takes a password. A
-     * field whose app was recreated (the screen turned) is the same field in its new window.
+     * no longer has focus. Returns what went where, or null when the field is gone (its window
+     * closed, or its app went to the background), can't be told apart from another, or takes a
+     * password. A field whose app was recreated (the screen turned) is the same field in its new
+     * window. A field may take the action and keep its old text: [landed] tells.
      */
-    fun insert(target: Target, text: String): AccessibilityNodeInfo? {
+    fun insert(target: Target, text: String): Insertion? {
         val node = current(target) ?: return null
         if (node.isPassword) {
             Log.d(TAG, "insert fell back: a password field")
             return null
         }
         val focused = node.isFocused
-        val existing = existingText(node.text?.toString(), node.isShowingHintText,
-            selectable = node.className?.toString() != EDIT_TEXT ||
-                node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_SELECTION } || node.movementGranularities != 0)
+        val existing = existingText(node.text?.toString(), node.isShowingHintText, node.selectable())
         // What the field says about itself, never its text: why a hint was or wasn't taken for text.
         Log.d(TAG, "insert into ${node.className}: text ${node.text?.length ?: -1} chars, hint " +
             "${node.hintText?.length ?: -1} chars, showing hint ${node.isShowingHintText}, text is hint " +
@@ -584,8 +583,27 @@ class InsertionService : AccessibilityService() {
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, at)
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, at)
         })
-        return node
+        return Insertion(node, existing, spaced.trim())
     }
+
+    /** What [insert] did: the [field], the text it held [before], and the [words] as they went in. */
+    class Insertion(val field: AccessibilityNodeInfo, val before: String, val words: String)
+
+    /**
+     * Whether [insertion]'s words are in its field now, read back from it. A field can take the
+     * action and keep its old text, and a Compose field shows new text a frame or more after it.
+     * A field that's gone counts as landed: the app moved on with it, so nothing tells.
+     */
+    fun landed(insertion: Insertion): Boolean {
+        val node = insertion.field
+        if (!node.refresh()) return true
+        return landed(insertion.before, existingText(node.text?.toString(), node.isShowingHintText, node.selectable()),
+            insertion.words)
+    }
+
+    /** Whether the field holds text: an EditText offers to select it or move through it only then. */
+    private fun AccessibilityNodeInfo.selectable() = className?.toString() != EDIT_TEXT ||
+        actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_SELECTION } || movementGranularities != 0
 
     /**
      * [target]'s field as it is now. Apps that redraw their input bar when the keyboard hides
@@ -671,6 +689,29 @@ class InsertionService : AccessibilityService() {
          */
         internal fun existingText(text: String?, showingHint: Boolean, selectable: Boolean): String =
             if (showingHint || !selectable || text.isNullOrEmpty()) "" else text
+
+        /**
+         * Whether [now], a field's text after an insertion, holds [words] more often than
+         * [before] did: the same words already in the field don't count. Runs of whitespace
+         * count as one space, since a field may fold them.
+         */
+        internal fun landed(before: String, now: String, words: String): Boolean {
+            val w = fold(words)
+            if (w.isEmpty()) return true
+            return count(fold(now), w) > count(fold(before), w)
+        }
+
+        private fun fold(s: String) = s.replace(Regex("\\s+"), " ").trim()
+
+        private fun count(text: String, words: String): Int {
+            var n = 0
+            var at = text.indexOf(words)
+            while (at >= 0) {
+                n++
+                at = text.indexOf(words, at + words.length)
+            }
+            return n
+        }
 
         private const val EDIT_TEXT = "android.widget.EditText"
 

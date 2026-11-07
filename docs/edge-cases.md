@@ -82,6 +82,7 @@ Status: ✅ covered and passing, 👤 needs the phone, ❌ fails, open. **Lab**:
 | Focus an app moves by itself isn't a tap; a first tap sends only focus, so focus within 1.5 s of a touch outside the bubble counts | Code (`InsertionService.tappedField`); emulator `where-text-goes.sh tap` | ✅ |
 | Started in app A, switched to B, stopped → clipboard; back in A, nothing lands | Emulator `tools/emulator/where-text-goes.sh switch` | ✅ |
 | A field the app focused on opening, never tapped (EditText in onCreate, Compose FocusRequester as in chat apps), keyboard down: the start field; found in the active window, any window, inside a focused container, or from the app's focus event | Unit `TargetsTest.anAppFocusedFieldIsTheStartField` and three more; emulator `tools/emulator/where-text-goes.sh autofocus-edit`, `autofocus-compose` | ✅ |
+| A field that takes the text but keeps its own: read back at once, then for 0.7 s; the words go to the clipboard (Copied), since the audio goes after. The same words already in the field don't count | Unit `ExistingTextTest.wordsLandOnlyWhenTheFieldGainsThem`; emulator `tools/emulator/where-text-goes.sh autofocus-ignores` (`DebugAutoFocusActivity` kind `ignores`) | ✅ |
 | A field the app focused after the start, not tapped: clipboard; the next dictation there lands in it | Emulator `where-text-goes.sh autofocus-late` | ✅ |
 | The Claude app's message box focused on opening a chat | 👤 10 | 👤 |
 | Tapping a Chrome web field during a dictation | 👤 8 | 👤 |

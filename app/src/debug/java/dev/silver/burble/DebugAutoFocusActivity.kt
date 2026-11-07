@@ -1,6 +1,8 @@
 package dev.silver.burble
 
+import android.content.Context
 import android.os.Bundle
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.EditText
 import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
@@ -28,8 +30,9 @@ import androidx.compose.ui.unit.dp
 /**
  * Debug builds only: a field that has focus on opening, never tapped, as chat apps do with their
  * message box. `--es kind edit` focuses an EditText in onCreate; `compose` (the default) a
- * Compose TextField at the bottom through a FocusRequester once composed, like the Claude app.
- * The keyboard stays down.
+ * Compose TextField at the bottom through a FocusRequester once composed, like the Claude app;
+ * `ignores` an EditText that takes accessibility's set-text action and keeps its text. The
+ * keyboard stays down.
  *
  *     adb shell am start -n dev.silver.burble/.DebugAutoFocusActivity --es kind compose
  */
@@ -37,8 +40,10 @@ class DebugAutoFocusActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        if (intent.getStringExtra("kind") == "edit") {
-            val field = EditText(this).apply { hint = "Focused on opening"; contentDescription = "autofocus" }
+        val kind = intent.getStringExtra("kind")
+        if (kind == "edit" || kind == "ignores") {
+            val field = (if (kind == "ignores") IgnoringField(this) else EditText(this))
+                .apply { hint = "Focused on opening"; contentDescription = "autofocus" }
             setContentView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(48, 200, 48, 48)
@@ -58,4 +63,10 @@ class DebugAutoFocusActivity : ComponentActivity() {
             LaunchedEffect(Unit) { focus.requestFocus() }
         }
     }
+}
+
+/** Says it took accessibility's text and keeps its own: a field the words never reach. */
+private class IgnoringField(context: Context) : EditText(context) {
+    override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean =
+        action == AccessibilityNodeInfo.ACTION_SET_TEXT || super.performAccessibilityAction(action, arguments)
 }
