@@ -154,7 +154,7 @@ class Overlay(
      * now rather than after 2 s. Once on its way, more of these change nothing.
      */
     fun elsewhere() {
-        if (!ui.rest.value && restsEarly(ui.idle.value, ui.touching.value, SystemClock.uptimeMillis(), ui.releasedAt)) {
+        if (!ui.rest.value && restsEarly(ui.idle.value, ui.touch.value != Touch.NONE, SystemClock.uptimeMillis(), ui.releasedAt)) {
             ui.rest.value = true
         }
     }
@@ -223,7 +223,7 @@ class Overlay(
             snapshotFlow {
                 val kind = (Dictation.state.value as? Dictation.State.Error)?.kind
                 (kind == Dictation.ErrorKind.NO_MIC || kind == Dictation.ErrorKind.REJECTED) && ui.labelled.value &&
-                    !ui.dragging.value && !ui.moving.value && !ui.locked.value && !ui.away.value && !ui.closing.value
+                    ui.touch.value != Touch.DRAGGING && !ui.moving.value && !ui.locked.value && !ui.away.value && !ui.closing.value
             }.collect { opens ->
                 setFlag(pillParams, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, !opens)
                 pill?.let { runCatching { windowManager.updateViewLayout(it, pillParams) } }
@@ -739,7 +739,7 @@ class Overlay(
             Haptics.play(frame, Haptic.DROPPED, listening = false)
             val st = Dictation.state.value
             when {
-                st.recording || (st as? Dictation.State.Error)?.waits == true -> Dictation.cancel()
+                st.recording || (st as? Dictation.State.Error)?.canRetry == true -> Dictation.cancel()
                 // A check mark or an error that doesn't wait goes with the bubble, or its state
                 // would show it again until it times out.
                 else -> {
@@ -772,7 +772,7 @@ class Overlay(
         private var downX = 0f
         private var downY = 0f
         private var start = 0f to 0f
-        private var dragging = false
+        private val dragging get() = ui.touch.value == Touch.DRAGGING
 
         init {
             isClickable = true
@@ -792,13 +792,11 @@ class Overlay(
                     return false
                 }
                 MotionEvent.ACTION_DOWN -> {
-                    ui.touching.value = true
-                    ui.pressed.value = true
+                    ui.touch.value = Touch.PRESSED
                     snap?.cancel()
                     ui.moving.value = false
                     downX = e.rawX; downY = e.rawY
                     start = ui.drag.value
-                    dragging = false
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - downX
@@ -806,9 +804,7 @@ class Overlay(
                     if (!dragging && abs(dx) + abs(dy) > slop) {
                         endFlight()
                         start = ui.drag.value
-                        dragging = true
-                        ui.dragging.value = true
-                        ui.pressed.value = false
+                        ui.touch.value = Touch.DRAGGING
                         showTarget()
                     }
                     if (dragging) {
@@ -819,14 +815,10 @@ class Overlay(
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val tap = !dragging && e.actionMasked == MotionEvent.ACTION_UP
+                    val dragged = dragging
                     ui.releasedAt = SystemClock.uptimeMillis()
-                    ui.touching.value = false
-                    ui.pressed.value = false
-                    if (dragging) {
-                        dragging = false
-                        ui.dragging.value = false
-                        release(this)
-                    }
+                    ui.touch.value = Touch.NONE
+                    if (dragged) release(this)
                     if (tap) performClick()
                 }
             }
@@ -835,10 +827,7 @@ class Overlay(
 
         override fun onConfigurationChanged(newConfig: Configuration) {
             super.onConfigurationChanged(newConfig)
-            dragging = false
-            ui.dragging.value = false
-            ui.touching.value = false
-            ui.pressed.value = false
+            ui.touch.value = Touch.NONE
             hideTarget()
             // The new window metrics land after this callback. The anchor keeps its side and its
             // share of the height.

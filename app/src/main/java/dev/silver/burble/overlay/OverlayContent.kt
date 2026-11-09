@@ -127,8 +127,8 @@ internal sealed interface Look {
     data object Done : Look
     /** No field took the words: they're on the clipboard. */
     data object Copied : Look
-    /** [waits]: the audio is kept; a tap retries it. */
-    data class Failed(val kind: ErrorKind, val waits: Boolean = false) : Look
+    /** [canRetry]: the audio is kept; a tap retries it. */
+    data class Failed(val kind: ErrorKind, val canRetry: Boolean = false) : Look
 }
 
 internal fun Dictation.State.look(): Look = when (this) {
@@ -136,10 +136,12 @@ internal fun Dictation.State.look(): Look = when (this) {
     Dictation.State.Listening -> Look.Listening
     Dictation.State.Finishing -> Look.Finishing
     is Dictation.State.Done -> if (output == Output.CLIPBOARD) Look.Copied else Look.Done
-    is Dictation.State.Error -> Look.Failed(kind, waits)
+    is Dictation.State.Error -> Look.Failed(kind, canRetry)
 }
 
 /** What the overlay's windows share: [Overlay] sets it, the composables in them read it. */
+internal enum class Touch { NONE, PRESSED, DRAGGING }
+
 internal class OverlayUi {
     val screen = mutableStateOf(Screen(1f, 1f, Box(0f, 0f, 1f, 1f), 1f))
     val anchor = mutableStateOf(Anchor(Edge.RIGHT, 0.4f))
@@ -149,11 +151,8 @@ internal class OverlayUi {
     val away = mutableStateOf(false)
     /** Use Burble went off: the bubble fades out, then its windows go. */
     val closing = mutableStateOf(false)
-    /** A finger is on the bubble, dragging or not. */
-    val touching = mutableStateOf(false)
-    /** A finger is on the bubble and hasn't started a drag: it's pressed. */
-    val pressed = mutableStateOf(false)
-    val dragging = mutableStateOf(false)
+    /** A finger on the bubble: none, pressing it, or dragging it past the slop. */
+    val touch = mutableStateOf(Touch.NONE)
     /** Springing back to its edge after a drag. */
     val moving = mutableStateOf(false)
     /** An error's label shows. */
@@ -216,7 +215,7 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
                 delay(DONE_HOLD_MS)
                 Dictation.acknowledge()
             }
-            is Look.Failed -> if (!look.waits) {
+            is Look.Failed -> if (!look.canRetry) {
                 delay(if (look.kind == ErrorKind.NOTHING_HEARD) NOTHING_HEARD_WORDS_MS else ERROR_WORDS_MS)
                 ui.labelled.value = false
                 Dictation.acknowledge()
@@ -229,7 +228,7 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
     // an error's words have gone, so they stay beside the bubble; sooner when the user touches or
     // scrolls the app underneath ([Overlay.elsewhere]).
     // Nor while a keyboard's key started it: it waits full size for the keyboard to come back.
-    val idle = shown is Look.Idle && !ui.touching.value && !ui.labelled.value && ui.flight.value == null
+    val idle = shown is Look.Idle && ui.touch.value == Touch.NONE && !ui.labelled.value && ui.flight.value == null
     LaunchedEffect(idle) {
         ui.idle.value = idle
         ui.rest.value = false
@@ -285,7 +284,7 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
                     val at = placement(layout(progress.value), sizePx, settings.whenIdle, progress.value)
                     ui.flight.value?.let { it.place(at, sizePx, shown = !it.inWindow) } ?: at
                 },
-                pressed = ui.pressed.value,
+                pressed = ui.touch.value == Touch.PRESSED,
             ) { color, modifier ->
                 LiveWave(Dictation.level, color, modifier, finishing = { Dictation.state.value == Dictation.State.Finishing })
             }
@@ -377,7 +376,7 @@ internal fun LivePill(ui: OverlayUi) {
     val state by Dictation.state.collectAsState()
     val context = LocalContext.current
     val failed = (state.look() as? Look.Failed)?.takeIf {
-        ui.labelled.value && !ui.dragging.value && !ui.moving.value &&
+        ui.labelled.value && ui.touch.value != Touch.DRAGGING && !ui.moving.value &&
             !ui.locked.value && !ui.away.value && !ui.closing.value
     }
     val right = ui.anchor.value.edge == Edge.RIGHT
@@ -454,7 +453,7 @@ private const val NOTHING_HEARD_WORDS_MS = 2000L
  */
 internal fun Look.shown(): Look = when (this) {
     Look.Done, Look.Copied -> Look.Idle
-    is Look.Failed -> if (waits) this else Look.Idle
+    is Look.Failed -> if (canRetry) this else Look.Idle
     else -> this
 }
 
