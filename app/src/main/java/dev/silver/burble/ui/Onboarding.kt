@@ -128,9 +128,11 @@ fun Onboarding(
     initialUnlock: Unlock = Unlock.REFUSED,
     tryField: TextFieldState = rememberTextFieldState(),
 ) {
-    var step by rememberSaveable { mutableStateOf(initial) }
+    // Keys of their own: state saved by a build that kept these as numbers is never read back as
+    // an enum.
+    var step by rememberSaveable(key = "onboarding-step") { mutableStateOf(initial) }
     val unlocking = rememberSaveable { access.restricted }
-    var unlock by rememberSaveable { mutableStateOf(initialUnlock) }
+    var unlock by rememberSaveable(key = "onboarding-unlock") { mutableStateOf(initialUnlock) }
     // The microphone granted on the first screen moves on; one granted before needs Continue.
     val micOnArrival = remember(step) { access.microphone }
     LaunchedEffect(step, access.microphone) {
