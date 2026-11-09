@@ -154,8 +154,9 @@ class Overlay(
      * now rather than after 2 s. Once on its way, more of these change nothing.
      */
     fun elsewhere() {
-        if (!ui.rest.value && restsEarly(ui.idle.value, ui.touch.value != Touch.NONE, SystemClock.uptimeMillis(), ui.releasedAt)) {
-            ui.rest.value = true
+        val rest = ui.rest.value
+        if (rest != Rest.RESTING && restsEarly(rest == Rest.WAITING, ui.touch.value != Touch.NONE, SystemClock.uptimeMillis(), ui.releasedAt)) {
+            ui.rest.value = Rest.RESTING
         }
     }
 

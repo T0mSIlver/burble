@@ -61,8 +61,16 @@ class DictationSession(
     private val segments = ArrayList<Segment>()
     private var thread: Thread? = null
     @Volatile private var stopping = false
-    private var audioEnded = false
-    private var reported = false
+    /** Under [lock]. A [retry] goes back from REPORTED to SENDING; [cancelled] can come at any point. */
+    private var phase = Phase.RECORDING
+
+    private enum class Phase {
+        RECORDING,
+        /** The audio ended; waiting for the segments' results. */
+        SENDING,
+        /** [onResult] has run. */
+        REPORTED,
+    }
     private var cancelled = false
     private var lastVoiceMs = 0L
     private val voice = VoiceLevel()
@@ -109,7 +117,7 @@ class DictationSession(
                 // Audio already captured is kept: end it like a stop. A failure before any audio
                 // is the microphone's.
                 val none = synchronized(lock) {
-                    segments.isEmpty().also { if (it) { reported = true; audioEnded = true } }
+                    segments.isEmpty().also { if (it) phase = Phase.REPORTED }
                 }
                 if (none) onResult(Result.failure(e)) else {
                     endAudio()
@@ -141,8 +149,8 @@ class DictationSession(
      * there is nothing to send again.
      */
     fun retry(): Boolean = synchronized(lock) {
-        if (cancelled || !reported || segments.none { it.result?.isFailure == true }) return false
-        reported = false
+        if (cancelled || phase != Phase.REPORTED || segments.none { it.result?.isFailure == true }) return false
+        phase = Phase.SENDING
         // All cleared before any is sent: a quick answer mustn't find the others still failed.
         val failed = segments.filter { it.result?.isFailure == true }
         failed.forEach { it.result = null }
@@ -200,8 +208,8 @@ class DictationSession(
 
     internal fun endAudio() {
         val last = synchronized(lock) {
-            if (audioEnded) return
-            audioEnded = true
+            if (phase != Phase.RECORDING) return
+            phase = Phase.SENDING
             segments.lastOrNull()?.takeIf { it.recording }
         }
         Latency.mark("audio end")
@@ -269,8 +277,8 @@ class DictationSession(
     }
 
     private fun reportIfDone() {
-        if (!audioEnded || reported || segments.any { it.result == null }) return
-        reported = true
+        if (phase != Phase.SENDING || segments.any { it.result == null }) return
+        phase = Phase.REPORTED
         val failure = segments.firstNotNullOfOrNull { it.result?.exceptionOrNull() }
         onResult(if (failure != null) Result.failure(failure)
             else Result.success(joinTexts(segments.map { it.result!!.getOrThrow() })))
@@ -278,8 +286,7 @@ class DictationSession(
 
     /** Takes [files] as segments whose sending failed, ready for [retry]. */
     private fun restore(files: List<Pair<Int, File>>) = synchronized(lock) {
-        audioEnded = true
-        reported = true
+        phase = Phase.REPORTED
         for ((index, _) in files) {
             segments.add(Segment(index, 0, encoder = null).apply { result = Result.failure(Unsent()) })
         }

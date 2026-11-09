@@ -142,6 +142,8 @@ internal fun Dictation.State.look(): Look = when (this) {
 /** What the overlay's windows share: [Overlay] sets it, the composables in them read it. */
 internal enum class Touch { NONE, PRESSED, DRAGGING }
 
+internal enum class Rest { AWAKE, WAITING, RESTING }
+
 internal class OverlayUi {
     val screen = mutableStateOf(Screen(1f, 1f, Box(0f, 0f, 1f, 1f), 1f))
     val anchor = mutableStateOf(Anchor(Edge.RIGHT, 0.4f))
@@ -159,10 +161,11 @@ internal class OverlayUi {
     val labelled = mutableStateOf(false)
     /** Docked at rest: the touch window narrows to the edge. */
     val docked = mutableStateOf(false)
-    /** Idle and untouched: it may rest. */
-    val idle = mutableStateOf(false)
-    /** At rest, or on its way there: the idle look. */
-    val rest = mutableStateOf(false)
+    /**
+     * AWAKE: something to show, or a finger on it. WAITING: idle and untouched, counting
+     * [REST_MS] down. RESTING: at rest, or on its way there: the idle look.
+     */
+    val rest = mutableStateOf(Rest.AWAKE)
     /** When a finger last left the bubble, in [android.os.SystemClock.uptimeMillis]. */
     var releasedAt = 0L
     /** Out of a keyboard's mic key or back into it ([Overlay.emergeFrom]). */
@@ -230,15 +233,14 @@ internal fun LiveBubble(ui: OverlayUi, onGone: () -> Unit) {
     // Nor while a keyboard's key started it: it waits full size for the keyboard to come back.
     val idle = shown is Look.Idle && ui.touch.value == Touch.NONE && !ui.labelled.value && ui.flight.value == null
     LaunchedEffect(idle) {
-        ui.idle.value = idle
-        ui.rest.value = false
+        ui.rest.value = if (idle) Rest.WAITING else Rest.AWAKE
         if (idle) {
             if (!ui.restNow) delay(REST_MS)
             ui.restNow = false
-            ui.rest.value = true
+            ui.rest.value = Rest.RESTING
         }
     }
-    val atRest = idle && ui.rest.value
+    val atRest = idle && ui.rest.value == Rest.RESTING
     // One spring from full to the idle look and back. Read only while drawing: a frame of the
     // motion redraws the bubble without recomposing it.
     val progress = remember { Animatable(0f) }

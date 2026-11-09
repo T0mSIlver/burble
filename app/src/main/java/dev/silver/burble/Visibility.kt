@@ -5,22 +5,24 @@ package dev.silver.burble
  * screen and ✕. [F] is whatever tells two fields apart.
  */
 internal class Visibility<F> {
-    /** Dropped on ✕: hidden until the next unlock, or with "While typing" the next text field. */
-    var snoozed = false
-        private set
-    private var snoozedIn: F? = null
-    private var focusLeft = false
+    /**
+     * Set by ✕: hidden until the next unlock, or with "While typing" the next text field. [field]
+     * had input focus then (null: none); [focusLeft] once focus has since left it.
+     */
+    private class Snooze<F>(val field: F?, var focusLeft: Boolean = field == null)
+
+    private var snooze: Snooze<F>? = null
+
+    val snoozed get() = snooze != null
 
     /** ✕ while [field] had input focus (or none). */
     fun snooze(field: F?) {
-        snoozed = true
-        snoozedIn = field
-        focusLeft = field == null
+        snooze = Snooze(field)
     }
 
     /** The next unlock ends a snooze; turning Burble back on does too. */
     fun wake() {
-        snoozed = false
+        snooze = null
     }
 
     /**
@@ -28,10 +30,11 @@ internal class Visibility<F> {
      * same one after focus left it, ends a snooze.
      */
     fun focus(field: F?, mode: BubbleShow) {
-        if (!snoozed || mode != BubbleShow.TYPING) return
+        val s = snooze ?: return
+        if (mode != BubbleShow.TYPING) return
         when {
-            field == null -> focusLeft = true
-            focusLeft || field != snoozedIn -> snoozed = false
+            field == null -> s.focusLeft = true
+            s.focusLeft || field != s.field -> snooze = null
         }
     }
 
