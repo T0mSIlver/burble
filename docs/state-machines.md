@@ -12,7 +12,7 @@ is in the planning repo's spec/ux.md.
 | What the bubble draws | `Look` (overlay) | one per dictation state, Done split into Done and Copied | `Dictation.State.look()` | `OverlayScreenshotTest`, `TransitionScreenshotTest` |
 | A finger on the bubble | `Touch` (overlay) | NONE, PRESSED, DRAGGING | the touch window's events, a turn of the screen | `tools/emulator/dock-anim.sh` |
 | ✕ snooze | `Visibility` | shown, snoozed in a field, snoozed with focus gone | `snooze`, `wake`, `focus` | `VisibilityTest` |
-| The bubble's flight out of a keyboard's mic key and back | `Flight.Phase` | OUT, BACK, INTO_KEY, IN_KEY; the flight ends from any of them | `Overlay.emergeFrom`, `flyOn`, `keyboardBack`, `goHome`, `land`, `endFlight` | by hand, with a keyboard that hands off |
+| The bubble's flight out of a keyboard's mic key and back | `Flight.Phase` | OUT, BACK, INTO_KEY, IN_KEY; the flight ends from any of them | `Overlay.emergeFrom`, `flyOn`, `keyboardBack`, `goHome`, `land`, `endFlight` | `tools/emulator/handoff-flight.sh` |
 | The keyboard a dictation holds down | `InsertionService.keyboardHeld` | null (Android shows it), held (with whether it was up and in which window) | `hideKeyboard`, `showKeyboard` | `keyboard-back.sh`, `with-keyboard.sh` |
 | Onboarding | `Step`, `Unlock` | WELCOME, INSERTION, TRY; the restricted-settings unlock REFUSED, ALLOW, TURN_ON | its buttons, and access granted while it shows | `ScreenshotTest` |
 | Settings pages | `Page` stack (Home) | a stack of pages | push and Back | `PageFramesTest` (the motion) |
