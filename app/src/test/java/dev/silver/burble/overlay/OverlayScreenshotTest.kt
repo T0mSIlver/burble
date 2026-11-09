@@ -74,7 +74,7 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             "Listening" to { Bubble(Look.Listening, level = 0.6f, alignEnd = true) },
             "Finishing, its sweep 1.2 s in" to { Bubble(Look.Finishing, finishingMs = 1200, alignEnd = true) },
             "Inserted: the idle look" to { Bubble(Look.Done, alignEnd = true) },
-            "Error, its audio kept" to { Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), alignEnd = true) },
+            "Error, its audio kept" to { Bubble(Look.Failed(ErrorKind.NETWORK, canRetry = true), alignEnd = true) },
         )
         Column(Modifier.width(412.dp).background(c.surface)) {
             for ((label, bubble) in states) Box(Modifier.fillMaxWidth().height(112.dp)) {
@@ -114,14 +114,14 @@ class OverlayScreenshotTest(private val palette: String, private val dark: Boole
             Labelled("reduced motion") {
                 Bubble(Look.Finishing, finishingMs = 1200, reducedMotion = true)
                 Bubble(Look.Done, reducedMotion = true)
-                Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), reducedMotion = true, labelled = false)
+                Bubble(Look.Failed(ErrorKind.NETWORK, canRetry = true), reducedMotion = true, labelled = false)
             }
             Labelled("inserted, copied") {
                 Bubble(Look.Done)
                 Bubble(Look.Copied)
             }
-            Bubble(Look.Failed(ErrorKind.NETWORK, waits = true), alignEnd = true)
-            for (kind in ErrorKind.entries) Bubble(Look.Failed(kind, waits = kind != ErrorKind.NOTHING_HEARD && kind != ErrorKind.NO_MIC))
+            Bubble(Look.Failed(ErrorKind.NETWORK, canRetry = true), alignEnd = true)
+            for (kind in ErrorKind.entries) Bubble(Look.Failed(kind, canRetry = kind != ErrorKind.NOTHING_HEARD && kind != ErrorKind.NO_MIC))
         }
     }
 

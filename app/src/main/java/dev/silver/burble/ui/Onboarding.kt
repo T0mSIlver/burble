@@ -187,7 +187,7 @@ private fun StepPage(
     var failed by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(step, dictation) {
         if (step != Step.TRY) return@LaunchedEffect
-        if (dictation is Dictation.State.Done && dictation.delivered) landed = true
+        if (dictation is Dictation.State.Done) landed = true
         if (dictation is Dictation.State.Error) failed = true
     }
     Column(Modifier.fillMaxSize()) {

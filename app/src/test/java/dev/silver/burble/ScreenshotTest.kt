@@ -73,7 +73,7 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     @Test fun tryIt() = tryIt("try", Dictation.State.Idle)
     @Test fun tryItListening() = tryIt("try-listening", Dictation.State.Listening)
     @Test fun tryItFailed() = tryIt("try-failed", Dictation.State.Error(Dictation.ErrorKind.QUOTA))
-    @Test fun tryItLanded() = tryIt("try-landed", Dictation.State.Done("Hello from Burble", Output.INSERT, delivered = true), "Hello from Burble")
+    @Test fun tryItLanded() = tryIt("try-landed", Dictation.State.Done("Hello from Burble", Output.INSERT), "Hello from Burble")
     @Test fun unlockAppInfo() = step("unlock-appinfo", Access.None.copy(microphone = true), Step.INSERTION, unlock = Unlock.ALLOW)
 
     private val keyboard = listOf("en-US", "fr-FR")

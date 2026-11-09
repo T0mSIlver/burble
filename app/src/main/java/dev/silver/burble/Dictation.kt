@@ -27,20 +27,17 @@ object Dictation {
         /** Audio ended; waiting for the server's final text. */
         data object Finishing : State
         /** [output] says where the text went: the field, or only the clipboard. */
-        data class Done(val text: String, val output: Output, val delivered: Boolean) : State
-        /** [canRetry]: the audio is kept, and [retry] sends it again. */
+        data class Done(val text: String, val output: Output) : State
         data class Error(
             val kind: ErrorKind,
             val detail: String? = null,
-            val canRetry: Boolean = false,
-        ) : State {
             /**
-             * The error waits for the user, who taps to retry or drags to ✕ to drop the audio,
-             * however long that takes: a quota or a rejection may pass, and its words are kept.
-             * Its label still goes after 4 s.
+             * The audio is kept and [retry] sends it again. The error then waits for the user,
+             * who taps to retry or drags to ✕ to drop the audio, however long that takes: a quota
+             * or a rejection may pass, and its words are kept. Its label still goes after 4 s.
              */
-            val waits get() = canRetry
-        }
+            val canRetry: Boolean = false,
+        ) : State
     }
 
     /** [UNSENT]: audio a stopped process left behind ([recover]). */
@@ -193,11 +190,11 @@ object Dictation {
 
     /**
      * Returns to [State.Idle] once an overlay has shown a [State.Done] or an [State.Error] that
-     * doesn't wait; one that [State.Error.waits] keeps its audio for the user (P5).
+     * doesn't wait; one that [State.Error.canRetry] keeps its audio for the user (P5).
      */
     fun acknowledge() {
         val st = _state.value
-        if (st is State.Done || (st is State.Error && !st.waits)) _state.value = State.Idle
+        if (st is State.Done || (st is State.Error && !st.canRetry)) _state.value = State.Idle
     }
 
     private fun dropSession() {
@@ -314,7 +311,7 @@ object Dictation {
             confirm(service, ins, 0, current) { landed ->
                 if (landed) {
                     Log.d(TAG, "delivered: inserted")
-                    done(State.Done(text, Output.INSERT, delivered = true))
+                    done(State.Done(text, Output.INSERT))
                 } else {
                     Log.d(TAG, "insert fell back: ${ins.field.className} took the text but doesn't show it " +
                         "${CHECK_MS.sum()} ms later")
@@ -337,7 +334,7 @@ object Dictation {
         copy(context, text)
         Latency.mark("copied")
         Log.d(TAG, "delivered: clipboard")
-        return State.Done(text, Output.CLIPBOARD, delivered = true)
+        return State.Done(text, Output.CLIPBOARD)
     }
 
     internal fun kindOf(e: Throwable): ErrorKind = when (e) {
