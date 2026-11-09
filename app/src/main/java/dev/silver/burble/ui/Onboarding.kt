@@ -1,5 +1,6 @@
 package dev.silver.burble.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -48,7 +49,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -92,6 +92,27 @@ class AccessActions(
 enum class Step { WELCOME, INSERTION, TRY }
 
 /**
+ * Android's restricted-settings unlock for a file install, in order. Android shows "Allow
+ * restricted settings" only after the user tried to turn the service on and saw it refused, and
+ * apps can't read either fact: each step's button opens what it says ([button]) and moves on to
+ * the next step.
+ */
+enum class Unlock(@StringRes val title: Int, @StringRes val button: Int) {
+    /** Try to turn the service on, so that Android refuses it. */
+    REFUSED(R.string.onb_unlock_1, R.string.open_settings),
+    /** Allow restricted settings in App info. */
+    ALLOW(R.string.onb_unlock_2, R.string.open_app_info),
+    /** Turn the service on, now allowed. */
+    TURN_ON(R.string.onb_unlock_3, R.string.open_settings),
+    ;
+
+    fun open(actions: AccessActions) = if (this == ALLOW) actions.openAppInfo() else actions.openAccessibility()
+
+    /** The step after this one's button; the last stays. */
+    val next get() = entries.getOrElse(ordinal + 1) { this }
+}
+
+/**
  * Moves on to Try it by itself once the accessibility service is on: the bubble is then on
  * screen. A file install gets Android's restricted-settings unlock on the second screen, decided
  * when onboarding opens so it doesn't vanish midway. [tryField] holds what was dictated in Try it.
@@ -103,26 +124,24 @@ fun Onboarding(
     dictation: Dictation.State,
     onDone: () -> Unit,
     // Reopened after leaving Try it, onboarding starts there again.
-    initial: Int = if (access.microphone && access.insertion) Step.TRY.ordinal else 0,
-    initialUnlockStage: Int = 0,
+    initial: Step = if (access.microphone && access.insertion) Step.TRY else Step.WELCOME,
+    initialUnlock: Unlock = Unlock.REFUSED,
     tryField: TextFieldState = rememberTextFieldState(),
 ) {
-    val steps = Step.entries
-    var index by rememberSaveable { mutableIntStateOf(initial) }
+    // Keys of their own: state saved by a build that kept these as numbers is never read back as
+    // an enum.
+    var step by rememberSaveable(key = "onboarding-step") { mutableStateOf(initial) }
     val unlocking = rememberSaveable { access.restricted }
-    // Android shows "Allow restricted settings" only after the user tried to turn the service on
-    // and saw it refused, and apps can't read either fact: each button of the unlock moves the
-    // step on to the next one.
-    var unlockStage by rememberSaveable { mutableIntStateOf(initialUnlockStage) }
+    var unlock by rememberSaveable(key = "onboarding-unlock") { mutableStateOf(initialUnlock) }
     // The microphone granted on the first screen moves on; one granted before needs Continue.
-    val micOnArrival = remember(index) { access.microphone }
-    LaunchedEffect(index, access.microphone) {
-        if (index == 0 && access.microphone && !micOnArrival) index = 1
+    val micOnArrival = remember(step) { access.microphone }
+    LaunchedEffect(step, access.microphone) {
+        if (step == Step.WELCOME && access.microphone && !micOnArrival) step = Step.INSERTION
     }
-    LaunchedEffect(index, access.insertion) {
-        if (index == 1 && access.insertion) index = 2
+    LaunchedEffect(step, access.insertion) {
+        if (step == Step.INSERTION && access.insertion) step = Step.TRY
     }
-    val progress by animateFloatAsState((index + 1f) / steps.size, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "progress")
+    val progress by animateFloatAsState((step.ordinal + 1f) / Step.entries.size, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "progress")
 
     Surface(color = MaterialTheme.colorScheme.surface) {
         // Try it's field doesn't open the keyboard on arrival; if the user taps the field it comes up,
@@ -134,13 +153,14 @@ fun Onboarding(
             )
             // Back from the second step returns to the first; from the first it leaves the app. Back
             // from Try it would only bounce off the granted service: it leaves the app too.
-            val stack = when (steps[index]) {
+            val stack = when (step) {
                 Step.WELCOME -> listOf(Step.WELCOME)
                 Step.INSERTION -> listOf(Step.WELCOME, Step.INSERTION)
                 Step.TRY -> listOf(Step.TRY)
             }
-            PageStack(stack, onBack = { index = Step.WELCOME.ordinal }, Modifier.weight(1f)) { step ->
-                StepPage(step, access, actions, unlocking, unlockStage, { unlockStage = it }, dictation, tryField, onNext = { index = 1 }, onDone)
+            PageStack(stack, onBack = { step = Step.WELCOME }, Modifier.weight(1f)) { shown ->
+                StepPage(shown, access, actions, if (unlocking) unlock else null, { unlock = it }, dictation, tryField,
+                    onNext = { step = Step.INSERTION }, onDone)
             }
         }
     }
@@ -152,19 +172,15 @@ private fun StepPage(
     step: Step,
     access: Access,
     actions: AccessActions,
-    unlocking: Boolean,
-    unlockStage: Int,
-    setUnlockStage: (Int) -> Unit,
+    /** Where the user is in Android's unlock; null when Android doesn't block the service. */
+    unlock: Unlock?,
+    setUnlock: (Unlock) -> Unit,
     dictation: Dictation.State,
     tryField: TextFieldState,
     onNext: () -> Unit,
     onDone: () -> Unit,
 ) {
-    val unlock = listOf(
-        { actions.openAccessibility(); setUnlockStage(1) },
-        { actions.openAppInfo(); setUnlockStage(2) },
-        actions.openAccessibility,
-    )
+    val tapUnlock = { u: Unlock -> u.open(actions); setUnlock(u.next) }
     // On Try it: words landed in its field, or a dictation failed, which the bubble explains and
     // whose error may clear by itself.
     var landed by rememberSaveable { mutableStateOf(false) }
@@ -181,7 +197,7 @@ private fun StepPage(
             Spacer(Modifier.height(24.dp))
             when (step) {
                 Step.WELCOME -> Welcome()
-                Step.INSERTION -> Insertion(if (unlocking) unlockStage else null, unlock)
+                Step.INSERTION -> Insertion(unlock, tapUnlock)
                 Step.TRY -> TryIt(tryField, dictation, landed && tryField.text.isNotBlank())
             }
             Spacer(Modifier.height(24.dp))
@@ -196,7 +212,7 @@ private fun StepPage(
             val (label, onClick) = when {
                 step == Step.WELCOME && access.microphone -> R.string.onb_continue to onNext
                 step == Step.WELCOME -> R.string.onb_allow_mic to actions.requestMicrophone
-                unlocking -> (if (unlockStage == 1) R.string.open_app_info else R.string.open_settings) to unlock[unlockStage]
+                unlock != null -> unlock.button to { tapUnlock(unlock) }
                 else -> R.string.open_settings to actions.openAccessibility
             }
             Button(
@@ -310,12 +326,11 @@ private fun Title(res: Int) {
 
 /**
  * The accessibility service. For a file install, [stage] is where the user is in Android's
- * unlock: tried the service once, then allowed restricted settings in App info; tapping an
- * earlier step does it again. Null when Android doesn't block it.
+ * unlock; tapping an earlier step does it again. Null when Android doesn't block it.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun Insertion(stage: Int?, actions: List<() -> Unit>) {
+private fun Insertion(stage: Unlock?, onTap: (Unlock) -> Unit) {
     ShapeBadge(Icons.Rounded.Keyboard, MaterialShapes.SoftBurst, size = if (stage == null) BADGE else 64.dp)
     Title(R.string.onb_insert_title)
     Text(stringResource(R.string.onb_insert_why), style = MaterialTheme.typography.bodyLarge)
@@ -325,12 +340,12 @@ private fun Insertion(stage: Int?, actions: List<() -> Unit>) {
     Spacer(Modifier.height(16.dp))
     val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf(R.string.onb_unlock_1, R.string.onb_unlock_2, R.string.onb_unlock_3).forEachIndexed { i, title ->
-            val past = i < stage
-            val current = i == stage
+        Unlock.entries.forEach { u ->
+            val past = u < stage
+            val current = u == stage
             Row(
                 Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
-                    .clickable(enabled = i <= stage, onClick = actions[i]).padding(vertical = 8.dp),
+                    .clickable(enabled = u <= stage) { onTap(u) }.padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -345,11 +360,11 @@ private fun Insertion(stage: Int?, actions: List<() -> Unit>) {
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         if (past) Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.onSecondaryContainer, modifier = Modifier.size(18.dp))
-                        else Text("${i + 1}", style = MaterialTheme.typography.labelLarge, color = if (current) colors.onPrimary else colors.onSurfaceVariant)
+                        else Text("${u.ordinal + 1}", style = MaterialTheme.typography.labelLarge, color = if (current) colors.onPrimary else colors.onSurfaceVariant)
                     }
                 }
                 Text(
-                    stringResource(title),
+                    stringResource(u.title),
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (current) colors.onSurface else colors.onSurfaceVariant,

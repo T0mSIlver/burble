@@ -103,12 +103,29 @@ internal class Flight(var key: Key, val spot: Pair<Float, Float>, val home: Pair
     var inFlightWindow by mutableStateOf(true)
     /** The bubble's own window shows nothing: the flight's draws it, or will this frame. */
     var inWindow by mutableStateOf(true)
-    /** The dictation is over: the bubble goes back into the key once the keyboard comes. */
-    var returning by mutableStateOf(false)
-    /** Flying into the key. */
-    val homing = mutableStateOf(false)
-    /** When the bubble hands over to the key, in uptimeMillis; 0 until a flight back starts. */
+    /** Where the flight is between the key and back ([Phase]); only [Overlay] moves it on. */
+    var phase by mutableStateOf(Phase.OUT)
+    /** When the bubble hands over to the key, in uptimeMillis; 0 until [Phase.INTO_KEY] or [Phase.IN_KEY]. */
     var handoverAt by mutableLongStateOf(0L)
+
+    /**
+     * Each phase only moves forward, and the flight ends ([OverlayUi.flight] null) from any of
+     * them: the bubble goes home, lands, or a drag or a turn of the screen ends it.
+     */
+    enum class Phase {
+        /** Out of the key, rising to the spot or waiting there while the dictation runs. */
+        OUT,
+        /** The dictation is over: waiting at the spot for the keyboard to come back. */
+        BACK,
+        /** Flying into the key, to hand over to it at [handoverAt]. */
+        INTO_KEY,
+        /** Handed over: unseen in the key until the keyboard goes, then it lands at home. */
+        IN_KEY,
+        ;
+
+        /** The dictation is over: it shows the light going out, never the idle mic. */
+        val returning get() = this != OUT
+    }
 
     /** The bubble's centre at [p], in screen px. */
     fun centre(p: Float = this.p.value): Pair<Float, Float> {
