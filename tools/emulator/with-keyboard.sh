@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # "With keyboard", in Messages: the bubble shows with the keyboard, goes after Back (the field
 # keeps focus), stays through a dictation that hides the keyboard and as it comes back, and goes
-# on the home screen. Prints each step, how long the bubble took to go after Back, then PASS or FAIL.
+# on the home screen. Prints each step, how long the bubble took to go after Back and to come back
+# after a tap, then PASS or FAIL.
 #
 #   tools/emulator/with-keyboard.sh
 #
@@ -45,7 +46,13 @@ t0=$(date +%s%N); gone=""
 while [ $(( ($(date +%s%N)-t0)/1000000 )) -lt 3000 ]; do [ "$(state)" = hidden ] && { gone=$(( ($(date +%s%N)-t0)/1000000 )); break; }; done
 echo "Back: hidden after ${gone:-never} ms"; [ -n "$gone" ] || fail=1
 sleep 1; expect "keyboard closed by Back" hidden
-$ADB shell input tap $fx $fy; sleep 2
+$ADB shell input tap $fx $fy
+t0=$(date +%s%N); up=""
+while [ $(( ($(date +%s%N)-t0)/1000000 )) -lt 3000 ]; do [ "$(state)" = shown ] && { up=$(( ($(date +%s%N)-t0)/1000000 )); break; }; done
+echo "Tap: shown after ${up:-never} ms"; [ -n "$up" ] || fail=1
+# The keyboard's window blinks out for a moment as it shows: the bubble must not.
+seen=""; for i in $(seq 12); do seen="$seen $(state)"; done
+echo "as the keyboard came up, polled:$seen"; [[ "$seen" == *hidden* ]] && { echo "bubble blinked out as the keyboard came up"; fail=1; }
 expect "field tapped again" shown
 # A dictation hides the keyboard; the bubble must stay through it and after the words land.
 $ADB logcat -c

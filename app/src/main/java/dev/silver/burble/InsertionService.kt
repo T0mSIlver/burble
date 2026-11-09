@@ -182,10 +182,12 @@ class InsertionService : AccessibilityService() {
     /**
      * Keyed on input focus and the keyboard. A dictation and its result keep the bubble up, so the
      * keyboard a dictation hides doesn't count. It goes [AWAY_MS] after focus leaves, so moving
-     * between fields doesn't flicker it, and [KEYBOARD_GONE_MS] after the keyboard does, as Back
-     * keeps focus in the field.
+     * between fields doesn't flicker it. It goes with the keyboard, as Back keeps focus in the
+     * field: at once when [keyboardLeft], else [KEYBOARD_GONE_MS] later, as it does when the
+     * keyboard has only just come up, since its window drops out of the list for a moment as it
+     * shows, or when Burble's wait for the keyboard it asked back is over.
      */
-    private fun updateAway() {
+    private fun updateAway(keyboardLeft: Boolean = false) {
         main.removeCallbacks(goAway)
         val field = focusedField()
         val mode = Prefs.settings.value.bubbleShow
@@ -195,7 +197,11 @@ class InsertionService : AccessibilityService() {
             shouldShow(field, handsOff) -> away = false
             // The keyboard's mic key takes over as it comes up: no fade lagging behind it.
             handsOff -> away = true
-            !away -> main.postDelayed(goAway, if (field != null) KEYBOARD_GONE_MS else AWAY_MS)
+            !away -> main.postDelayed(goAway, when {
+                field == null -> AWAY_MS
+                keyboardLeft && SystemClock.uptimeMillis() - keyboardCameAt >= KEYBOARD_SETTLE_MS -> 0
+                else -> KEYBOARD_GONE_MS
+            })
         }
     }
 
@@ -276,6 +282,12 @@ class InsertionService : AccessibilityService() {
 
     private val goAway = Runnable { away = true }
 
+    /** Whether the keyboard's window was there at the last window change. */
+    private var keyboardWasShown = false
+
+    /** When the keyboard's window last came, in uptimeMillis. */
+    private var keyboardCameAt = Long.MIN_VALUE / 2
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // Not every unlock sends ACTION_USER_PRESENT, but a window always changes when the lock
         // screen goes.
@@ -290,9 +302,14 @@ class InsertionService : AccessibilityService() {
         // "In text fields", it comes and goes with the keyboard.
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
             followKeyboard()
+            val shown = keyboardShown()
+            val keyboardMoved = shown != keyboardWasShown
+            if (shown && !keyboardWasShown) keyboardCameAt = SystemClock.uptimeMillis()
+            keyboardWasShown = shown
             if (Prefs.settings.value.bubbleShow == BubbleShow.TYPING) {
                 main.removeCallbacks(focusCheck)
-                main.postDelayed(focusCheck, 120)
+                // The keyboard came or went: follow it now, not after the focus burst settles.
+                if (keyboardMoved) updateAway(keyboardLeft = !shown) else main.postDelayed(focusCheck, 120)
             }
             return
         }
@@ -843,6 +860,8 @@ class InsertionService : AccessibilityService() {
         private const val WEB_SETTLE_MS = 100L
         /** A keyboard's window missing this long has gone, not just blinked out as it showed. */
         private const val KEYBOARD_GONE_MS = 200L
+        /** How long after it comes up the keyboard's window may still blink out. */
+        private const val KEYBOARD_SETTLE_MS = 600L
         private val _connected = MutableStateFlow(false)
         /** True while Android has this service bound, which every background trigger needs. */
         val connected: StateFlow<Boolean> = _connected.asStateFlow()
