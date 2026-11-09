@@ -44,7 +44,16 @@ class InsertionService : AccessibilityService() {
     private val scope = MainScope()
     private val main = Handler(Looper.getMainLooper())
     private var overlay: Overlay? = null
-    private var keyboardHidden = false
+
+    /**
+     * Set while a dictation holds the keyboard down, with what bringing it back needs; null while
+     * Android shows it as usual.
+     */
+    private var keyboardHeld: Held? = null
+    private val keyboardHidden get() = keyboardHeld != null
+
+    /** Whether the keyboard was up when the dictation hid it, and the focused field's window then. */
+    private class Held(val wasUp: Boolean, val window: Int?)
 
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = updateLock()
@@ -394,14 +403,9 @@ class InsertionService : AccessibilityService() {
 
     private fun hideKeyboard() {
         if (keyboardHidden) return
-        keyboardWasUp = keyboardShown()
-        keyboardWindow = focusedField()?.windowId
-        keyboardHidden = softKeyboardController.setShowMode(SHOW_MODE_HIDDEN)
+        val h = Held(wasUp = keyboardShown(), window = focusedField()?.windowId)
+        if (softKeyboardController.setShowMode(SHOW_MODE_HIDDEN)) keyboardHeld = h
     }
-
-    /** Whether the keyboard was up when the dictation hid it, and in which window. */
-    private var keyboardWasUp = false
-    private var keyboardWindow: Int? = null
 
     /**
      * The show mode alone doesn't bring the keyboard back: Android waits for the app to ask for
@@ -414,8 +418,8 @@ class InsertionService : AccessibilityService() {
      * changes.
      */
     fun showKeyboard(field: AccessibilityNodeInfo? = null) {
-        if (!keyboardHidden) return
-        keyboardHidden = false
+        val h = keyboardHeld ?: return
+        keyboardHeld = null
         val node = (field ?: focusedField())?.takeIf(::canTakeKeyboard)
         if (node == null) {
             Log.d(TAG, "keyboard: no field on screen to bring it back to")
@@ -437,7 +441,7 @@ class InsertionService : AccessibilityService() {
                 watchKeyboard(node)
             }
         }
-        val askedWhileHidden = !keyboardWasUp || tapped != null || node.windowId != keyboardWindow
+        val askedWhileHidden = !h.wasUp || tapped != null || node.windowId != h.window
         if (askedWhileHidden) blipFocus(node, show) else show()
     }
 

@@ -214,7 +214,7 @@ class Overlay(
         // out, it flashed there.
         scope?.launch {
             snapshotFlow { ui.away.value }.collect { away ->
-                if (ui.flight.value?.returning != true) return@collect
+                if (ui.flight.value?.phase?.returning != true) return@collect
                 if (away) keyboardBack(null) else land()
             }
         }
@@ -507,8 +507,8 @@ class Overlay(
     private fun flyOn(st: Dictation.State) {
         val f = ui.flight.value ?: return
         val s = scope ?: return
-        if (f.returning || (st !is Dictation.State.Done && st != Dictation.State.Idle)) return
-        f.returning = true
+        if (f.phase != Flight.Phase.OUT || (st !is Dictation.State.Done && st != Dictation.State.Idle)) return
+        f.phase = Flight.Phase.BACK
         if (st is Dictation.State.Done && st.output == Output.CLIPBOARD) return goHome()
         flying?.cancel()
         flying = s.launch {
@@ -536,7 +536,7 @@ class Overlay(
     fun keyboardAsked(retryInMs: Long = 0) {
         keyboardAskedAt = SystemClock.uptimeMillis()
         this.retryInMs = retryInMs
-        val f = ui.flight.value?.takeIf { it.returning && !it.homing.value && it.handoverAt == 0L } ?: return
+        val f = ui.flight.value?.takeIf { it.phase == Flight.Phase.BACK } ?: return
         waitForKeyboard(f, sinceAsked = 0)
     }
 
@@ -551,14 +551,14 @@ class Overlay(
         val left = if (sinceAsked in 0 until wait) wait - sinceAsked else HandoffMotion.NO_ASK_MS
         waiting = scope?.launch {
             delay(left)
-            if (ui.flight.value === f && !f.homing.value && f.handoverAt == 0L) goHome()
+            if (ui.flight.value === f && f.phase == Flight.Phase.BACK) goHome()
         }
     }
 
     /** No keyboard is coming back: a bubble waiting for it goes home. */
     fun noKeyboard() {
         val f = ui.flight.value ?: return
-        if (f.returning && !f.homing.value && f.handoverAt == 0L) goHome()
+        if (f.phase == Flight.Phase.BACK) goHome()
     }
 
     /**
@@ -583,19 +583,20 @@ class Overlay(
      * the bubble goes at once and the key shows at once.
      */
     internal fun keyboardBack(key: Key?): Long {
-        val f = ui.flight.value?.takeIf { it.returning } ?: return 0
-        if (key != null && !f.homing.value) f.key = fitted(key)
-        if (f.homing.value) return f.handoverAt
-        if (f.handoverAt != 0L) return 0 // landed already
+        val f = ui.flight.value?.takeIf { it.phase.returning } ?: return 0
+        if (f.phase == Flight.Phase.INTO_KEY) return f.handoverAt
+        if (key != null) f.key = fitted(key)
+        if (f.phase == Flight.Phase.IN_KEY) return 0 // landed already
         val s = scope ?: return 0
         flying?.cancel()
         waiting?.cancel()
         if (reducedMotion) {
             f.handoverAt = SystemClock.uptimeMillis()
+            f.phase = Flight.Phase.IN_KEY
             flying = s.launch { f.fade.snapTo(0f) }
             return 0
         }
-        f.homing.value = true
+        f.phase = Flight.Phase.INTO_KEY
         f.handoverAt = SystemClock.uptimeMillis() + HandoffMotion.RETURN_AFTER_MS + HandoffMotion.HANDOVER_MS
         Log.d(TAG, "handoff: back into the key, the key shows at ${f.handoverAt}")
         flying = s.launch {
@@ -621,7 +622,7 @@ class Overlay(
             f.fade.snapTo(0f)
             withFrameNanos {}
             removeFlightView()
-            f.homing.value = false
+            f.phase = Flight.Phase.IN_KEY
             // Its hello can come before its window: home only if no keyboard is up a moment later.
             if (!ui.away.value) {
                 delay(HandoffMotion.LAND_WAIT_MS)
@@ -634,7 +635,7 @@ class Overlay(
     /** Back in the key, and the keyboard is gone again: the bubble fades in at home. */
     private fun land() {
         val f = ui.flight.value ?: return
-        if (ui.away.value || f.homing.value) return
+        if (ui.away.value || f.phase == Flight.Phase.INTO_KEY) return
         flying?.cancel()
         snap?.cancel()
         removeFlightView()

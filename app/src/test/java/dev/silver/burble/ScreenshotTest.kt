@@ -17,6 +17,7 @@ import dev.silver.burble.ui.Onboarding
 import dev.silver.burble.ui.Page
 import dev.silver.burble.ui.Step
 import dev.silver.burble.ui.TestAudio
+import dev.silver.burble.ui.Unlock
 import dev.silver.burble.ui.theme.AppTheme
 import dev.silver.burble.updater.Release
 import dev.silver.burble.updater.Updater
@@ -57,8 +58,8 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
         compose.onRoot().captureRoboImage("screenshots/$screen-$name.png")
     }
 
-    private fun step(name: String, access: Access, step: Step, unlockStage: Int = 0) = capture("onboarding-$name") {
-        Onboarding(access, AccessActions.None, Dictation.State.Idle, onDone = {}, initial = step.ordinal, initialUnlockStage = unlockStage)
+    private fun step(name: String, access: Access, step: Step, unlock: Unlock = Unlock.REFUSED) = capture("onboarding-$name") {
+        Onboarding(access, AccessActions.None, Dictation.State.Idle, onDone = {}, initial = step, initialUnlock = unlock)
     }
 
     private fun tryIt(name: String, dictation: Dictation.State, text: String = "") = capture("onboarding-$name") {
@@ -73,7 +74,7 @@ class ScreenshotTest(private val wallpaper: Wallpaper?, private val dark: Boolea
     @Test fun tryItListening() = tryIt("try-listening", Dictation.State.Listening)
     @Test fun tryItFailed() = tryIt("try-failed", Dictation.State.Error(Dictation.ErrorKind.QUOTA))
     @Test fun tryItLanded() = tryIt("try-landed", Dictation.State.Done("Hello from Burble", Output.INSERT, delivered = true), "Hello from Burble")
-    @Test fun unlockAppInfo() = step("unlock-appinfo", Access.None.copy(microphone = true), Step.INSERTION, unlockStage = 1)
+    @Test fun unlockAppInfo() = step("unlock-appinfo", Access.None.copy(microphone = true), Step.INSERTION, unlock = Unlock.ALLOW)
 
     private val keyboard = listOf("en-US", "fr-FR")
     private val settings = Settings(onboarded = true, languages = listOf("en-US", "fr-FR"))
