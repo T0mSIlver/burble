@@ -4,7 +4,7 @@
 
 Google's Rambler dictation on any Android phone, under any keyboard, from a floating bubble. Free and open source.
 
-<!-- Demo video or GIF: reviewing a website while talking, keyboard hidden, then a tap and the whole review lands in the field. -->
+<!-- Demo video or GIF: dictating to a coding agent in a chat, keyboard hidden while scrolling its plan, then a tap and the clean reply lands in the field. -->
 
 > [!IMPORTANT]
 > **Burble exists because of [PixelBoard](https://github.com/Akshayykadam/PixelBoard) by Akshay Kadam**. It proved Rambler works on any Android phone, and Burble's reverse engineering started from its build and the Gboard code it patches, which pointed straight to Rambler's code. PixelBoard builds on [JasonWu's original Gboard patch project](https://github.com/jasonwu1994/Gboard-patches). If you want Rambler inside a full Gboard keyboard, use PixelBoard.
